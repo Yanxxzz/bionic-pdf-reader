@@ -44,6 +44,8 @@ def wait_for(predicate,after=0,timeout=60):
 samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
 normalize=lambda s:''.join(unicodedata.normalize('NFC',s).split())
 report={'transport':'macOS system file dialog, normal Safari window','cases':[],'dialogs':[]}
+permission_log=(OUT/'macos-test-permissions.log').open('w',encoding='utf-8')
+permission_helper=subprocess.Popen([str(ROOT/'.tmp/native-test-permissions')],stdout=permission_log,stderr=permission_log)
 try:
     action('launch',f'http://127.0.0.1:{server.server_port}/reader.html')
     report['browser']=wait_for(lambda e:e['type']=='ready')
@@ -79,3 +81,5 @@ finally:
     (OUT/'safari-system-events.json').write_text(json.dumps(events,ensure_ascii=False,indent=2),encoding='utf-8')
     subprocess.run(['screencapture','-x',str(OUT/'safari-system-final.png')],timeout=15)
     action('quit');server.shutdown()
+    if permission_helper.poll() is None:permission_helper.terminate()
+    permission_log.close()
