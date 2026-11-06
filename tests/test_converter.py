@@ -62,6 +62,7 @@ def test_vector_layer_has_no_duplicate_text(converted):
                 count+=1
     assert count>0
     assert '/OCProperties' not in PdfReader(converted[2]).root_object
+    assert PdfReader(converted[2]).metadata.title.endswith(' - Bionic Reading')
 
 def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     source,switchable,*_=converted

@@ -298,8 +298,9 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         if (i+1)%50 == 0 or i+1 == len(writer.pages):
             print(f'PROGRESS {i+1}/{len(writer.pages)} glyphs={builder.count} seconds={time.monotonic()-started:.1f}',flush=True)
     if builder.count == 0: raise ValueError('未找到可处理的文字层或可用嵌入字体；扫描版需先做 OCR。')
-    writer.add_metadata({'/Title':str((reader.metadata.title if reader.metadata else None) or Path(source).stem) + ' - Switchable Reading',
-        '/Subject':'Original PDF text plus optional vector word-prefix emphasis. Toggle the Bionic Reading layer in WPS.'})
+    suffix=' - Switchable Reading' if mode=='switchable' else ' - Bionic Reading'
+    subject='Original PDF text plus optional vector word-prefix emphasis. Toggle the Bionic Reading layer in your reader.' if mode=='switchable' else 'Original PDF text plus always-visible vector word-prefix emphasis.'
+    writer.add_metadata({'/Title':str((reader.metadata.title if reader.metadata else None) or Path(source).stem)+suffix,'/Subject':subject})
     target = Path(target)
     temporary = target.with_name(target.stem+'.partial.pdf')
     try:

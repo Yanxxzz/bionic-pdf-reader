@@ -29,7 +29,7 @@ try{
      assert.ok(sameWords(text,expected),`${name} ${variant} ${samples[i].code}: logical text: ${JSON.stringify(text)}`);
      assert.ok(!text.includes('\0'),`${name} ${samples[i].code}: no missing ActualText`);
      const selected=await page.locator('#text-layer').evaluate(layer=>{const r=document.createRange();r.selectNodeContents(layer);const s=getSelection();s.removeAllRanges();s.addRange(r);const text=s.toString();s.removeAllRanges();return text;});
-     assert.ok(sameWords(selected,expected),`${name} ${samples[i].code}: selection/copy order`);
+     assert.ok(normalize(selected).includes(expected),`${name} ${samples[i].code}: selection/copy order and word spaces: ${JSON.stringify(selected)}`);
      const pixels=await page.locator('#pdf-canvas').evaluate(c=>c.toDataURL());
      await page.locator('#bionic-mode').click();await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.mode==='bionic');
      assert.equal(await page.locator('#text-layer').textContent(),text);
