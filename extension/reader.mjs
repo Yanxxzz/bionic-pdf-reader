@@ -119,6 +119,7 @@ async function renderPage(myRevision, resetScroll) {
   frame.dataset.renderedPage = String(number);
   frame.dataset.renderRevision = String(myRevision);
   frame.dataset.mode = snapshot.enabled ? 'bionic' : 'original';
+  frame.dataset.renderState='ready';
   $('page-number').value = number;
   $('prev-page').disabled = number === 1;
   $('next-page').disabled = number === pdf.numPages;
@@ -133,6 +134,9 @@ async function renderPage(myRevision, resetScroll) {
 function scheduleRender(resetScroll = false) {
   if (!pdf) return renderQueue;
   const myRevision = ++revision;
+  $('page-frame').dataset.renderState='rendering';
+  delete $('page-frame').dataset.renderedPage;
+  delete $('page-frame').dataset.mode;
   renderTask?.cancel();
   textTask?.cancel();
   renderQueue = renderQueue.catch(() => {}).then(() => {
@@ -287,5 +291,11 @@ document.addEventListener('dragover', e => e.preventDefault());
 document.addEventListener('dragleave', e => { e.preventDefault(); if (--dragCounter <= 0) { dragCounter = 0; $('drop-overlay').hidden = true; } });
 document.addEventListener('drop', e => { e.preventDefault(); dragCounter = 0; $('drop-overlay').hidden = true; openFile(e.dataTransfer.files[0]); });
 let resizeTimer;
-addEventListener('resize', () => { clearTimeout(resizeTimer); if ($('zoom').value === 'fit') resizeTimer = setTimeout(() => scheduleRender(), 180); });
+addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  if(pdf&&$('zoom').value==='fit')resizeTimer=setTimeout(()=>{
+    const available=Math.max(240,$('page-scroller').clientWidth-(innerWidth<=760?24:56));
+    if(pdf&&$('zoom').value==='fit'&&Math.abs(available-parseFloat($('pdf-canvas').style.width||'0'))>.5)scheduleRender();
+  },180);
+});
 updateModeUI();

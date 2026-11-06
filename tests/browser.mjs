@@ -31,6 +31,13 @@ try{
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
       await page.keyboard.press('Escape');
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),false);
+      await page.setViewportSize({width:375,height:812});
+      const helpBounds=await page.locator('#help-button').boundingBox();
+      assert.ok(helpBounds.x>=0&&helpBounds.x+helpBounds.width<=375,'Guide remains reachable on a narrow screen');
+      await page.locator('#help-button').click();
+      assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
+      await page.keyboard.press('Escape');
+      await page.setViewportSize({width:1440,height:1040});
       await page.locator('#file-input').setInputFiles(pdf);
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());
@@ -58,6 +65,9 @@ try{
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');
+    }catch(error){
+      console.log(name,'failure',await page.evaluate(()=>({frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,modal:document.querySelector('dialog[open]')?.id,active:document.activeElement?.outerHTML})),errors);
+      await page.screenshot({path:path.join(output,`${name}-failure.png`)});throw error;
     }finally{await browser.close();}
   }
 }finally{
