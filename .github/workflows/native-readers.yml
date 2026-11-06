@@ -1,0 +1,32 @@
+name: Native reader acceptance
+on:
+  push:
+    branches: [release/v0.4.1]
+    paths: ['tests/safari_native_probe.py', '.github/workflows/native-readers.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safari-native:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: python -m pip install -e ".[dev]" selenium
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run fixtures:shaped
+      - run: sudo safaridriver --enable
+      - run: python tests/safari_native_probe.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: safari-native-results
+          path: test-results/
+          retention-days: 7
