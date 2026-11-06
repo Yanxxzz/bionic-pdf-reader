@@ -1,12 +1,16 @@
 {
   "name": "bionic-pdf-reader",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "type": "module",
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "test:browser": "node tests/browser.mjs",
-    "test:extension": "node tests/extension.mjs"
+    "test:extension": "node tests/extension.mjs",
+    "fixtures:shaped": "node scripts/make_shaped_examples.mjs",
+    "test:shaped": "node tests/shaped.mjs"
   },
-  "devDependencies": { "playwright": "1.62.1" }
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
 }

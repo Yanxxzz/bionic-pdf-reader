@@ -8,7 +8,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 ROOT = Path(__file__).resolve().parents[1]
 
 def create_sample(target, samples=None):
-    samples = samples or [s for s in json.loads((ROOT/'examples/languages.json').read_text(encoding='utf-8')) if s['code'] not in ('ar','he','hi')]
+    samples = samples or json.loads((ROOT/'examples/languages.json').read_text(encoding='utf-8'))
     fonts=ROOT/'tests/assets/fonts'
     for label in {x['font'] for x in samples} | {'Latin'}:
         pdfmetrics.registerFont(TTFont('Demo'+label,str(fonts/(label+'.ttf')),shapable=True))
@@ -24,10 +24,8 @@ def create_sample(target, samples=None):
         c.setFont('Demo'+item['font'],15);c.setFillColorRGB(.12,.16,.14)
         y=688;line=''
         def draw_line(text):
-            if item['code'] in ('ar','he'):
-                c.drawRightString(547,y,text,direction='RTL',shaping=True)
-            else: c.drawString(48,y,text,shaping=item['code']=='hi')
-        # Wrap by characters so CJK and languages without spaces are included.
+            c.drawString(48,y,text)
+        # Keep each authored language sample within the page margins.
         for char in item['text']:
             if pdfmetrics.stringWidth(line+char,'Demo'+item['font'],15)>490:
                 draw_line(line);y-=28;line=''

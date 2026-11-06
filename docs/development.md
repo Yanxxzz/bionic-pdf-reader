@@ -15,10 +15,13 @@ python -m pip install -e ".[dev]"
 npm ci
 npx playwright install chromium firefox
 python scripts/make_examples.py
+npm run fixtures:shaped
+python scripts/prepare_shaped_outputs.py
 python -m pytest
 npm test
 npm run test:browser
 npm run test:extension
+npm run test:shaped
 ```
 
 浏览器测试默认使用隔离的 Chromium 和 Firefox。已安装的 Chrome / Edge 可设置 `BROWSERS=chrome,edge,firefox`；扩展可设置 `EXTENSION_CHANNEL=chrome`。扩展测试仅对临时配置使用调试接口，不修改日常浏览器。
@@ -43,12 +46,18 @@ python scripts/build_packages.py
 1. 同步 `pyproject.toml`、Python `__version__`、扩展 `manifest.json` 和 `package.json` 的版本。
 2. 更新 CHANGELOG、兼容性与语言范围。新的阅读器应分别记录文档依据和实测结果。
 3. 运行测试，构建，检查源码与包中不包含私人 PDF、机器路径或凭据。
-4. 推送到私有仓库，等待 CI 的测试、浏览器和 Windows 构建通过。
+4. 推送发布分支，等待 CI 的 Python、浏览器、macOS 阅读引擎和 Windows 打包测试通过。
 5. 创建 `v版本` tag 和草稿 Release，上传包、许可和 SHA256 清单。
-6. 完成最终验收后公开仓库并发布 Release。
+6. 完成最终验收后发布 Release；不改变仓库可见性。
 
 GitHub 工作流只在测试代码或原创样例上运行。通过 `workflow_dispatch` 可重新测试；不会自动上传用户文档，也不自动改变仓库可见性。
 
 ## 已知边界
 
 PDF 处理依赖固定版本的 pypdf 私有字体编码接口，升级时需要跑完整回归。PDF.js 的补丁也需在升级后重验 CSP、原始像素、字距、复制层与公式。复杂脚本、专业排版与阅读效果需要额外人工和用户验证。
+
+## 实测记录
+
+测试覆盖范围和本次版本的实测记录见 [verification.md](verification.md)。浏览器生成的带标签 / 不带标签 PDF 需要先运行 `npm run fixtures:shaped`；否则 Python 的两个对应集成测试会明确跳过。CI 的浏览器任务会生成并实际运行它们，不把跳过作为通过证据。
+
+macOS 任务使用 Apple 提供的 Safari / safaridriver 与 PDFKit；不是用 Linux WebKit 冒充 Safari。原始文字、图层关闭像素和普通仿生输出分别比较。Preview 进程启动仅证明能打开文件，不等同于人工界面验收。

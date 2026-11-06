@@ -7,19 +7,13 @@ from fontTools.varLib.instancer import instantiateVariableFont
 from fontTools import subset
 
 ROOT = Path(__file__).resolve().parents[1]
-FONTS = {
-    'Latin': ('notosans', 'NotoSans[wdth,wght].ttf'),
-    'CJK': ('notosanssc', 'NotoSansSC[wght].ttf'),
-    'Korean': ('notosanskr', 'NotoSansKR[wght].ttf'),
-    'Arabic': ('notosansarabic', 'NotoSansArabic[wdth,wght].ttf'),
-    'Hebrew': ('notosanshebrew', 'NotoSansHebrew[wdth,wght].ttf'),
-    'Indic': ('notosansdevanagari', 'NotoSansDevanagari[wdth,wght].ttf'),
-}
+FONTS = {'Latin': ('notosans', 'NotoSans[wdth,wght].ttf')}
 
 def main():
     cache = ROOT / '.tmp/font-sources'; cache.mkdir(parents=True,exist_ok=True)
     output = ROOT / 'tests/assets/fonts'; output.mkdir(parents=True,exist_ok=True)
     samples = json.loads((ROOT / 'examples/languages.json').read_text(encoding='utf-8'))
+    samples += json.loads((ROOT / 'examples/shaping-cases.json').read_text(encoding='utf-8'))
     for label,(directory,filename) in FONTS.items():
         url = 'https://raw.githubusercontent.com/google/fonts/main/ofl/' + directory + '/'
         local = cache / filename

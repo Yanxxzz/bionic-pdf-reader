@@ -7,7 +7,7 @@ function segmenter(locale, granularity) {
   return segmenters.get(key);
 }
 export function wordSpans(text, locale = 'auto') {
-  return [...segmenter(locale, 'word').segment(text)].filter(s => s.isWordLike && /\p{L}/u.test(s.segment));
+  return [...segmenter(locale, 'word').segment(text)].filter(s => s.isWordLike && /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}]/u.test(s.segment) && !/[^\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{M}’'\d]/u.test(s.segment));
 }
 export function prefixLength(word, rule = 'reference', locale = 'auto') {
   const units = [...segmenter('auto', 'grapheme').segment(word)].map(s => s.segment);

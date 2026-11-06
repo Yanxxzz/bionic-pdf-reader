@@ -12,8 +12,8 @@ target=folder/'result.pdf'
 run=subprocess.run([str(ROOT/'dist/BionicPDF.exe'),'--cli',str(source),str(target),'--mode','static'],timeout=120,env=dict(os.environ,TMP=str(folder),TEMP=str(folder)))
 assert run.returncode==0,run.returncode
 before,after=pdfium.PdfDocument(source),pdfium.PdfDocument(target)
-assert len(before)==len(after)==17
+assert len(before)==len(after)==14
 for i in range(len(before)):
     assert before[i].get_textpage().get_text_range()==after[i].get_textpage().get_text_range()
 before.close();after.close()
-print('Standalone Windows conversion passed for 16 languages and a blank page')
+print('Standalone Windows conversion passed for 13 languages and a blank page')

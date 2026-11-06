@@ -9,6 +9,7 @@ from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 from .converter import make_pdf
+from .words import LANGUAGES
 
 class ProgressWriter:
     def __init__(self, events): self.events, self.buffer = events, ''
@@ -25,7 +26,8 @@ class Maker:
         self.root, self.events, self.busy = root, queue.Queue(), False
         self.result = None
         self.mode = tk.StringVar(value='可切换版 · WPS / Acrobat / Foxit')
-        self.locale = tk.StringVar(value='auto')
+        self.language_options={'自动分词 · auto':'auto',**{f'{name} · {code}':code for code,name in LANGUAGES.items()}}
+        self.locale = tk.StringVar(value='自动分词 · auto')
         self.source, self.target, self.status = tk.StringVar(),tk.StringVar(),tk.StringVar(value='选择原始 PDF，按阅读器选择可切换版或普通仿生版。')
         root.title('Bionic PDF · 仿生阅读制作工具')
         root.geometry('760x550'); root.minsize(700,530)
@@ -44,8 +46,8 @@ class Maker:
         ttk.Combobox(options,textvariable=self.mode,state='readonly',width=34,values=['可切换版 · WPS / Acrobat / Foxit','普通仿生版 · 其他 PDF 阅读器']).pack(side='left')
         language = ttk.Frame(frame); language.pack(fill='x',pady=(12,0))
         ttk.Label(language,text='文档语言',width=9).pack(side='left')
-        ttk.Combobox(language,textvariable=self.locale,state='readonly',width=12,values=['auto','en','fr','de','es','pt','it','ru','el','zh','ja','ko','ar','he','hi']).pack(side='left')
-        ttk.Label(language,text='auto 自动；中日韩及复杂文字为试验支持。').pack(side='left',padx=12)
+        ttk.Combobox(language,textvariable=self.locale,state='readonly',width=24,values=list(self.language_options)).pack(side='left')
+        ttk.Label(language,text='建议明确选择文档语言。').pack(side='left',padx=12)
         self.progress = ttk.Progressbar(frame,maximum=100); self.progress.pack(fill='x',pady=(18,10))
         ttk.Label(frame,textvariable=self.status,wraplength=650).pack(anchor='w')
         controls = ttk.Frame(frame);controls.pack(fill='x',pady=(22,0))
@@ -53,6 +55,7 @@ class Maker:
         self.open_button = ttk.Button(controls,text='打开阅读副本',command=self.open_result,state='disabled');self.open_button.pack(side='left',padx=12)
         ttk.Button(controls,text='在浏览器中阅读',command=self.open_reader).pack(side='left')
         ttk.Label(frame,text='可切换版：在阅读器“图层”列表开关。普通版：打开即显示词首加粗。',font=('Microsoft YaHei UI',9)).pack(anchor='w',pady=(18,0))
+        ttk.Button(frame,text='使用指南与配置说明',command=self.show_help).pack(anchor='w',pady=(10,0))
         root.protocol('WM_DELETE_WINDOW',self.close)
         root.after(120,self.poll)
     def path_row(self,parent,label,variable,command):
@@ -78,7 +81,7 @@ class Maker:
         if source.resolve()==target.resolve():messagebox.showinfo('请保留原文件','请给阅读副本选择不同文件名。');return
         if target.exists() and not messagebox.askyesno('替换阅读副本','目标文件已存在，是否替换这份阅读副本？'):return
         mode = 'static' if self.mode.get().startswith('普通') else 'switchable'
-        locale = self.locale.get()
+        locale = self.language_options[self.locale.get()]
         self.busy=True;self.generate.config(state='disabled');self.open_button.config(state='disabled');self.progress['value']=0
         self.status.set('正在准备字体和页面…')
         def work():
@@ -119,6 +122,42 @@ class Maker:
         from .local_reader import start_reader
         try: webbrowser.open_new_tab(start_reader())
         except OSError as error:messagebox.showerror('无法打开阅读器',str(error))
+    def show_help(self):
+        window=tk.Toplevel(self.root);window.title('使用指南与配置说明');window.geometry('680x520');window.minsize(580,420)
+        text=tk.Text(window,wrap='word',font=('Microsoft YaHei UI',10),padx=22,pady=18)
+        scrollbar=ttk.Scrollbar(window,command=text.yview);scrollbar.pack(side='right',fill='y');text.configure(yscrollcommand=scrollbar.set);text.pack(fill='both',expand=True)
+        text.insert('1.0',HELP_TEXT);text.configure(state='disabled')
+        ttk.Button(window,text='关闭指南',command=window.destroy).pack(pady=10)
+
+HELP_TEXT='''选择你的阅读方式
+
+• 在浏览器中直接切换：点击「在浏览器中阅读」，选择 PDF。顶部「原始 / 仿生」或 Alt+B 切换；左侧选择语言、规则与强度。使用期间保持制作工具开启。
+
+• WPS / Acrobat / Foxit / PDF-XChange：选择「可切换版」，生成后打开副本。在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。默认关闭，开关时页码和缩放保持原位。
+  WPS：左侧图层图标 → 眼睛开关。
+  PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。
+  Acrobat / Foxit：导航面板 → Layers / 图层。
+
+• Preview / SumatraPDF / 手机阅读器：选择「普通仿生版」。打开副本即可显示加粗；要看原始效果，打开原文件。
+
+制作步骤
+1. 选择原始 PDF。
+2. 选择新的保存文件名。
+3. 选择阅读方式与文档语言，然后生成。
+4. 点击「打开阅读副本」。原始文件保持不变。
+
+语言与配置
+支持英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。
+建议明确选择文档语言。auto 表示自动分词，不是语言识别。浏览器内英语可用参考规则；其他语言或混合文档可选择「词语前半部分」，强度从 100% 开始。
+
+常见问题
+• 没有加粗：扫描图片需要先做 OCR；未嵌入字体、特殊编码、竖排、原有粗斜体和部分嵌套内容会保持原样。
+• 原始模式也乱码：先用其他阅读器检查源 PDF。
+• 找不到图层：改用普通仿生版，或在浏览器阅读页开关。
+• 浏览器版本没有导出按钮：使用本制作工具生成副本。
+
+文件在本机处理。仿生阅读是一种排版偏好，请自行比较是否适合你。
+'''
 
 def main():
     window=tk.Tk();Maker(window);window.mainloop()

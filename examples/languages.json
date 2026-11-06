@@ -1,21 +1,67 @@
 [
-  {"code":"en","font":"Latin","text":"Reading becomes a personal choice. Keep the original page and try a different visual rhythm."},
-  {"code":"fr","font":"Latin","text":"La lecture devient un choix personnel. Préservez les accents et le rythme de chaque phrase."},
-  {"code":"de","font":"Latin","text":"Lesen bleibt eine persönliche Entscheidung. Bücher öffnen neue Möglichkeiten für neugierige Menschen."},
-  {"code":"es","font":"Latin","text":"La lectura ofrece nuevas posibilidades. Conserva las palabras y prueba otro ritmo visual."},
-  {"code":"pt","font":"Latin","text":"A leitura oferece novas possibilidades. Preserve as palavras e experimente outro ritmo visual."},
-  {"code":"it","font":"Latin","text":"La lettura apre nuove possibilità. Conserva le parole e scegli il tuo ritmo personale."},
-  {"code":"nl","font":"Latin","text":"Lezen opent nieuwe mogelijkheden. Bewaar de woorden en kies een persoonlijk leesritme."},
-  {"code":"pl","font":"Latin","text":"Czytanie otwiera nowe możliwości. Zachowaj słowa i wybierz własny rytm czytania."},
-  {"code":"tr","font":"Latin","text":"Okumak yeni düşüncelere kapı açar. Sözcükleri koruyun ve kendi okuma ritminizi seçin."},
-  {"code":"vi","font":"Latin","text":"Đọc sách mở ra những ý tưởng mới. Giữ nguyên nội dung và chọn nhịp đọc phù hợp."},
-  {"code":"ru","font":"Latin","text":"Чтение открывает новые возможности. Сохраняйте исходный текст и выбирайте удобный ритм."},
-  {"code":"uk","font":"Latin","text":"Читання відкриває нові можливості. Зберігайте початковий текст і обирайте зручний ритм."},
-  {"code":"el","font":"Latin","text":"Η ανάγνωση ανοίγει νέες δυνατότητες. Διατηρήστε το αρχικό κείμενο και επιλέξτε τον ρυθμό σας."},
-  {"code":"zh","font":"CJK","text":"阅读是一种个人选择。保留原始文字和页面布局，尝试适合自己的阅读节奏。"},
-  {"code":"ja","font":"CJK","text":"読書は個人の選択です。元の文章とページを保ち、自分に合う読み方を試してください。"},
-  {"code":"ko","font":"Korean","text":"독서는 개인의 선택입니다. 원래 문장과 페이지를 유지하고 자신에게 맞는 읽기 방식을 찾아보세요."},
-  {"code":"ar","font":"Arabic","text":"القراءة اختيار شخصي. حافظ على النص الأصلي واختر إيقاع القراءة المناسب لك."},
-  {"code":"he","font":"Hebrew","text":"קריאה היא בחירה אישית. שמרו על הטקסט המקורי ובחרו קצב קריאה שנוח לכם."},
-  {"code":"hi","font":"Indic","text":"पढ़ना एक व्यक्तिगत विकल्प है। मूल पाठ को बनाए रखें और अपनी पढ़ने की लय चुनें।"}
+  {
+    "code": "en",
+    "font": "Latin",
+    "text": "Reading becomes a personal choice. Keep the original page and try a different visual rhythm."
+  },
+  {
+    "code": "fr",
+    "font": "Latin",
+    "text": "La lecture devient un choix personnel. Préservez les accents et le rythme de chaque phrase."
+  },
+  {
+    "code": "de",
+    "font": "Latin",
+    "text": "Lesen bleibt eine persönliche Entscheidung. Bücher öffnen neue Möglichkeiten für neugierige Menschen."
+  },
+  {
+    "code": "es",
+    "font": "Latin",
+    "text": "La lectura ofrece nuevas posibilidades. Conserva las palabras y prueba otro ritmo visual."
+  },
+  {
+    "code": "pt",
+    "font": "Latin",
+    "text": "A leitura oferece novas possibilidades. Preserve as palavras e experimente outro ritmo visual."
+  },
+  {
+    "code": "it",
+    "font": "Latin",
+    "text": "La lettura apre nuove possibilità. Conserva le parole e scegli il tuo ritmo personale."
+  },
+  {
+    "code": "nl",
+    "font": "Latin",
+    "text": "Lezen opent nieuwe mogelijkheden. Bewaar de woorden en kies een persoonlijk leesritme."
+  },
+  {
+    "code": "pl",
+    "font": "Latin",
+    "text": "Czytanie otwiera nowe możliwości. Zachowaj słowa i wybierz własny rytm czytania."
+  },
+  {
+    "code": "tr",
+    "font": "Latin",
+    "text": "Okumak yeni düşüncelere kapı açar. Sözcükleri koruyun ve kendi okuma ritminizi seçin."
+  },
+  {
+    "code": "vi",
+    "font": "Latin",
+    "text": "Đọc sách mở ra những ý tưởng mới. Giữ nguyên nội dung và chọn nhịp đọc phù hợp."
+  },
+  {
+    "code": "ru",
+    "font": "Latin",
+    "text": "Чтение открывает новые возможности. Сохраняйте исходный текст и выбирайте удобный ритм."
+  },
+  {
+    "code": "uk",
+    "font": "Latin",
+    "text": "Читання відкриває нові можливості. Зберігайте початковий текст і обирайте зручний ритм."
+  },
+  {
+    "code": "el",
+    "font": "Latin",
+    "text": "Η ανάγνωση ανοίγει νέες δυνατότητες. Διατηρήστε το αρχικό κείμενο και επιλέξτε τον ρυθμό σας."
+  }
 ]

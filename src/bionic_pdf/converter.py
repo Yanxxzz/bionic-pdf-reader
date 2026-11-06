@@ -23,7 +23,8 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject as N,
     NumberObject as I, FloatObject as F, TextStringObject as T, BooleanObject as B,
     DecodedStreamObject, ContentStream)
-from .selection import Converter, State, raw_string
+from .selection import Converter, State, raw_string, STYLED_FONT
+from .layout import select_glyphs
 
 
 def num(value):
@@ -167,13 +168,19 @@ class OverlayBuilder:
         state, ctm, line_matrix = State(), (1,0,0,1,0,0), (1,0,0,1,0,0)
         tc, tw, tz, rise, leading = 0.0, 0.0, 1.0, 0.0, 0.0
         stack, commands, used = [], [], {}
-        marked = []
+        marked, records, actual_serial = [], [], 0
         position_known = True
         page_count = 0
         for args, op in content.operations:
             if op in (b'BDC',b'BMC'):
-                if op == b'BDC' and str(args[0]) == '/OC' and isinstance(args[1],N): marked.append(str(args[1]))
-                else: marked.append(None)
+                properties=args[1] if op==b'BDC' else None
+                if isinstance(properties,N):properties=resources.get('/Properties',{}).get(properties)
+                if hasattr(properties,'get_object'):properties=properties.get_object()
+                actual=properties.get('/ActualText') if isinstance(properties,D) else None
+                node={'oc':str(args[1]) if op==b'BDC' and str(args[0])=='/OC' and isinstance(args[1],N) else None,'actual':None}
+                if actual is not None:
+                    node['actual']={'id':actual_serial,'text':str(actual)};actual_serial+=1
+                marked.append(node)
             elif op == b'EMC' and marked: marked.pop()
             if op == b'q': stack.append((copy.copy(state), ctm, tc, tw, tz, rise, leading))
             elif op == b'Q' and stack:
@@ -220,39 +227,31 @@ class OverlayBuilder:
                 self.glyphs.skipped.add(str(font.get('/BaseFont','unknown')))
                 position_known = False; continue
             mapping = self.selector.font_map(resources,state.font)
-            cmap = mapping[1] if mapping else [chr(i) for i in range(256)]
-            selection = self.selector.emphasize(values,state,resources) if position_known and state.fill_alpha == 1 else None
-            groups = []
-            if selection:
-                mode = 0
-                for operands, operator in selection:
-                    if operator == b'Tr': mode = int(operands[0])
-                    elif operator == b'TJ': groups.append((mode == 2,operands[0]))
-            else: groups = [(False,values)]
+            cmap=mapping[1] if mapping else {}
+            actual=next((node['actual'] for node in marked if node['actual'] is not None),None)
+            eligible=position_known and state.render_mode==0 and 6.8<=state.size<=24 and state.fill_alpha==state.stroke_alpha==1 and state.fill_cs!='/Pattern' and not STYLED_FONT.search(str(font.get('/BaseFont',''))) and abs(float(state.matrix[1]))<1e-5 and abs(float(state.matrix[2]))<1e-5 and abs(ctm[1])<1e-5 and abs(ctm[2])<1e-5
             unit = 2 if cid else 1
-            for selected, items in groups:
-                for item in items:
-                    if not isinstance(item, (T,bytes)):
-                        state.matrix = translated(state.matrix,-float(item)*state.font_size*tz/1000,0)
-                        continue
-                    raw = raw_string(item)
-                    for offset in range(0,len(raw),unit):
-                        byte = int.from_bytes(raw[offset:offset+unit],'big')
-                        if selected:
-                            glyph = self.glyphs.glyph(font,byte,cmap.get(byte,'') if isinstance(cmap,dict) else cmap[byte])
-                            if glyph:
-                                key,reference,fm = glyph
-                                used[key] = reference
-                                transform = matrix_multiply(ctm,matrix_multiply(translated(state.matrix,0,rise),
-                                    matrix_multiply((state.font_size*tz,0,0,state.font_size,0,0),fm)))
-                                oc = [tag for tag in marked if tag]
-                                draw = ('q ' + ' '.join(map(num,transform)) + ' cm ' + state.fill_cs + ' CS ' +
-                                    ' '.join(map(str,state.fill_values)) + ' SCN ' + str(key) + ' Do Q')
-                                commands.append(' '.join('/OC '+tag+' BDC' for tag in oc)+' '+draw+' EMC'*len(oc))
-                                page_count += 1
-                        width = self.width(font,byte)
-                        advance = (width*state.font_size/1000 + tc + (tw if byte == 32 else 0))*tz
-                        state.matrix = translated(state.matrix,advance,0)
+            for item in values:
+                if not isinstance(item,(T,bytes)):
+                    state.matrix=translated(state.matrix,-float(item)*state.font_size*tz/1000,0);continue
+                raw=raw_string(item)
+                for offset in range(0,len(raw),unit):
+                    code=int.from_bytes(raw[offset:offset+unit],'big')
+                    text=cmap.get(code,'') if isinstance(cmap,dict) else cmap[code]
+                    width=self.width(font,code)
+                    advance=(width*state.font_size/1000+tc+(tw if code==32 else 0))*tz
+                    matrix=matrix_multiply(ctm,translated(state.matrix,0,rise))
+                    records.append({'font':str(font.indirect_reference) if getattr(font,'indirect_reference',None) else id(font),'font_object':font,'code':code,'text':text,'x':min(matrix[4],matrix[4]+matrix[0]*advance),'y':matrix[5],'w':abs(matrix[0]*advance),'h':abs(state.font_size*matrix[3]),'matrix':matrix,'tz':tz,'size':state.font_size,'actual':actual,'eligible':bool(eligible),'oc':[node['oc'] for node in marked if node['oc']],'cs':state.fill_cs,'color':state.fill_values})
+                    state.matrix=translated(state.matrix,advance,0)
+        for index in sorted(select_glyphs(records,self.selector.locale)):
+            record=records[index]
+            glyph=self.glyphs.glyph(record['font_object'],record['code'],record['text'])
+            if glyph is None:continue
+            key,reference,fm=glyph;used[key]=reference
+            transform=matrix_multiply(record['matrix'],matrix_multiply((record['size']*record['tz'],0,0,record['size'],0,0),fm))
+            oc=record['oc']
+            draw='q '+' '.join(map(num,transform))+' cm '+record['cs']+' CS '+' '.join(map(str,record['color']))+' SCN '+str(key)+' Do Q'
+            commands.append(' '.join('/OC '+tag+' BDC' for tag in oc)+' '+draw+' EMC'*len(oc));page_count+=1
         if commands:
             if self.layer is not None:
                 properties = resources.get('/Properties')

@@ -1,0 +1,166 @@
+[
+  {
+    "name": "fragmented English",
+    "locale": "en",
+    "text": [
+      "R",
+      "e",
+      "a",
+      "d",
+      "i",
+      "n",
+      "g"
+    ],
+    "selected": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "name": "decomposed French accent stays atomic",
+    "locale": "fr",
+    "text": [
+      "e",
+      "́",
+      "c",
+      "o",
+      "l",
+      "e"
+    ],
+    "selected": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "name": "Polish prefix",
+    "locale": "pl",
+    "text": [
+      "m",
+      "o",
+      "ż",
+      "l",
+      "i",
+      "w",
+      "o",
+      "ś",
+      "c",
+      "i"
+    ],
+    "selected": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "name": "Ukrainian prefix",
+    "locale": "uk",
+    "text": [
+      "Ч",
+      "и",
+      "т",
+      "а",
+      "н",
+      "н",
+      "я"
+    ],
+    "selected": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "name": "Greek prefix",
+    "locale": "el",
+    "text": [
+      "α",
+      "ν",
+      "ά",
+      "γ",
+      "ν",
+      "ω",
+      "σ",
+      "η"
+    ],
+    "selected": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "name": "ligature ActualText stays atomic",
+    "locale": "en",
+    "text": [
+      "o",
+      "\u0000",
+      "c",
+      "e"
+    ],
+    "actual": [
+      null,
+      {
+        "id": 0,
+        "text": "ffi"
+      },
+      null,
+      null
+    ],
+    "selected": [
+      0,
+      1
+    ]
+  },
+  {
+    "name": "formula remains original",
+    "locale": "en",
+    "text": [
+      "f",
+      "o",
+      "r",
+      "m",
+      "u",
+      "l",
+      "a",
+      " ",
+      "=",
+      " ",
+      "x"
+    ],
+    "selected": []
+  },
+  {
+    "name": "short isolated function remains original",
+    "locale": "en",
+    "text": [
+      "m",
+      "a",
+      "x"
+    ],
+    "selected": []
+  },
+  {
+    "name": "unknown glyph does not create a false prefix",
+    "locale": "en",
+    "text": [
+      "r",
+      "e",
+      "\u0000",
+      "d",
+      "i",
+      "n",
+      "g"
+    ],
+    "selected": []
+  }
+]

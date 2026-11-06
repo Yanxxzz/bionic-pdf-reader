@@ -1,4 +1,4 @@
-Bionic PDF Reader 0.1
+Bionic PDF Reader
 
 This local reading extension is an independent implementation. Its word-length
 and common-word emphasis rules are inspired by:
@@ -31,9 +31,9 @@ https://github.com/mozilla/pdf.js
 Copyright Mozilla Foundation and individual contributors.
 Apache License 2.0: see vendor/LICENSE_PDFJS.
 
-Modifications to vendor/pdf.mjs are clearly labeled "Bionic PDF Reader
-modification". Three focused changes add a per-render glyph-mask callback and
-display-only stroke to selected original glyphs. Original glyph positions,
+Modifications to vendor/pdf.mjs and vendor/pdf.worker.min.mjs are labeled
+"Bionic PDF Reader modification". They expose positioned glyphs and ActualText
+marked-content metadata, and add display-only strokes to selected original glyphs. Original glyph positions,
 advances, font data, Unicode text, and the user's PDF bytes are unchanged.
 
 The TextLayer geometry styles in reader.css are adapted from PDF.js under

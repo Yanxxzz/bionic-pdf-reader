@@ -38,13 +38,48 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium firefox
       - run: python scripts/make_examples.py
+      - run: npm run fixtures:shaped
+      - run: python scripts/prepare_shaped_outputs.py
+      - run: python -m pytest tests/test_shaped_pdf.py -q
       - run: npm test
       - run: npm run test:browser
       - run: npm run test:extension
+      - run: npm run test:shaped
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shaped-pdfs
+          path: .tmp/examples/shaped-*.pdf
+          include-hidden-files: true
+          retention-days: 7
       - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: browser-results
+          path: test-results/
+          retention-days: 7
+  apple-readers:
+    needs: browsers
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[dev]" selenium
+      - uses: actions/download-artifact@v8
+        with:
+          name: shaped-pdfs
+          path: .tmp/examples
+      - run: swift scripts/check_pdfkit.swift .tmp/examples/shaped-tagged.pdf .tmp/examples/shaped-switchable.pdf .tmp/examples/shaped-static.pdf
+      - run: open -a Preview .tmp/examples/shaped-static.pdf
+      - run: pgrep -x Preview
+      - run: sudo safaridriver --enable
+      - run: python tests/safari.py
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: apple-reader-results
           path: test-results/
           retention-days: 7
   windows-package:

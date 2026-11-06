@@ -1,5 +1,6 @@
 import * as pdfjs from './vendor/pdf.mjs';
 import { glyphMask, prefixLength } from './bionic.mjs';
+import {GlyphCapture,planGlyphs,repairTextContent} from './layout.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./vendor/pdf.worker.min.mjs', import.meta.url);
@@ -11,6 +12,21 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem('bionic-pdf-settin
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
 let renderTask = null, textTask = null, renderQueue = Promise.resolve();
 let revision = 0, loadRevision = 0, messageTimer = null;
+const supportedLocales=new Set(['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
+if(!supportedLocales.has(settings.locale))settings.locale='auto';
+const captures=new Map();
+
+async function capturePage(page){
+  if(captures.has(page)){const value=captures.get(page);captures.delete(page);captures.set(page,value);return value;}
+  const promise=(async()=>{
+    const capture=new GlyphCapture(),viewport=page.getViewport({scale:1}),canvas=document.createElement('canvas');
+    canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.bionicReader=capture.renderer();
+    try{await page.render({canvasContext:canvas.getContext('2d'),viewport,annotationMode:pdfjs.AnnotationMode.ENABLE}).promise;return {capture,viewport};}
+    finally{canvas.width=canvas.height=0;}
+  })();
+  captures.set(page,promise);while(captures.size>4)captures.delete(captures.keys().next().value);
+  try{return await promise;}catch(error){captures.delete(page);throw error;}
+}
 
 function notify(text) {
   clearTimeout(messageTimer);
@@ -74,11 +90,14 @@ async function renderPage(myRevision, resetScroll) {
   frame.style.setProperty('--scale-factor', String(scale));
   layer.replaceChildren();
   const snapshot = { ...settings };
+  const captured=await capturePage(page);
+  if(myRevision!==revision)return;
+  const plan=planGlyphs(captured.capture,snapshot);let run=0;
   const bionic = {
     enabled: snapshot.enabled,
     strength: snapshot.strength,
     stroked: 0,
-    mask: (glyphs, current) => glyphMask(glyphs, current, snapshot),
+    mask: (glyphs, current) => {const mask=plan.masks[run++];return mask?.length===glyphs.length?mask:glyphMask(glyphs,current,snapshot);},
   };
   canvas.bionicReader = bionic;
   renderTask = page.render({
@@ -90,7 +109,7 @@ async function renderPage(myRevision, resetScroll) {
   await renderTask.promise;
   renderTask = null;
   if (myRevision !== revision) return;
-  const content = await page.getTextContent();
+  const content = repairTextContent(await page.getTextContent(),plan.repairs,captured.viewport);
   if (myRevision !== revision) return;
   textTask = new pdfjs.TextLayer({ textContentSource: content, container: layer, viewport });
   await textTask.render();
@@ -106,7 +125,7 @@ async function renderPage(myRevision, resetScroll) {
   $('page-label').textContent = pageLabels?.[number - 1] ? `书内页码 ${pageLabels[number - 1]}` : `PDF 第 ${number} 页`;
   const hasText = content.items.some(item => /\p{L}/u.test(item.str || ''));
   $('reading-status').textContent = !hasText ? '图片页或无可识别文字，保留原页'
-    : snapshot.enabled ? '仿生模式 · 词首加粗' : '原始模式';
+    : snapshot.enabled ? bionic.stroked?'仿生模式 · 词首加粗':'此页没有可加粗文字，保留原页' : '原始模式';
   scroller.scrollTop = scrollTop;
   try { localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, String(number)); } catch {}
 }
@@ -142,6 +161,7 @@ async function openFile(file) {
     return;
   }
   const currentLoad = ++loadRevision;
+  captures.clear();
   ++revision;
   renderTask?.cancel();
   textTask?.cancel();
@@ -232,6 +252,7 @@ async function buildOutline(activePDF, load) {
 }
 
 for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', () => $('file-input').click());
+$('help-button').addEventListener('click', () => $('help-dialog').showModal());
 $('file-input').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
 $('original-mode').addEventListener('click', () => setMode(false));
 $('bionic-mode').addEventListener('click', () => setMode(true));
@@ -253,6 +274,7 @@ $('outline-toggle').addEventListener('click', () => {
   $('outline-toggle').setAttribute('aria-expanded', String(!$('outline').hidden));
 });
 document.addEventListener('keydown', e => {
+  if(document.querySelector('dialog[open]'))return;
   if (e.altKey && e.code === 'KeyB') { e.preventDefault(); setMode(!settings.enabled); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); $('file-input').click(); return; }
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || getSelection()?.toString()) return;

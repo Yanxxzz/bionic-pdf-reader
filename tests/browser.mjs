@@ -26,6 +26,11 @@ try{
     page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:')&&!/^(blob:|data:)/.test(r.url()))external.push(r.url());});
     try{
       await page.goto(`http://127.0.0.1:${server.address().port}/reader.html`);
+      assert.deepEqual(await page.locator('#language option').evaluateAll(options=>options.map(o=>o.value)),['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
+      await page.locator('#help-button').click();
+      assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),false);
       await page.locator('#file-input').setInputFiles(pdf);
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());

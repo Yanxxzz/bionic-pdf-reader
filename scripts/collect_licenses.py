@@ -8,7 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     target=ROOT/'dist/third-party-licenses';target.mkdir(parents=True,exist_ok=True)
-    for name in ('pypdf','fonttools','regex','jieba','tinysegmenter','pyinstaller','setuptools','packaging'):
+    for name in ('pypdf','fonttools','regex','pyinstaller','setuptools','packaging'):
         dist=metadata.distribution(name)
         for file in dist.files or []:
             if any(part.lower().startswith(('license','copying','notice')) for part in file.parts):

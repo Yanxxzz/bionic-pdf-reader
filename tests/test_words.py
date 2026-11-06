@@ -18,3 +18,8 @@ def test_graphemes_and_reference():
     assert prefix_length('Reading','reference')==4
     assert prefix_length('the','reference')==1
     assert not any(text_flags('PDF X A'))
+
+def test_support_scope_matches_language_controls():
+    from bionic_pdf.words import LANGUAGES
+    assert list(LANGUAGES)==[s['code'] for s in SAMPLES]
+    assert not any(text_flags('中文 日本語 한국어 العربية עברית हिन्दी'))

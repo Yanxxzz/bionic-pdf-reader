@@ -18,7 +18,9 @@ The tool offers a visual reading preference, without claiming proven gains in re
 
 ## Languages
 
-PDF fixtures cover 16 languages, including accented Latin text, Cyrillic, Greek and experimental Chinese/Japanese/Korean segmentation. Arabic, Hebrew and Hindi have grapheme/word-boundary unit coverage; complex shaping and real-world typography remain experimental. Browser segmentation uses `Intl.Segmenter`; the Python converter uses Unicode boundaries, jieba and TinySegmenter. Their boundaries can differ.
+The supported release scope is **13 languages**: English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. All language choices are available in the browser, Windows tool and CLI. Combining accents and original ligature glyphs stay intact; positioned glyphs are analyzed across separate PDF drawing operations. Other scripts remain unchanged.
+
+The in-app guide and the offline `使用指南.html` in each download explain installation, reader selection, language and emphasis settings. See [language details](docs/languages.md) and [verification evidence](docs/verification.md).
 
 The PDF converter supports embedded single-byte Type1/CFF and TrueType fonts, plus Identity-H CID TrueType fonts with valid Unicode mappings. Scans, vertical writing, unsupported font programs, and text inside nested Form XObjects remain unchanged. No OCR is bundled.
 
@@ -31,10 +33,12 @@ python -m pip install -e ".[dev]"
 npm ci
 npx playwright install chromium firefox
 python scripts/make_examples.py
+npm run fixtures:shaped
 python -m pytest
 npm test
 npm run test:browser
 npm run test:extension
+npm run test:shaped
 ```
 
 ```sh

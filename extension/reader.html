@@ -9,12 +9,13 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="reader.html" aria-label="仿生 PDF 阅读首页"><span class="brand-mark"><b>B</b>r</span><span>仿生 PDF 阅读<small>LOCAL READER · 0.3</small></span></a>
+    <a class="brand" href="reader.html" aria-label="仿生 PDF 阅读首页"><span class="brand-mark"><b>B</b>r</span><span>仿生 PDF 阅读<small>LOCAL READER · 0.4</small></span></a>
     <div class="mode-control" role="group" aria-label="阅读模式">
       <button id="original-mode" class="selected" aria-pressed="true">原始</button>
       <button id="bionic-mode" aria-pressed="false">仿生<span class="shortcut">Alt B</span></button>
     </div>
     <button id="open-file" class="primary">打开 PDF <span>↗</span></button>
+    <button id="help-button" aria-haspopup="dialog">使用指南</button>
     <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
   </header>
 
@@ -22,7 +23,7 @@
     <aside class="sidebar">
       <div class="section-label">阅读设置</div>
       <label class="field-label" for="language">文档语言</label>
-      <select id="language"><option value="auto">自动分词</option><option value="en">English · 英语</option><option value="fr">Français · 法语</option><option value="de">Deutsch · 德语</option><option value="es">Español · 西班牙语</option><option value="pt">Português · 葡萄牙语</option><option value="it">Italiano · 意大利语</option><option value="ru">Русский · 俄语</option><option value="el">Ελληνικά · 希腊语</option><option value="zh">中文 · 试验</option><option value="ja">日本語 · 试验</option><option value="ko">한국어 · 试验</option><option value="ar">العربية · 试验</option><option value="he">עברית · 试验</option><option value="hi">हिन्दी · 试验</option></select>
+      <select id="language"><option value="auto">自动分词</option><option value="en">English · 英语</option><option value="fr">Français · 法语</option><option value="de">Deutsch · 德语</option><option value="es">Español · 西班牙语</option><option value="pt">Português · 葡萄牙语</option><option value="it">Italiano · 意大利语</option><option value="nl">Nederlands · 荷兰语</option><option value="pl">Polski · 波兰语</option><option value="tr">Türkçe · 土耳其语</option><option value="vi">Tiếng Việt · 越南语</option><option value="ru">Русский · 俄语</option><option value="uk">Українська · 乌克兰语</option><option value="el">Ελληνικά · 希腊语</option></select>
       <label class="field-label" for="rule">词首加粗规则</label>
       <select id="rule"><option value="reference">参考项目规则</option><option value="half">词语前半部分</option></select>
       <p class="field-note" id="rule-note">常用词强调首字母，其他单词按长度强调 1、2 或 4 个字母。</p>
@@ -66,5 +67,16 @@
   </div>
   <div id="drop-overlay" class="drop-overlay" hidden>松开以打开 PDF</div>
   <dialog id="password-dialog"><form method="dialog"><h2>此 PDF 需要密码</h2><label for="pdf-password">打开密码</label><input id="pdf-password" type="password" autocomplete="off" required><div class="dialog-actions"><button value="cancel" formnovalidate>取消</button><button value="open" class="primary">打开</button></div></form></dialog>
+  <dialog id="help-dialog" aria-labelledby="help-title">
+    <h2 id="help-title">开始使用仿生 PDF 阅读</h2>
+    <p>先选择适合你的阅读方式。PDF 文件在本机处理。</p>
+    <details><summary>第一次安装：下载哪个包？</summary><p>Windows：下载 windows-x64 压缩包，完整解压后运行 BionicPDF.exe，无需安装 Python。Chrome / Edge：下载 chrome-edge 压缩包并解压，在 chrome://extensions 或 edge://extensions 开启开发者模式，选择「加载已解压的扩展程序」，选择含 manifest.json 的文件夹，再点击扩展图标。</p><p>Firefox 推荐通过 Windows 工具打开本地阅读页；另提供临时开发扩展，浏览器重启后会移除。网页包需要本地网页服务，请勿直接双击 reader.html。</p></details>
+    <details open><summary>在浏览器里直接切换</summary><ol><li>点击「打开 PDF」或拖入文件。</li><li>在左侧选择文档语言。英语可使用「参考项目规则」；其他语言推荐「词语前半部分」。</li><li>点击顶部「仿生」，或按 Alt+B 开关；强度从 100% 开始，按舒适程度调整。</li></ol><p>目录、页码和缩放在原页生效；文字可以选择和复制。设置和页码保存在当前浏览器中。</p></details>
+    <details><summary>在 WPS / Acrobat / Foxit / PDF-XChange 原页开关</summary><ol><li>在 Windows 制作工具中选择原始 PDF，选择「可切换版」。</li><li>保存成不同文件名，再用你的 PDF 阅读器打开副本。</li><li>在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。图层默认关闭。</li></ol><p>WPS 使用左侧「图层」图标和眼睛开关；PDF-XChange 可按 Ctrl+L 打开图层，点击灯泡。找不到图层面板时可改用普通仿生版。</p></details>
+    <details><summary>Preview / SumatraPDF / 手机等阅读器</summary><p>在 Windows 工具选择「普通仿生版」，生成后直接打开。该副本的加粗始终显示；切回原始效果请打开原文件。</p></details>
+    <details><summary>支持哪些语言？如何配置？</summary><p>英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。</p><p>建议明确选择文档语言。「自动分词」不是语言识别，纯英文字母词可能沿用英语规则。混合语言文档可选择「词语前半部分」。重音和连字按完整字素或原始字形处理。</p></details>
+    <details><summary>没有加粗、乱码或无法打开时</summary><p>先切换「原始」检查源文件。扫描图片需先在其他工具中做 OCR；未嵌入字体、特殊编码、竖排和部分嵌套内容可能保持原样。若原始模式也乱码，请先检查源 PDF。Windows 输出保留原始文字，不加入第二份正文。</p><p>本阅读页暂不提供全文搜索、批注编辑、打印或导出。需要阅读副本时使用 Windows 制作工具。仿生模式是一种排版偏好，是否适合你请自行比较。</p></details>
+    <form method="dialog" class="dialog-actions"><button value="close" class="primary">知道了，开始阅读</button></form>
+  </dialog>
 </body>
 </html>

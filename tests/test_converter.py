@@ -14,8 +14,6 @@ ROOT=Path(__file__).resolve().parents[1]
 def converted(tmp_path_factory):
     folder=tmp_path_factory.mktemp('pdf')
     samples=json.loads((ROOT/'examples/languages.json').read_text(encoding='utf-8'))
-    # Complex-script word-boundary tests are separate from PDF typography tests.
-    samples=[s for s in samples if s['code'] not in ('ar','he','hi')]
     generate=runpy.run_path(str(ROOT/'scripts/make_examples.py'))['create_sample']
     source=generate(folder/'source.pdf',samples)
     original=hashlib.sha256(source.read_bytes()).hexdigest()

@@ -11787,7 +11787,7 @@ class CanvasGraphics {
       return undefined;
     }
     // Bionic PDF Reader modification: classify original Unicode glyphs.
-    const bionicMask = this.bionicReader?.enabled ? this.bionicReader.mask(glyphs, current) : null;
+    const bionicMask = this.bionicReader?.enabled ? this.bionicReader.mask(glyphs, current, ctx.getTransform(), this.contentVisible) : null;
     let x = 0,
       i;
     for (i = 0; i < glyphsLength; ++i) {
@@ -12450,12 +12450,15 @@ class CanvasGraphics {
   markPoint(opIdx, tag) {}
   markPointProps(opIdx, tag, properties) {}
   beginMarkedContent(opIdx, tag) {
+    // Bionic PDF Reader modification: retain shaped ActualText scope boundaries.
+    this.bionicReader?.beginMarkedContent?.(null);
     this.dependencyTracker?.beginMarkedContent(opIdx);
     this.markedContentStack.push({
       visible: true
     });
   }
-  beginMarkedContentProps(opIdx, tag, properties) {
+  beginMarkedContentProps(opIdx, tag, properties, actualText = null) {
+    this.bionicReader?.beginMarkedContent?.(actualText);
     this.dependencyTracker?.beginMarkedContent(opIdx);
     if (tag === "OC") {
       this.markedContentStack.push({
@@ -12469,6 +12472,7 @@ class CanvasGraphics {
     this.contentVisible = this.isContentVisible();
   }
   endMarkedContent(opIdx) {
+    this.bionicReader?.endMarkedContent?.();
     this.dependencyTracker?.endMarkedContent(opIdx);
     this.markedContentStack.pop();
     this.contentVisible = this.isContentVisible();

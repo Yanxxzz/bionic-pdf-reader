@@ -1,6 +1,7 @@
 """Create reproducible extension/web ZIPs and SHA256 checksums offline."""
 import hashlib
 import json
+import re
 from pathlib import Path
 import zipfile
 import tomllib
@@ -13,6 +14,9 @@ def main():
     source=ROOT/'extension'
     manifest=json.loads((source/'manifest.json').read_text(encoding='utf-8'))
     assert manifest['version']==version
+    content=re.search(r'<dialog id="help-dialog"[^>]*>(.*?)</dialog>',(source/'reader.html').read_text(encoding='utf-8'),re.S).group(1)
+    content=re.sub(r'<form\b.*?</form>','',content,flags=re.S)
+    guide=('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>仿生 PDF 阅读 · 使用指南</title><style>body{font:16px/1.85 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 24px;color:#22363a}details{border-top:1px solid #dce3da;padding:14px 0}summary{font-weight:600;cursor:pointer}a{color:#17655d}</style>'+content+'<p>版本 '+version+' · <a href="https://github.com/Yanxxzz/bionic-pdf-reader">项目主页与更新</a></p></html>').encode('utf-8')
     for target in ('chrome-edge','firefox-temporary','web-reader'):
         name=f'bionic-pdf-{target}-{version}.zip'
         with zipfile.ZipFile(out/name,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as writer:
@@ -29,11 +33,13 @@ def main():
                 info=zipfile.ZipInfo(rel,(2026,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
                 writer.writestr(info,data)
             writer.write(ROOT/'LICENSE','LICENSE')
+            writer.writestr('使用指南.html',guide)
     if (out/'BionicPDF.exe').is_file():
         with zipfile.ZipFile(out/f'bionic-pdf-windows-x64-{version}.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as writer:
             writer.write(out/'BionicPDF.exe','BionicPDF.exe')
             writer.write(ROOT/'LICENSE','LICENSE')
             writer.write(ROOT/'docs/usage.md','使用说明.md')
+            writer.writestr('使用指南.html',guide)
             for path in sorted((out/'third-party-licenses').rglob('*')):
                 if path.is_file():writer.write(path,path.relative_to(out).as_posix())
     files=sorted(p for p in out.iterdir() if p.is_file() and p.suffix in ('.zip','.exe','.whl','.gz'))
