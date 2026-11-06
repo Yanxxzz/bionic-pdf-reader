@@ -1,5 +1,6 @@
 """Run the actual macOS Safari browser through Apple's supplied driver."""
 from pathlib import Path
+import base64
 import functools
 import json
 import threading
@@ -25,11 +26,35 @@ try:
     driver.get(f'http://127.0.0.1:{server.server_port}/reader.html')
     driver.execute_script("window.__readerErrors=[];addEventListener('error',e=>__readerErrors.push(e.message));addEventListener('unhandledrejection',e=>__readerErrors.push(String(e.reason)));const originalError=console.error.bind(console);console.error=(...args)=>{__readerErrors.push(args.map(String).join(' '));originalError(...args);};")
     wait.until(lambda d:d.execute_script("return document.documentElement.dataset.readerReady==='true'"))
+    # Isolate native-driver file access from the reader. SafariDriver builds
+    # can select a path without granting WebContent permission to read it.
+    probe_path=ROOT/'.tmp/examples/native-probe.pdf'
+    probe_path.write_bytes((ROOT/'.tmp/examples/shaped-tagged.pdf').read_bytes())
+    driver.execute_script("const i=document.createElement('input');i.type='file';i.id='native-file-probe';i.hidden=true;i.accept='application/pdf,.pdf';document.body.append(i);")
+    driver.find_element(By.ID,'native-file-probe').send_keys(str(probe_path))
+    native=driver.execute_async_script("""
+      const done=arguments[arguments.length-1],file=document.querySelector('#native-file-probe').files[0];
+      (async()=>{
+        const result={};
+        try{result.arrayBuffer={ok:true,bytes:(await file.arrayBuffer()).byteLength};}
+        catch(e){result.arrayBuffer={ok:false,error:e.name+': '+e.message};}
+        result.fileReader=await new Promise(resolve=>{const r=new FileReader();r.onload=()=>resolve({ok:true,bytes:r.result.byteLength});r.onerror=()=>resolve({ok:false,error:r.error.name+': '+r.error.message});r.readAsArrayBuffer(file);});
+        document.querySelector('#native-file-probe').remove();done(result);
+      })().catch(e=>done({error:String(e)}));
+    """)
+    transport='native-file-input' if native.get('arrayBuffer',{}).get('ok') else 'memory-file-input'
+    environment={'browserVersion':driver.capabilities.get('browserVersion'),'nativeFileProbe':native,'transport':transport}
+    (OUT/'safari-environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
+    print('Safari file access probe:',json.dumps(environment),flush=True)
     for variant in ('tagged','plain'):
         step=f'opening {variant}'
         driver.execute_script("for(const key of Object.keys(localStorage))if(key.startsWith('bionic-page-'))localStorage.removeItem(key);")
         previous=driver.execute_script("return document.querySelector('#page-frame').getAttribute('data-render-revision')")
-        driver.find_element(By.ID,'file-input').send_keys(str(ROOT/f'.tmp/examples/shaped-{variant}.pdf'))
+        source=ROOT/f'.tmp/examples/shaped-{variant}.pdf'
+        if transport=='native-file-input':driver.find_element(By.ID,'file-input').send_keys(str(source))
+        else:
+            data=base64.b64encode(source.read_bytes()).decode()
+            driver.execute_script("const bytes=Uint8Array.from(atob(arguments[0]),c=>c.charCodeAt(0)),dt=new DataTransfer();dt.items.add(new File([bytes],arguments[1],{type:'application/pdf'}));const input=document.querySelector('#file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));",data,source.name)
         wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').getAttribute('data-render-revision')")!=previous)
         for i,sample in enumerate(samples,1):
             step=f'{variant} / {sample["code"]} / original'
@@ -57,7 +82,7 @@ try:
             driver.find_element(By.ID,'original-mode').click()
             wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.mode==='original'"))
             assert driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")==original
-            report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True})
+            report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True,'transport':transport})
     print('Actual Safari: shaped text, selection and toggle checks passed')
 except Exception:
     debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")
