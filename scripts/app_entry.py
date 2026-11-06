@@ -5,7 +5,7 @@ import io
 if sys.stdout is None:sys.stdout=io.StringIO()
 if sys.stderr is None:sys.stderr=io.StringIO()
 
-if '--smoke-gui' in sys.argv:
+def smoke_gui():
     import tkinter as tk
     from bionic_pdf.gui import Maker
     root=tk.Tk();root.withdraw();app=Maker(root)
@@ -23,6 +23,15 @@ if '--smoke-gui' in sys.argv:
         with urlopen(url.replace('reader.html',asset),timeout=10) as response:
             assert response.status==200 and response.read()
             if asset.endswith('.mjs'):assert 'javascript' in response.headers['Content-Type']
+
+if '--smoke-gui' in sys.argv:
+    try:smoke_gui()
+    except Exception:
+        import os
+        import traceback
+        from pathlib import Path
+        (Path(os.environ.get('TMP','.tmp'))/'gui-smoke-error.txt').write_text(traceback.format_exc(),encoding='utf-8')
+        raise SystemExit(1)
 elif '--cli' in sys.argv:
     from bionic_pdf.cli import main
     raise SystemExit(main(sys.argv[2:]))

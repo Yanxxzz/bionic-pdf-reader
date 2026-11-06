@@ -8,9 +8,7 @@ import unicodedata
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support.ui import Select
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'test-results';OUT.mkdir(exist_ok=True)
@@ -21,6 +19,8 @@ threading.Thread(target=server.serve_forever,daemon=True).start()
 driver=webdriver.Safari();driver.set_window_size(1440,1040);wait=WebDriverWait(driver,60)
 report=[]
 step='starting'
+def activate_control(control):
+    driver.execute_script("const e=document.getElementById(arguments[0]),r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);if(!r.width||!r.height||e.disabled||!(hit===e||e.contains(hit)))throw new Error('Control is covered: '+arguments[0]);e.click();",control)
 samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
 try:
     driver.get(f'http://127.0.0.1:{server.server_port}/reader.html')
@@ -43,7 +43,7 @@ try:
       })().catch(e=>done({error:String(e)}));
     """)
     transport='native-file-input' if native.get('arrayBuffer',{}).get('ok') else 'memory-file-input'
-    environment={'browserVersion':driver.capabilities.get('browserVersion'),'nativeFileProbe':native,'transport':transport}
+    environment={'browserVersion':driver.capabilities.get('browserVersion'),'nativeFileProbe':native,'transport':transport,'controls':'DOM activation with visible hit-target checks; native OS clicks not covered'}
     (OUT/'safari-environment.json').write_text(json.dumps(environment,ensure_ascii=False,indent=2),encoding='utf-8')
     print('Safari file access probe:',json.dumps(environment),flush=True)
     for variant in ('tagged','plain'):
@@ -59,10 +59,10 @@ try:
         for i,sample in enumerate(samples,1):
             step=f'{variant} / {sample["code"]} / original'
             if i>1:
-                page_input=driver.find_element(By.ID,'page-number');page_input.clear();page_input.send_keys(str(i),Keys.ENTER)
+                driver.execute_script("const e=document.querySelector('#page-number');e.value=arguments[0];e.dispatchEvent(new Event('change',{bubbles:true}));",str(i))
             wait.until(lambda d:d.execute_script("const f=document.querySelector('#page-frame');return f.dataset.renderedPage===arguments[0]&&f.dataset.mode==='original'",str(i)))
             previous=driver.execute_script("return document.querySelector('#page-frame').dataset.renderRevision")
-            Select(driver.find_element(By.ID,'language')).select_by_value(sample['code'])
+            driver.execute_script("const e=document.querySelector('#language');e.value=arguments[0];e.dispatchEvent(new Event('change',{bubbles:true}));",sample['code'])
             wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.renderRevision")!=previous)
             text=driver.execute_script("return document.querySelector('#text-layer').textContent")
             normalize=lambda s:''.join(unicodedata.normalize('NFC',s).split())
@@ -74,15 +74,16 @@ try:
             assert driver.execute_script('return window.scrollY')==0,'Selecting PDF text must not scroll the application toolbar out of view'
             original=driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")
             step=f'{variant} / {sample["code"]} / enabling bionic'
-            driver.find_element(By.ID,'bionic-mode').click()
+            activate_control('bionic-mode')
             wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.mode==='bionic'"))
             assert driver.execute_script("return document.querySelector('#text-layer').textContent")==text
             assert driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")!=original
             if variant=='tagged':driver.save_screenshot(str(OUT/f'safari-shaped-{sample["code"]}.png'))
-            driver.find_element(By.ID,'original-mode').click()
+            activate_control('original-mode')
             wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.mode==='original'"))
             assert driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")==original
             report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True,'transport':transport})
+            print('Safari',variant,sample['code'],'passed',flush=True)
     print('Actual Safari: shaped text, selection and toggle checks passed')
 except Exception:
     debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")

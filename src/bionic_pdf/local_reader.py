@@ -14,6 +14,7 @@ def start_reader():
         if not (root/'reader.html').is_file():
             raise FileNotFoundError('Browser reader assets are available in the source checkout or Windows bundle.')
         class Handler(SimpleHTTPRequestHandler):
+            extensions_map={**SimpleHTTPRequestHandler.extensions_map,'.mjs':'text/javascript','.js':'text/javascript','.wasm':'application/wasm'}
             def log_message(self,*args):pass
         _server=ThreadingHTTPServer(('127.0.0.1',0),functools.partial(Handler,directory=str(root)))
         threading.Thread(target=_server.serve_forever,daemon=True).start()

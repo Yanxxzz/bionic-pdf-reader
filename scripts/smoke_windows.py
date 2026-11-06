@@ -18,5 +18,6 @@ for i in range(len(before)):
 before.close();after.close()
 print('Standalone Windows conversion passed for 13 languages and a blank page')
 gui=subprocess.run([str(ROOT/'dist/BionicPDF.exe'),'--smoke-gui'],timeout=30,env=dict(os.environ,TMP=str(folder),TEMP=str(folder)))
+if gui.returncode and (folder/'gui-smoke-error.txt').exists():print((folder/'gui-smoke-error.txt').read_text(encoding='utf-8'))
 assert gui.returncode==0,gui.returncode
 print('Standalone Windows GUI, 13 language choices and in-app guide passed')
