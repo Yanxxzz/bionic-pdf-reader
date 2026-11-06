@@ -43,7 +43,7 @@ def wait_for(predicate,after=0,timeout=60):
     raise AssertionError('Native Safari event not observed')
 samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
 normalize=lambda s:''.join(unicodedata.normalize('NFC',s).split())
-report={'transport':'normal Safari, native Command+O, macOS system file dialog','cases':[],'dialogs':[]}
+report={'transport':'normal Safari, native mouse click, macOS system file dialog','cases':[],'dialogs':[]}
 permission_log=(OUT/'macos-test-permissions.log').open('w',encoding='utf-8')
 permission_helper=subprocess.Popen([str(ROOT/'.tmp/native-test-permissions')],stdout=permission_log,stderr=permission_log)
 try:
@@ -55,12 +55,15 @@ try:
         source=folder/f'native-{variant}.pdf';source.write_bytes((ROOT/f'.tmp/examples/shaped-{variant}.pdf').read_bytes())
         after=len(events)
         chooser=subprocess.Popen(['osascript',str(ROOT/'tests/safari_choose_file.applescript'),str(source),str(OUT/f'safari-system-dialog-{variant}.png')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        action('open')
+        bounds=report['browser']['openBounds']
+        click=subprocess.run([str(ROOT/'.tmp/native-test-permissions'),'click',str(bounds['x']+bounds['width']/2),str(bounds['y']+bounds['height']/2),str(report['browser']['viewport']['height'])],capture_output=True,text=True,timeout=20)
+        print(click.stdout,click.stderr,flush=True)
+        assert click.returncode==0,(click.returncode,click.stderr)
         stdout,stderr=chooser.communicate(timeout=90)
         report['dialogs'].append({'returncode':chooser.returncode,'stdout':stdout,'stderr':stderr})
         print('system dialog',stdout,stderr,flush=True)
         assert chooser.returncode==0,report['dialogs'][-1]
-        assert wait_for(lambda e:e['type']=='key' and e['code']=='KeyO' and e['meta'],after)['trusted'] is True
+        assert wait_for(lambda e:e['type']=='open',after)['trusted'] is True
         selected=wait_for(lambda e:e['type']=='file' and e['name']==source.name,after)
         assert selected['trusted'] is True and selected['sha256']==hashlib.sha256(source.read_bytes()).hexdigest(),selected
         report['dialogs'][-1]['selected']=selected
