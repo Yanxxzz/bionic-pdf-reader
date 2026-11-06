@@ -6,7 +6,7 @@ import Foundation
 
 func attribute(_ element:AXUIElement,_ key:String)->Any?{
     var value:CFTypeRef?
-    guard AXUIElementCopyAttributeValue(element,key as CFString,&value)==.success else{return nil}
+    guard AXUIElementCopyAttributeValue(element,key as CFString,&value) == .success else{return nil}
     return value
 }
 func descendants(_ element:AXUIElement,_ depth:Int=0)->[AXUIElement]{
