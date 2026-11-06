@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
 const profile=fs.mkdtempSync(path.join(process.env.TEST_TMP||os.tmpdir(),'bionic-extension-'));
-const context=await chromium.launchPersistentContext(profile,{headless:true,channel:process.env.EXTENSION_CHANNEL||undefined,ignoreDefaultArgs:['--disable-extensions'],args:['--enable-unsafe-extension-debugging','--no-first-run']});
+const context=await chromium.launchPersistentContext(profile,{headless:true,channel:process.env.EXTENSION_CHANNEL||'chromium',ignoreDefaultArgs:['--disable-extensions'],args:['--enable-unsafe-extension-debugging','--no-first-run']});
 try{
   const cdp=await context.browser().newBrowserCDPSession();
   const {id}=await cdp.send('Extensions.loadUnpacked',{path:path.join(root,'extension')});
