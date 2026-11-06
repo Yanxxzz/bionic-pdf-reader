@@ -3,7 +3,7 @@ from collections import defaultdict
 import regex
 from .words import text_flags
 
-def select_glyphs(records,locale='auto'):
+def select_glyphs(records):
     atoms=[];scopes={}
     for i,record in enumerate(records):
         scope=record.get('actual')
@@ -33,11 +33,9 @@ def select_glyphs(records,locale='auto'):
             for atom in sorted(line,key=lambda a:a['x']):
                 if right is not None and atom['x']-right>atom['h']*.18 and text and not text[-1].isspace():text+=' '
                 start=len(text);text+=atom['text'];spans.append((start,len(text),atom));right=max(right or atom['right'],atom['right'])
-            # Geometry is in visual left-to-right order. RTL prefixes belong
-            # at the right edge of each word, while ligatures remain atomic.
             if '\x00' in text or regex.search(r'[=+<>∑∫√±×÷≤≥∞]|https?://|www\.|@|_',text):continue
             if regex.fullmatch(r'[A-Za-z]{1,4}',text):continue
-            flags=text_flags(text,locale=locale,visual=True)
+            flags=text_flags(text)
             for start,end,atom in spans:
                 if atom['eligible'] and any(flags[start:end]):selected.update(i for i,_ in atom['records'])
     return selected

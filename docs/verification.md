@@ -5,7 +5,7 @@
 日期：2026-11-07，北京时间。架构精简完成后停止继续验收，尚未满足新版发布条件。
 
 - 删除停用的 PDF 文字改写引擎和浏览器备用字形选择算法；转换进度改为回调，GUI 不再全局重定向标准输出。
-- 32 项 Python、18 项 JavaScript 测试通过。Chrome / Edge / Firefox 的基础与带标签 / 不带标签样例、Chrome 扩展均通过；[对应完整 CI](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42251685172) 的 7 个任务全部通过。
+- 32 项 Python、18 项 JavaScript 测试通过。再次精简后，本地复验了 Chrome / Edge / Firefox 的基础与带标签 / 不带标签样例、Chrome 扩展及 Python 源码包构建。此前提交 621bf32 的[完整 CI](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42251685172) 的 7 个任务全部通过，该运行不代表后续提交的远程验收。
 - Windows 独立转换、GUI、内置使用指南和 6 个候选下载包校验通过；候选包未发布。
 - Foxit PDF Reader 2026.2.1.39815：原生界面检查了 13 种语言页面、默认关闭、开关与翻页状态、页码及缩放保留。原生全选复制覆盖 13 种语言，开关前后的全文一致。未把代表页面的开关检查说成每页都做了完整开关循环。
 - Acrobat Reader 26.3.22075.0：完成首次启动协议，图层和多语言实机验收仍未完成。窗口恢复被电脑控制工具的人工输入保护反复拦截，按用户要求停止继续操作。

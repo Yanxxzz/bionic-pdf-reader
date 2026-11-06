@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 import io
-import math
+import re
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -19,10 +19,12 @@ from fontTools.pens.basePen import BasePen
 from fontTools import agl
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject as N,
-    NumberObject as I, FloatObject as F, TextStringObject as T, BooleanObject as B,
+    NumberObject as I, FloatObject as F, TextStringObject as T,
     DecodedStreamObject, ContentStream)
-from .pdf_text import FontDecoder, State, raw_string, STYLED_FONT
+from .pdf_text import FontDecoder, State, raw_string
 from .layout import select_glyphs
+
+STYLED_FONT = re.compile(r"bold|italic|oblique|black|heavy|demi|symbol|dingbat", re.I)
 
 
 def num(value):
@@ -130,9 +132,8 @@ class GlyphLibrary:
 
 
 class OverlayBuilder:
-    def __init__(self, writer, layer, weight=0.026, locale='auto'):
+    def __init__(self, writer, layer, weight=0.026):
         self.writer, self.layer = writer, layer
-        self.locale = locale
         self.decoder = FontDecoder()
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
@@ -160,7 +161,7 @@ class OverlayBuilder:
     def build_page(self, page):
         page_content = page.get_contents()
         if page_content is None:
-            return 0
+            return
         resources = page.get('/Resources', D())
         original = page_content.get_data()
         content = ContentStream(page_content, self.writer)
@@ -225,10 +226,10 @@ class OverlayBuilder:
             if not (cid or font.get('/Subtype') in ('/Type1','/TrueType')):
                 self.glyphs.skipped.add(str(font.get('/BaseFont','unknown')))
                 position_known = False; continue
-            mapping = self.decoder.font_map(resources,state.font)
-            cmap=mapping[1] if mapping else {}
+            styled = bool(STYLED_FONT.search(str(font.get('/BaseFont',''))))
+            cmap = (self.decoder.font_map(font) if not styled else None) or {}
             actual=next((node['actual'] for node in marked if node['actual'] is not None),None)
-            eligible=position_known and state.render_mode==0 and 6.8<=state.size<=24 and state.fill_alpha==state.stroke_alpha==1 and state.fill_cs!='/Pattern' and not STYLED_FONT.search(str(font.get('/BaseFont',''))) and abs(float(state.matrix[1]))<1e-5 and abs(float(state.matrix[2]))<1e-5 and abs(ctm[1])<1e-5 and abs(ctm[2])<1e-5
+            eligible=position_known and state.render_mode==0 and 6.8<=state.size<=24 and state.fill_alpha==state.stroke_alpha==1 and state.fill_cs!='/Pattern' and not styled and abs(float(state.matrix[1]))<1e-5 and abs(float(state.matrix[2]))<1e-5 and abs(ctm[1])<1e-5 and abs(ctm[2])<1e-5
             unit = 2 if cid else 1
             for item in values:
                 if not isinstance(item,(T,bytes)):
@@ -242,7 +243,7 @@ class OverlayBuilder:
                     matrix=matrix_multiply(ctm,translated(state.matrix,0,rise))
                     records.append({'font':str(font.indirect_reference) if getattr(font,'indirect_reference',None) else id(font),'font_object':font,'code':code,'text':text,'x':min(matrix[4],matrix[4]+matrix[0]*advance),'y':matrix[5],'w':abs(matrix[0]*advance),'h':abs(state.font_size*matrix[3]),'matrix':matrix,'tz':tz,'size':state.font_size,'actual':actual,'eligible':bool(eligible),'oc':[node['oc'] for node in marked if node['oc']],'cs':state.fill_cs,'color':state.fill_values})
                     state.matrix=translated(state.matrix,advance,0)
-        for index in sorted(select_glyphs(records,self.locale)):
+        for index in sorted(select_glyphs(records)):
             record=records[index]
             glyph=self.glyphs.glyph(record['font_object'],record['code'],record['text'])
             if glyph is None:continue
@@ -264,7 +265,6 @@ class OverlayBuilder:
             stream.set_data(b'q\n' + original + b'\nQ\n' + start + '\n'.join(commands).encode('ascii') + end)
             page.replace_contents(stream.flate_encode())
         self.count += page_count
-        return page_count
 
 
 
@@ -293,7 +293,7 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         writer._root_object[N('/OCProperties')] = D({N('/OCGs'):A([layer]),
             N('/D'):D({N('/Name'):T('Reading mode'),N('/BaseState'):N('/ON'),N('/OFF'):A([layer]),N('/Order'):A([layer])})})
     if layer is not None: writer._root_object[N('/PageMode')] = N('/UseOC')
-    builder = OverlayBuilder(writer,layer,weight,locale)
+    builder = OverlayBuilder(writer,layer,weight)
     for i,page in enumerate(writer.pages):
         builder.build_page(page)
         if progress is not None:

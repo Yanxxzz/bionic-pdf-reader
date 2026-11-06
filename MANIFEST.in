@@ -1,4 +1,4 @@
-include README.md README.en.md CHANGELOG.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md CONTEXT.md
+include README.md README.en.md CHANGELOG.md CONTRIBUTING.md THIRD_PARTY_NOTICES.md
 include package.json package-lock.json
 recursive-include docs *.md *.png
 recursive-include examples *.json

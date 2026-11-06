@@ -9,7 +9,7 @@ Original project code: MIT, Copyright (c) 2026 Yanxxzz.
 - **regex**: Apache-2.0 and CNRI-Python notices, retained from its installed distribution when bundling.
 - **Noto demo fonts**: SIL Open Font License 1.1, sources under https://github.com/google/fonts/tree/main/ofl . Renamed, subset font files and the corresponding OFL texts are in `tests/assets/fonts/`. Rebuild with `scripts/prepare_demo_fonts.py`. These fonts are used for original demonstration content and tests, not to replace user fonts.
 - **PyInstaller**: used only to build the Windows application; its license includes the exception for distributing bundled applications. See the build distribution's license bundle.
-- **Playwright, pytest, ReportLab, Pillow, pypdfium2, uharfbuzz**: development/testing tools, not part of the core Python runtime dependency set.
+- **Playwright, pytest, ReportLab, Pillow, pypdfium2**: development/testing tools, not part of the core Python runtime dependency set.
 
 The Windows release accompanies its executable with third-party license files. The browser ZIP includes PDF.js and its resource licenses. Dependency versions are specified in `pyproject.toml` and `package-lock.json`.
 

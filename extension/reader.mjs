@@ -13,8 +13,7 @@ try { Object.assign(settings, JSON.parse(localStorage.getItem('bionic-pdf-settin
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
 let renderTask = null, textTask = null, renderQueue = Promise.resolve();
 let revision = 0, loadRevision = 0, messageTimer = null;
-const supportedLocales=new Set(['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
-if(!supportedLocales.has(settings.locale))settings.locale='auto';
+if(![...$('language').options].some(option=>option.value===settings.locale))settings.locale='auto';
 const captures=new Map();
 
 async function capturePage(page){
@@ -206,9 +205,9 @@ async function openFile(file) {
     }, { once: true });
   };
   try {
-    const document = await task.promise;
-    if (currentLoad !== loadRevision) { await document.destroy(); return; }
-    pdf = document;
+    const loadedPDF = await task.promise;
+    if (currentLoad !== loadRevision) { await loadedPDF.destroy(); return; }
+    pdf = loadedPDF;
     pageNumber = 1;
     try { pageNumber = Math.max(1, Math.min(pdf.numPages, Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)) || 1)); } catch {}
     pageLabels = await pdf.getPageLabels();
@@ -219,7 +218,7 @@ async function openFile(file) {
     $('page-count').textContent = String(pdf.numPages);
     $('page-number').max = String(pdf.numPages);
     $('page-number').value = pageNumber;
-    documentTitle(file.name);
+    document.title = `${file.name} · 仿生 PDF 阅读`;
     await scheduleRender(true);
     buildOutline(pdf, currentLoad);
   } catch (error) {
@@ -228,7 +227,6 @@ async function openFile(file) {
   }
 }
 
-function documentTitle(name) { document.title = `${name} · 仿生 PDF 阅读`; }
 async function buildOutline(activePDF, load) {
   const outline = await activePDF.getOutline();
   if (load !== loadRevision) return;

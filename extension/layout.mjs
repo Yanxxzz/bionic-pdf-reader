@@ -2,7 +2,6 @@ import {wordSpans,prefixLength} from './words.mjs';
 
 const rtl=/[\p{Script=Arabic}\p{Script=Hebrew}]/u;
 const letter=/[\p{L}\p{N}]/u;
-const graphemes=new Intl.Segmenter(undefined,{granularity:'grapheme'});
 
 export class GlyphCapture {
   constructor(){this.runs=[];this.records=[];this.scopes=[];this.serial=0;}
@@ -27,11 +26,11 @@ export class GlyphCapture {
 
 function atomsFromRecords(records){
   const atoms=[],scopes=new Map();
-  records.forEach((record,id)=>{
+  records.forEach(record=>{
     if(record.actual){
       if(!scopes.has(record.actual.id)){const atom={text:record.actual.text,records:[],actual:true};scopes.set(record.actual.id,atom);atoms.push(atom);}
-      scopes.get(record.actual.id).records.push({...record,id});
-    }else atoms.push({text:record.text,records:[{...record,id}],actual:false});
+      scopes.get(record.actual.id).records.push(record);
+    }else atoms.push({text:record.text,records:[record],actual:false});
   });
   for(const atom of atoms){
     const base=atom.records.reduce((a,b)=>a.w>=b.w?a:b);
@@ -88,11 +87,7 @@ export function planGlyphs(capture,settings){
       if(!/[=+<>∑∫√±×÷≤≥∞]/u.test(text)&&!/https?:\/\/|www\.|@|_/i.test(text)&&!/^[A-Za-z]{1,4}$/.test(text)){
         for(const word of wordSpans(text,settings.locale||'auto')){
           if(/^[A-ZА-ЯЁΑ-Ω]{1,5}$/u.test(word.segment))continue;
-          let start=word.index,end=start+prefixLength(word.segment,settings.rule,settings.locale||'auto');
-          if(rtl.test(word.segment)){
-            const g=[...graphemes.segment(word.segment)].map(s=>s.segment),n=g.length<2?0:Math.ceil(g.length/2);
-            end=start+word.segment.length;start=end-(n?g.slice(-n).join('').length:0);
-          }
+          const start=word.index,end=start+prefixLength(word.segment,settings.rule,settings.locale||'auto');
           flags.fill(1,start,end);
         }
       }

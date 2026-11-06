@@ -2,10 +2,10 @@
 
 ## 结构
 
-模块职责与保留这两条绘制路径的原因见 [architecture.md](architecture.md)。
+浏览器实时绘制使用 PDF.js，制作阅读副本使用 pypdf / fontTools；两条路径各保留一套实现。
 
-- `extension/`：浏览器阅读器、分词规则、带修改标记的 PDF.js 与许可。
-- `src/bionic_pdf/`：命令行、GUI、Unicode 词界、字体轮廓和 PDF 制作器。
+- `extension/`：`reader.mjs` 管理文件、页面和控件；`layout.mjs` 捕获字形、选择词首和修复复制文字；`words.mjs` 负责词界与规则。
+- `src/bionic_pdf/`：`converter.py` 管理 PDF 状态、矢量图层和输出；`pdf_text.py` 解码字体字符；`layout.py` / `words.py` 选择词首。CLI 与 GUI 调用同一个 `make_pdf()`，通过页数回调接收进度。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。
 - `scripts/`：原创示例、开放字体子集、Windows 程序和发布包构建。
 - `docs/`：安装、兼容性、语言与开发说明。

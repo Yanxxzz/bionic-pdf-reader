@@ -8,10 +8,10 @@ SAMPLES=json.loads((Path(__file__).resolve().parents[1]/'examples/languages.json
 @pytest.mark.parametrize('sample',SAMPLES,ids=lambda x:x['code'])
 def test_language_prefixes(sample):
     text=sample['text']
-    flags=text_flags(text,locale=sample['code'])
+    flags=text_flags(text)
     assert len(flags)==len(text)
     assert any(flags) and not all(flags)
-    assert len(list(word_spans(text,sample['code'])))>1
+    assert len(list(word_spans(text)))>1
 
 def test_graphemes_and_reference():
     assert prefix_length('e\u0301cole')==4
