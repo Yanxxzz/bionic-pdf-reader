@@ -3,23 +3,12 @@ import os
 import sys
 import threading
 import queue
-import contextlib
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 from .converter import make_pdf
 from .words import LANGUAGES
-
-class ProgressWriter:
-    def __init__(self, events): self.events, self.buffer = events, ''
-    def write(self, text):
-        self.buffer += text
-        while '\n' in self.buffer:
-            line,self.buffer = self.buffer.split('\n',1)
-            if line: self.events.put(('progress',line))
-        return len(text)
-    def flush(self): pass
 
 class Maker:
     def __init__(self, root):
@@ -86,8 +75,8 @@ class Maker:
         self.status.set('正在准备字体和页面…')
         def work():
             try:
-                with contextlib.redirect_stdout(ProgressWriter(self.events)):
-                    report=make_pdf(source,target,mode=mode,locale=locale)
+                report=make_pdf(source,target,mode=mode,locale=locale,
+                    progress=lambda current,total:self.events.put(('progress',(current,total))))
                 self.events.put(('done',(report,target)))
             except Exception as error:self.events.put(('error',str(error)))
         threading.Thread(target=work,daemon=True).start()
@@ -95,8 +84,9 @@ class Maker:
         try:
             while True:
                 kind,payload=self.events.get_nowait()
-                if kind=='progress' and payload.startswith('PROGRESS '):
-                    current,total=map(int,payload.split()[1].split('/'));self.progress['value']=100*current/total;self.status.set(f'已处理 {current} / {total} 页…')
+                if kind=='progress':
+                    current,total=payload
+                    self.progress['value']=100*current/total;self.status.set(f'已处理 {current} / {total} 页…')
                 elif kind=='done':
                     payload,self.result=payload
                     self.busy=False;self.generate.config(state='normal');self.open_button.config(state='normal');self.progress['value']=100

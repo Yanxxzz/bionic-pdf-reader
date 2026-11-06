@@ -5,13 +5,11 @@ vector Form XObjects; no duplicate text or rasterized pages are introduced.
 """
 from __future__ import annotations
 
-import argparse
 import copy
 import io
 import math
-import re
 import time
-import sys
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -23,7 +21,7 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject as N,
     NumberObject as I, FloatObject as F, TextStringObject as T, BooleanObject as B,
     DecodedStreamObject, ContentStream)
-from .selection import Converter, State, raw_string, STYLED_FONT
+from .pdf_text import FontDecoder, State, raw_string, STYLED_FONT
 from .layout import select_glyphs
 
 
@@ -134,7 +132,8 @@ class GlyphLibrary:
 class OverlayBuilder:
     def __init__(self, writer, layer, weight=0.026, locale='auto'):
         self.writer, self.layer = writer, layer
-        self.selector = Converter(weight, locale)
+        self.locale = locale
+        self.decoder = FontDecoder()
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
         self.widths = {}
@@ -226,7 +225,7 @@ class OverlayBuilder:
             if not (cid or font.get('/Subtype') in ('/Type1','/TrueType')):
                 self.glyphs.skipped.add(str(font.get('/BaseFont','unknown')))
                 position_known = False; continue
-            mapping = self.selector.font_map(resources,state.font)
+            mapping = self.decoder.font_map(resources,state.font)
             cmap=mapping[1] if mapping else {}
             actual=next((node['actual'] for node in marked if node['actual'] is not None),None)
             eligible=position_known and state.render_mode==0 and 6.8<=state.size<=24 and state.fill_alpha==state.stroke_alpha==1 and state.fill_cs!='/Pattern' and not STYLED_FONT.search(str(font.get('/BaseFont',''))) and abs(float(state.matrix[1]))<1e-5 and abs(float(state.matrix[2]))<1e-5 and abs(ctm[1])<1e-5 and abs(ctm[2])<1e-5
@@ -243,7 +242,7 @@ class OverlayBuilder:
                     matrix=matrix_multiply(ctm,translated(state.matrix,0,rise))
                     records.append({'font':str(font.indirect_reference) if getattr(font,'indirect_reference',None) else id(font),'font_object':font,'code':code,'text':text,'x':min(matrix[4],matrix[4]+matrix[0]*advance),'y':matrix[5],'w':abs(matrix[0]*advance),'h':abs(state.font_size*matrix[3]),'matrix':matrix,'tz':tz,'size':state.font_size,'actual':actual,'eligible':bool(eligible),'oc':[node['oc'] for node in marked if node['oc']],'cs':state.fill_cs,'color':state.fill_values})
                     state.matrix=translated(state.matrix,advance,0)
-        for index in sorted(select_glyphs(records,self.selector.locale)):
+        for index in sorted(select_glyphs(records,self.locale)):
             record=records[index]
             glyph=self.glyphs.glyph(record['font_object'],record['code'],record['text'])
             if glyph is None:continue
@@ -269,7 +268,9 @@ class OverlayBuilder:
 
 
 
-def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale='auto'):
+def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale='auto', *,
+             progress: Callable[[int, int], None] | None = None):
+    """Create a reading copy; optionally report each processed page as (current, total)."""
     started = time.monotonic()
     if mode not in ('switchable','static'): raise ValueError('mode must be switchable or static')
     if Path(source).resolve() == Path(target).resolve(): raise ValueError('请为阅读副本选择不同文件名，不能覆盖原 PDF。')
@@ -294,9 +295,9 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
     if layer is not None: writer._root_object[N('/PageMode')] = N('/UseOC')
     builder = OverlayBuilder(writer,layer,weight,locale)
     for i,page in enumerate(writer.pages):
-        count = builder.build_page(page)
-        if (i+1)%50 == 0 or i+1 == len(writer.pages):
-            print(f'PROGRESS {i+1}/{len(writer.pages)} glyphs={builder.count} seconds={time.monotonic()-started:.1f}',flush=True)
+        builder.build_page(page)
+        if progress is not None:
+            progress(i + 1, len(writer.pages))
     if builder.count == 0: raise ValueError('未找到可处理的文字层或可用嵌入字体；扫描版需先做 OCR。')
     suffix=' - Switchable Reading' if mode=='switchable' else ' - Bionic Reading'
     subject='Original PDF text plus optional vector word-prefix emphasis. Toggle the Bionic Reading layer in your reader.' if mode=='switchable' else 'Original PDF text plus always-visible vector word-prefix emphasis.'
@@ -308,6 +309,5 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         temporary.replace(target)
     finally:
         if temporary.exists(): temporary.unlink()
-    print(f'DONE {target}',flush=True)
     return {'pages':len(writer.pages),'glyphs':builder.count,'glyph_forms':len(builder.glyphs.forms),
         'skipped_fonts':sorted(builder.glyphs.skipped),'mode':mode,'locale':locale,'seconds':time.monotonic()-started}

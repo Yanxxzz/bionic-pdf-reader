@@ -68,3 +68,12 @@ def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     source,switchable,*_=converted
     with pytest.raises(ValueError):make_pdf(source,source)
     with pytest.raises(ValueError):make_pdf(switchable,tmp_path/'twice.pdf')
+
+
+def test_progress_reports_completed_pages_without_console_output(converted,tmp_path,capsys):
+    updates=[]
+    result=make_pdf(converted[0],tmp_path/'progress.pdf',pages=[1,2],
+        progress=lambda current,total:updates.append((current,total)))
+    assert result['pages']==2
+    assert updates==[(1,2),(2,2)]
+    assert capsys.readouterr().out==''

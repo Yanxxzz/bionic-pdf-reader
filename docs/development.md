@@ -2,6 +2,8 @@
 
 ## 结构
 
+模块职责与保留这两条绘制路径的原因见 [architecture.md](architecture.md)。
+
 - `extension/`：浏览器阅读器、分词规则、带修改标记的 PDF.js 与许可。
 - `src/bionic_pdf/`：命令行、GUI、Unicode 词界、字体轮廓和 PDF 制作器。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。

@@ -1,6 +1,6 @@
 import './compat.mjs';
 import * as pdfjs from './vendor/pdf.mjs';
-import { glyphMask, prefixLength } from './bionic.mjs';
+import { prefixLength } from './words.mjs';
 import {GlyphCapture,planGlyphs,repairTextContent} from './layout.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
@@ -98,7 +98,11 @@ async function renderPage(myRevision, resetScroll) {
     enabled: snapshot.enabled,
     strength: snapshot.strength,
     stroked: 0,
-    mask: (glyphs, current) => {const mask=plan.masks[run++];return mask?.length===glyphs.length?mask:glyphMask(glyphs,current,snapshot);},
+    mask: glyphs => {
+      const mask=plan.masks[run++];
+      if(mask?.length!==glyphs.length)throw new Error('PDF glyph capture and rendering are out of sync');
+      return mask;
+    },
   };
   canvas.bionicReader = bionic;
   renderTask = page.render({

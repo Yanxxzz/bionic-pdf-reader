@@ -14,9 +14,13 @@ def main(argv=None):
     parser.add_argument('--weight', type=float, default=0.026)
     args = parser.parse_args(argv)
     if not 0.005 <= args.weight <= 0.08: parser.error('--weight must be between 0.005 and 0.08')
+    def progress(current,total):
+        if current % 50 == 0 or current == total:
+            print(f'PROGRESS {current}/{total}',flush=True)
     try:
-        result = make_pdf(args.source, args.target, weight=args.weight, mode=args.mode, locale=args.language)
+        result = make_pdf(args.source, args.target, weight=args.weight, mode=args.mode, locale=args.language, progress=progress)
     except (OSError, ValueError) as error:
         parser.exit(1, f'{error}\n')
+    print(f'DONE {args.target}',flush=True)
     print(json.dumps(result, ensure_ascii=False))
     return 0
