@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "仿生 PDF 阅读",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "仿生 PDF 阅读：英文与多语言词首加粗，在原始与仿生模式之间切换。文件在本机处理。",
   "minimum_chrome_version": "124",
   "action": {

@@ -17,8 +17,10 @@ def main():
     content=re.search(r'<dialog id="help-dialog"[^>]*>(.*?)</dialog>',(source/'reader.html').read_text(encoding='utf-8'),re.S).group(1)
     content=re.sub(r'<form\b.*?</form>','',content,flags=re.S)
     guide=('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>仿生 PDF 阅读 · 使用指南</title><style>body{font:16px/1.85 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 24px;color:#22363a}details{border-top:1px solid #dce3da;padding:14px 0}summary{font-weight:600;cursor:pointer}a{color:#17655d}</style>'+content+'<p>版本 '+version+' · <a href="https://github.com/Yanxxzz/bionic-pdf-reader">项目主页与更新</a></p></html>').encode('utf-8')
+    packages=[]
     for target in ('chrome-edge','firefox-temporary','web-reader'):
         name=f'bionic-pdf-{target}-{version}.zip'
+        packages.append(out/name)
         with zipfile.ZipFile(out/name,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as writer:
             for path in sorted(source.rglob('*')):
                 if not path.is_file():continue
@@ -35,6 +37,7 @@ def main():
             writer.write(ROOT/'LICENSE','LICENSE')
             writer.writestr('使用指南.html',guide)
     if (out/'BionicPDF.exe').is_file():
+        packages.append(out/f'bionic-pdf-windows-x64-{version}.zip')
         with zipfile.ZipFile(out/f'bionic-pdf-windows-x64-{version}.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as writer:
             writer.write(out/'BionicPDF.exe','BionicPDF.exe')
             writer.write(ROOT/'LICENSE','LICENSE')
@@ -43,7 +46,8 @@ def main():
             for path in sorted((out/'third-party-licenses').rglob('*')):
                 if path.is_file():writer.write(path,path.relative_to(out).as_posix())
     # Only files published as release assets, not the intermediate executable.
-    files=sorted(p for p in out.iterdir() if p.is_file() and p.suffix in ('.zip','.whl','.gz'))
+    packages.extend(out/name for name in (f'bionic_pdf_reader-{version}-py3-none-any.whl',f'bionic_pdf_reader-{version}.tar.gz') if (out/name).is_file())
+    files=sorted(packages)
     (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='utf-8')
     print('\n'.join(str(p) for p in files))
 
