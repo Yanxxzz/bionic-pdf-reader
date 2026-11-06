@@ -175,7 +175,12 @@ async function openFile(file) {
   pdf = null;
   $('message').hidden = true;
   $('reading-status').textContent = '正在打开文件…';
-  const data = new Uint8Array(await file.arrayBuffer());
+  let data;
+  try { data = new Uint8Array(await file.arrayBuffer()); }
+  catch(error){
+    if(currentLoad===loadRevision){$('reading-status').textContent='未打开文件';notify(`无法读取 PDF：${error.message}。请重新选择文件。`);}
+    return;
+  }
   if (currentLoad !== loadRevision) return;
   const task = pdfjs.getDocument({
     data,
@@ -257,7 +262,12 @@ async function buildOutline(activePDF, load) {
 
 for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', () => $('file-input').click());
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
-$('file-input').addEventListener('change', e => { openFile(e.target.files[0]); e.target.value = ''; });
+$('file-input').addEventListener('change', async e => {
+  const input=e.target,file=input.files[0];
+  // Safari may revoke access to the selected file if the input is cleared
+  // while its asynchronous read is still pending.
+  try{await openFile(file);}finally{if(input.files[0]===file)input.value='';}
+});
 $('original-mode').addEventListener('click', () => setMode(false));
 $('bionic-mode').addEventListener('click', () => setMode(true));
 $('rule').addEventListener('change', e => { settings.rule = e.target.value; persistSettings(); updateModeUI(); scheduleRender(); });
