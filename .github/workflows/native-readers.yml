@@ -2,7 +2,7 @@ name: Native reader acceptance
 on:
   push:
     branches: [release/v0.4.1]
-    paths: ['tests/safari_native_probe.py', 'tests/safari_choose_file.applescript', '.github/workflows/native-readers.yml']
+    paths: ['tests/safari_*', '.github/workflows/native-readers.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,7 +23,7 @@ jobs:
       - run: npx playwright install chromium
       - run: npm run fixtures:shaped
       - run: sudo safaridriver --enable
-      - run: python tests/safari_native_probe.py
+      - run: python tests/safari_system_reader.py
       - uses: actions/upload-artifact@v7
         if: always()
         with:
