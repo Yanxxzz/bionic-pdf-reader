@@ -1,0 +1,67 @@
+name: Test and build
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  python:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.13']
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m pytest -q
+      - run: python -m build
+  browsers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: python -m pip install -e ".[dev]"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox
+      - run: python scripts/make_examples.py
+      - run: npm test
+      - run: npm run test:browser
+      - run: npm run test:extension
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-results
+          path: test-results/
+          retention-days: 7
+  windows-package:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[dev,windows]"
+      - run: python scripts/build_windows.py
+      - run: python scripts/smoke_windows.py
+      - run: python -m build
+      - run: python scripts/build_packages.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-packages
+          path: dist/
+          retention-days: 7

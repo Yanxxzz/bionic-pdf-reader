@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bionic-pdf-reader"
+version = "0.3.0"
+description = "Local multilingual bionic PDF reading, with optional-content layers and original glyph preservation"
+readme = "README.en.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "Yanxxzz"}]
+keywords = ["bionic-reading", "pdf", "reading", "multilingual", "english-reading"]
+dependencies = ["pypdf==6.13.0", "fonttools==4.63.0", "regex>=2024.11.6", "jieba==0.42.1", "tinysegmenter==0.4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "reportlab>=4.4,<6", "pypdfium2>=4.30,<6", "Pillow>=10", "build>=1.2", "uharfbuzz>=0.40"]
+windows = ["pyinstaller>=6,<8"]
+
+[project.scripts]
+bionic-pdf = "bionic_pdf.cli:main"
+
+[project.gui-scripts]
+bionic-pdf-gui = "bionic_pdf.gui:main"
+
+[project.urls]
+Homepage = "https://github.com/Yanxxzz/bionic-pdf-reader"
+Issues = "https://github.com/Yanxxzz/bionic-pdf-reader/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

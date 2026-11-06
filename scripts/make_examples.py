@@ -1,0 +1,46 @@
+"""Generate original, redistributable reading samples; never use personal PDFs."""
+from pathlib import Path
+import json
+from reportlab.pdfgen import canvas
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+
+ROOT = Path(__file__).resolve().parents[1]
+
+def create_sample(target, samples=None):
+    samples = samples or [s for s in json.loads((ROOT/'examples/languages.json').read_text(encoding='utf-8')) if s['code'] not in ('ar','he','hi')]
+    fonts=ROOT/'tests/assets/fonts'
+    for label in {x['font'] for x in samples} | {'Latin'}:
+        pdfmetrics.registerFont(TTFont('Demo'+label,str(fonts/(label+'.ttf')),shapable=True))
+    target=Path(target);target.parent.mkdir(parents=True,exist_ok=True)
+    c=canvas.Canvas(str(target),pagesize=(595,842),invariant=1)
+    c.setTitle('Bionic PDF Reader - original multilingual samples')
+    for item in samples:
+        c.bookmarkPage(item['code']);c.addOutlineEntry(item['code'],item['code'])
+        c.setFillColorRGB(.13,.32,.25);c.setFont('Helvetica-Bold',21)
+        c.drawString(48,778,'A different rhythm for reading')
+        c.setFillColorRGB(.45,.52,.48);c.setFont('Helvetica',10)
+        c.drawString(48,750,'ORIGINAL SAMPLE  /  '+item['code'].upper()+'  /  LOCAL & PRIVATE')
+        c.setFont('Demo'+item['font'],15);c.setFillColorRGB(.12,.16,.14)
+        y=688;line=''
+        def draw_line(text):
+            if item['code'] in ('ar','he'):
+                c.drawRightString(547,y,text,direction='RTL',shaping=True)
+            else: c.drawString(48,y,text,shaping=item['code']=='hi')
+        # Wrap by characters so CJK and languages without spaces are included.
+        for char in item['text']:
+            if pdfmetrics.stringWidth(line+char,'Demo'+item['font'],15)>490:
+                draw_line(line);y-=28;line=''
+            line+=char
+        if line:draw_line(line)
+        c.setFont('DemoLatin',13)
+        c.drawString(48,y-70,'Reading keeps the original text, page and spacing.')
+        c.setFont('Helvetica',11);c.drawString(48,120,'Formula: y = 2 x + 1')
+        c.linkURL('https://github.com/Yanxxzz/bionic-pdf-reader',(48,52,420,70),relative=0)
+        c.setFont('Helvetica',9);c.drawString(48,58,'Bionic PDF Reader - original demo. Fonts: Noto, SIL Open Font License.')
+        c.showPage()
+    c.showPage();c.save()
+    return target
+
+if __name__=='__main__':
+    print(create_sample(ROOT/'.tmp/examples/multilingual.pdf'))

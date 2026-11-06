@@ -1,0 +1,43 @@
+"""Create reproducible extension/web ZIPs and SHA256 checksums offline."""
+import hashlib
+import json
+from pathlib import Path
+import zipfile
+import tomllib
+
+ROOT=Path(__file__).resolve().parents[1]
+
+def main():
+    version=tomllib.loads((ROOT/'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+    out=ROOT/'dist';out.mkdir(exist_ok=True)
+    source=ROOT/'extension'
+    manifest=json.loads((source/'manifest.json').read_text(encoding='utf-8'))
+    assert manifest['version']==version
+    for target in ('chrome-edge','firefox-temporary','web-reader'):
+        name=f'bionic-pdf-{target}-{version}.zip'
+        with zipfile.ZipFile(out/name,'w',zipfile.ZIP_DEFLATED,compresslevel=9) as writer:
+            for path in sorted(source.rglob('*')):
+                if not path.is_file():continue
+                rel=path.relative_to(source).as_posix()
+                if target=='web-reader' and rel in ('manifest.json','background.js'):continue
+                data=path.read_bytes()
+                if target=='firefox-temporary' and rel=='manifest.json':
+                    firefox=dict(manifest);firefox.pop('minimum_chrome_version',None)
+                    firefox['background']={'scripts':['background.js']}
+                    firefox['browser_specific_settings']={'gecko':{'id':'bionic-pdf-reader@yanxxzz','strict_min_version':'128.0','data_collection_permissions':{'required':['none']}}}
+                    data=(json.dumps(firefox,ensure_ascii=False,indent=2)+'\n').encode()
+                info=zipfile.ZipInfo(rel,(2026,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
+                writer.writestr(info,data)
+            writer.write(ROOT/'LICENSE','LICENSE')
+    if (out/'BionicPDF.exe').is_file():
+        with zipfile.ZipFile(out/f'bionic-pdf-windows-x64-{version}.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as writer:
+            writer.write(out/'BionicPDF.exe','BionicPDF.exe')
+            writer.write(ROOT/'LICENSE','LICENSE')
+            writer.write(ROOT/'docs/usage.md','使用说明.md')
+            for path in sorted((out/'third-party-licenses').rglob('*')):
+                if path.is_file():writer.write(path,path.relative_to(out).as_posix())
+    files=sorted(p for p in out.iterdir() if p.is_file() and p.suffix in ('.zip','.exe','.whl','.gz'))
+    (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='utf-8')
+    print('\n'.join(str(p) for p in files))
+
+if __name__=='__main__':main()

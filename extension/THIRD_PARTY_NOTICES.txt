@@ -1,0 +1,45 @@
+Bionic PDF Reader 0.1
+
+This local reading extension is an independent implementation. Its word-length
+and common-word emphasis rules are inspired by:
+https://github.com/yitong2333/Bionic-Reading
+
+MIT License
+
+Copyright (c) 2024 一桐
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Mozilla PDF.js 5.6.205
+https://github.com/mozilla/pdf.js
+Copyright Mozilla Foundation and individual contributors.
+Apache License 2.0: see vendor/LICENSE_PDFJS.
+
+Modifications to vendor/pdf.mjs are clearly labeled "Bionic PDF Reader
+modification". Three focused changes add a per-render glyph-mask callback and
+display-only stroke to selected original glyphs. Original glyph positions,
+advances, font data, Unicode text, and the user's PDF bytes are unchanged.
+
+The TextLayer geometry styles in reader.css are adapted from PDF.js under
+the same Apache License 2.0. Standard font, CMap, ICC and WASM resources
+retain their accompanying licenses in vendor/.
+
+This project is not affiliated with Mozilla, WPS, or the author of the reference
+userscript. "Bionic" describes the reading mode, not an affiliation or a claim
+that the mode improves reading speed.

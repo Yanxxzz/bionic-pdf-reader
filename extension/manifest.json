@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "仿生 PDF 阅读",
+  "version": "0.3.0",
+  "description": "仿生 PDF 阅读：英文与多语言词首加粗，在原始与仿生模式之间切换。文件在本机处理。",
+  "minimum_chrome_version": "124",
+  "action": {
+    "default_title": "打开仿生 PDF 阅读器"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'; connect-src 'self' blob: data:; font-src 'self' blob: data:; img-src 'self' blob: data:;"
+  }
+}
