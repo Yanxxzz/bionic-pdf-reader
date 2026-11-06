@@ -47,6 +47,22 @@ try:
             """)
             result.update(location=label,hidden=hidden);report['files'].append(result)
             print(json.dumps(result),flush=True)
+    driver.execute_script("document.querySelector('#disk-probe')?.remove();document.querySelector('#file-input').addEventListener('change',async e=>{const f=e.target.files[0];window.__systemSelection={name:f?.name,trusted:e.isTrusted};try{const b=await f.arrayBuffer();__systemSelection.bytes=b.byteLength;__systemSelection.sha256=[...new Uint8Array(await crypto.subtle.digest('SHA-256',b))].map(v=>v.toString(16).padStart(2,'0')).join('');}catch(error){__systemSelection.error=String(error);}});")
+    chooser=subprocess.Popen(['osascript',str(ROOT/'tests/safari_choose_file.applescript'),str(places['downloads']),str(OUT/'safari-system-file-dialog.png')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    driver.find_element(By.ID,'open-file').click()
+    stdout,stderr=chooser.communicate(timeout=90)
+    report['systemChooser']={'returncode':chooser.returncode,'stdout':stdout,'stderr':stderr}
+    print('System chooser:',json.dumps(report['systemChooser']),flush=True)
+    assert chooser.returncode==0,report['systemChooser']
+    WebDriverWait(driver,60).until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.renderState==='ready'"))
+    selected=driver.execute_script('return window.__systemSelection')
+    assert selected['trusted'] is True and selected['sha256']==expected,selected
+    report['systemSelection']=selected
+    original=driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")
+    driver.find_element(By.ID,'bionic-mode').click()
+    WebDriverWait(driver,30).until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.mode==='bionic'"))
+    assert original!=driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")
+    report['nativeBionicToggle']=True
     driver.save_screenshot(str(OUT/'safari-native-probe.png'))
 finally:
     (OUT/'safari-native-probe.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
