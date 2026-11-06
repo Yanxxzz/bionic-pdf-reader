@@ -17,3 +17,6 @@ for i in range(len(before)):
     assert before[i].get_textpage().get_text_range()==after[i].get_textpage().get_text_range()
 before.close();after.close()
 print('Standalone Windows conversion passed for 13 languages and a blank page')
+gui=subprocess.run([str(ROOT/'dist/BionicPDF.exe'),'--smoke-gui'],timeout=30,env=dict(os.environ,TMP=str(folder),TEMP=str(folder)))
+assert gui.returncode==0,gui.returncode
+print('Standalone Windows GUI, 13 language choices and in-app guide passed')

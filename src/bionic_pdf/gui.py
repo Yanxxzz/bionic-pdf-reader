@@ -30,7 +30,7 @@ class Maker:
         self.locale = tk.StringVar(value='自动分词 · auto')
         self.source, self.target, self.status = tk.StringVar(),tk.StringVar(),tk.StringVar(value='选择原始 PDF，按阅读器选择可切换版或普通仿生版。')
         root.title('Bionic PDF · 仿生阅读制作工具')
-        root.geometry('760x550'); root.minsize(700,530)
+        root.geometry('760x650'); root.minsize(700,630)
         root.configure(bg='#f3f6ef')
         style = ttk.Style(); style.theme_use('clam')
         style.configure('TFrame',background='#f3f6ef')
