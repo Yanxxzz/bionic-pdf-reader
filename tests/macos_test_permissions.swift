@@ -1,4 +1,4 @@
-// Approve only the two observed automation prompts on an ephemeral CI host.
+// Handle only observed test-host prompts. Loopback reading needs no LAN access.
 // Do not alter TCC databases or grant access to user folders or other apps.
 import AppKit
 import ApplicationServices
@@ -18,17 +18,18 @@ guard AXIsProcessTrusted() else {print("CI process is not trusted for accessibil
 let deadline=Date().addingTimeInterval(75)
 while Date()<deadline{
     for app in NSWorkspace.shared.runningApplications{
-        let bundle=app.bundleIdentifier ?? ""
-        guard bundle=="com.apple.UserNotificationCenter" || bundle=="com.apple.CoreServicesUIAgent" else{continue}
         let root=AXUIElementCreateApplication(app.processIdentifier)
         let windows=attribute(root,kAXWindowsAttribute as String) as? [AXUIElement] ?? []
         for window in windows{
             let nodes=descendants(window)
             let text=nodes.flatMap{node in [kAXTitleAttribute,kAXValueAttribute,kAXDescriptionAttribute].compactMap{attribute(node,$0 as String) as? String}}.joined(separator:" ")
-            guard text.contains("hosted-compute-agent"),text.contains("control"),text.contains("Safari") || text.contains("System Events") else{continue}
-            if let allow=nodes.first(where:{(attribute($0,kAXRoleAttribute as String) as? String)=="AXButton" && (attribute($0,kAXTitleAttribute as String) as? String)=="Allow"}){
-                let result=AXUIElementPerformAction(allow,kAXPressAction as CFString)
-                print("Observed and approved CI automation permission: \(text) / \(result.rawValue)")
+            let automation=text.contains("hosted-compute-agent") && text.contains("control") && (text.contains("Safari") || text.contains("System Events"))
+            let localNetwork=text.contains("Python") && text.contains("find devices") && text.contains("local networks")
+            guard automation || localNetwork else{continue}
+            let title=automation ? "Allow" : "Don’t Allow"
+            if let button=nodes.first(where:{(attribute($0,kAXRoleAttribute as String) as? String)=="AXButton" && (attribute($0,kAXTitleAttribute as String) as? String)==title}){
+                let result=AXUIElementPerformAction(button,kAXPressAction as CFString)
+                print("Observed CI dialog, selected \(title): \(text) / \(result.rawValue)")
                 fflush(stdout)
             }
         }
