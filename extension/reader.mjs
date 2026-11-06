@@ -1,9 +1,10 @@
+import './compat.mjs';
 import * as pdfjs from './vendor/pdf.mjs';
 import { glyphMask, prefixLength } from './bionic.mjs';
 import {GlyphCapture,planGlyphs,repairTextContent} from './layout.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
-const workerURL = new URL('./vendor/pdf.worker.min.mjs', import.meta.url);
+const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
 pdfjs.GlobalWorkerOptions.workerSrc = workerURL.href;
 pdfjs.GlobalWorkerOptions.workerPort = new Worker(workerURL, { type: 'module' });
 const $ = id => document.getElementById(id);

@@ -22,6 +22,7 @@ try{
     const options={headless:true};if(name==='chrome'||name==='edge')options.channel=name==='edge'?'msedge':'chrome';
     const browser=await engine.launch(options);
     const page=await browser.newPage({viewport:{width:1440,height:1040}});
+    if(process.env.FORCE_LEGACY_STREAMS==='1')await page.addInitScript(()=>Object.defineProperty(ReadableStream.prototype,Symbol.asyncIterator,{value:undefined,configurable:true,writable:true}));
     const errors=[],external=[];page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:')&&!/^(blob:|data:)/.test(r.url()))external.push(r.url());});
     try{

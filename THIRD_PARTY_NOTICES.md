@@ -14,3 +14,5 @@ Original project code: MIT, Copyright (c) 2026 Yanxxzz.
 The Windows release accompanies its executable with third-party license files. The browser ZIP includes PDF.js and its resource licenses. Dependency versions are specified in `pyproject.toml` and `package-lock.json`.
 
 Independent project, not affiliated with the Bionic Reading trademark owner or the authors/vendors of the referenced products. Product names identify compatibility only.
+
+`extension/compat.mjs` and `extension/pdf-worker.mjs` are project-owned MIT code. They provide ReadableStream async iteration only where it is missing, including in the module worker. No browser-native implementation is replaced. This addresses the shipping Safari compatibility issue described in [PDF.js issue 21924](https://github.com/mozilla/pdf.js/issues/21924).

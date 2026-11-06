@@ -39,6 +39,7 @@ def audit(folder,version):
                 continue
             guide=archive.read('使用指南.html').decode('utf-8')
             assert version in guide and '乌克兰语' in guide and '希腊语' in guide
+            if 'windows-x64' not in name:assert {'reader.mjs','layout.mjs','compat.mjs','pdf-worker.mjs'}<=set(names)
             if 'windows-x64' in name:
                 assert 'BionicPDF.exe' in names and 'LICENSE' in names
                 assert any(n.startswith('third-party-licenses/pypdf/') for n in names)
