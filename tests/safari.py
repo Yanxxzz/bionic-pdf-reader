@@ -1,6 +1,5 @@
 """Run the actual macOS Safari browser through Apple's supplied driver."""
 from pathlib import Path
-import base64
 import functools
 import json
 import threading
@@ -30,8 +29,7 @@ try:
         step=f'opening {variant}'
         driver.execute_script("for(const key of Object.keys(localStorage))if(key.startsWith('bionic-page-'))localStorage.removeItem(key);")
         previous=driver.execute_script("return document.querySelector('#page-frame').getAttribute('data-render-revision')")
-        data=base64.b64encode((ROOT/f'.tmp/examples/shaped-{variant}.pdf').read_bytes()).decode()
-        driver.execute_script("const bytes=Uint8Array.from(atob(arguments[0]),c=>c.charCodeAt(0));const dt=new DataTransfer();dt.items.add(new File([bytes],arguments[1],{type:'application/pdf'}));const input=document.querySelector('#file-input');input.files=dt.files;input.dispatchEvent(new Event('change',{bubbles:true}));",data,f'shaped-{variant}.pdf')
+        driver.find_element(By.ID,'file-input').send_keys(str(ROOT/f'.tmp/examples/shaped-{variant}.pdf'))
         wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').getAttribute('data-render-revision')")!=previous)
         for i,sample in enumerate(samples,1):
             step=f'{variant} / {sample["code"]} / original'
