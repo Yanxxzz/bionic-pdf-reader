@@ -25,7 +25,9 @@ samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-
 try:
     driver.get(f'http://127.0.0.1:{server.server_port}/reader.html')
     driver.execute_script("window.__readerErrors=[];addEventListener('error',e=>__readerErrors.push(e.message));addEventListener('unhandledrejection',e=>__readerErrors.push(String(e.reason)));const originalError=console.error.bind(console);console.error=(...args)=>{__readerErrors.push(args.map(String).join(' '));originalError(...args);};")
+    wait.until(lambda d:d.execute_script("return document.documentElement.dataset.readerReady==='true'"))
     for variant in ('tagged','plain'):
+        step=f'opening {variant}'
         driver.execute_script("for(const key of Object.keys(localStorage))if(key.startsWith('bionic-page-'))localStorage.removeItem(key);")
         previous=driver.execute_script("return document.querySelector('#page-frame').getAttribute('data-render-revision')")
         data=base64.b64encode((ROOT/f'.tmp/examples/shaped-{variant}.pdf').read_bytes()).decode()
@@ -59,7 +61,7 @@ try:
             report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True})
     print('Actual Safari: shaped text, selection and toggle checks passed')
 except Exception:
-    debug=driver.execute_script("return {errors:window.__readerErrors,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.outerHTML,ua:navigator.userAgent}")
+    debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,ua:navigator.userAgent}")
     debug['step']=step;debug['capabilities']=driver.capabilities
     (OUT/'safari-failure.json').write_text(json.dumps(debug,ensure_ascii=False,indent=2),encoding='utf-8')
     driver.save_screenshot(str(OUT/'safari-failure.png'))

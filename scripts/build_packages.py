@@ -42,7 +42,8 @@ def main():
             writer.writestr('使用指南.html',guide)
             for path in sorted((out/'third-party-licenses').rglob('*')):
                 if path.is_file():writer.write(path,path.relative_to(out).as_posix())
-    files=sorted(p for p in out.iterdir() if p.is_file() and p.suffix in ('.zip','.exe','.whl','.gz'))
+    # Only files published as release assets, not the intermediate executable.
+    files=sorted(p for p in out.iterdir() if p.is_file() and p.suffix in ('.zip','.whl','.gz'))
     (out/'SHA256SUMS.txt').write_text(''.join(hashlib.sha256(p.read_bytes()).hexdigest()+'  '+p.name+'\n' for p in files),encoding='utf-8')
     print('\n'.join(str(p) for p in files))
 

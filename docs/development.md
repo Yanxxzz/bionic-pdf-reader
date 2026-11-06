@@ -41,6 +41,8 @@ python scripts/build_packages.py
 
 输出在 `dist/`，含 Chrome/Edge ZIP、Firefox 临时开发 ZIP、网页 ZIP、Python 包及 SHA256 校验清单。Windows 可执行文件为独立便携版，不要求安装 Python。它不是带系统安装向导的 MSI，也没有商店签名。
 
+Windows 包构建完成后运行 `python scripts/audit_release.py dist`，核对 6 个下载包的 SHA256、内置指南、许可证和归档内容。SHA256 清单只列实际发布的下载包；不列中间生成的独立 EXE。
+
 ## 维护与发布
 
 1. 同步 `pyproject.toml`、Python `__version__`、扩展 `manifest.json` 和 `package.json` 的版本。

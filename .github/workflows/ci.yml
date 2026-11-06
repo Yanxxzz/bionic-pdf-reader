@@ -95,6 +95,7 @@ jobs:
       - run: python scripts/smoke_windows.py
       - run: python -m build
       - run: python scripts/build_packages.py
+      - run: python scripts/audit_release.py dist
       - uses: actions/upload-artifact@v7
         with:
           name: release-packages

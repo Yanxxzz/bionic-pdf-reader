@@ -299,3 +299,4 @@ addEventListener('resize', () => {
   },180);
 });
 updateModeUI();
+document.documentElement.dataset.readerReady='true';
