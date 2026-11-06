@@ -8,13 +8,15 @@ on run argv
       repeat 300 times
         set hasOpen to false
         set hasCancel to false
-        repeat with elementRef in entire contents of front window
-          try
-            if role of elementRef is "AXButton" then
-              if name of elementRef is "Open" then set hasOpen to true
-              if name of elementRef is "Cancel" then set hasCancel to true
-            end if
-          end try
+        repeat with targetWindow in windows
+          repeat with elementRef in entire contents of targetWindow
+            try
+              if role of elementRef is "AXButton" then
+                if name of elementRef is "Open" then set hasOpen to true
+                if name of elementRef is "Cancel" then set hasCancel to true
+              end if
+            end try
+          end repeat
         end repeat
         if hasOpen and hasCancel then
           set foundPanel to true
@@ -22,7 +24,13 @@ on run argv
         end if
         delay 0.1
       end repeat
-      if not foundPanel then error "Safari system file dialog did not appear"
+      if not foundPanel then
+        log name of every window
+        repeat with targetWindow in windows
+          log entire contents of targetWindow
+        end repeat
+        error "Safari system file dialog did not appear"
+      end if
       log "Observed native file panel with Open and Cancel buttons"
     end tell
   end tell
