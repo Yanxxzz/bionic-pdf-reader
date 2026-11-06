@@ -8,7 +8,7 @@
 - **Firefox**：本地网页阅读器；另提供背景脚本适配的临时开发扩展。网页引擎测试与扩展签名／正式安装是两件事，临时包不宣称已上架。
 - **WPS PDF**：制作可切换副本，使用左侧图层列表的眼睛开关。本机 WPS 12.1.0.29161 已人工实测整本长文档，页面、缩放、正文和批注保持原位。
 - **Adobe Acrobat / Reader**：制作可切换副本，使用 Layers 面板。依据 [Adobe 官方图层说明](https://helpx.adobe.com/acrobat/desktop/edit-documents/pdf-layers/manage-layers.html) 适配；当前未将它列为本机人工实测结果。
-- **Foxit PDF Reader**：制作可切换副本，在左侧导航栏空白处右键选择 Layers，再勾选该图层。依据 [Foxit Windows 2026.1.1 官方手册](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)的 Working with Layers；菜单随系统和版本变化，尚未逐版人工实测。
+- **Foxit PDF Reader**：制作可切换副本，在左侧导航栏空白处右键选择 Layers，再勾选该图层。2026.2.1.39815 已实机检查 13 种语言页面、图层开关、翻页、页码及缩放保留，开关前后原生复制的全文一致；检查范围见 [验证记录](verification.md)。其他版本的菜单仍可参照 [Foxit 官方手册](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)。
 - **PDF-XChange Editor**：制作可切换副本，使用 Layers 面板。11.1.1.0 已在本机人工验证图层开关及页码、缩放保留。按 Ctrl+L 打开图层，点击灯泡开关。
 - **Firefox 内置 PDF 阅读器**：其 PDF.js 查看器有 Layers 视图，参见 [Mozilla 查看器源码](https://github.com/mozilla/pdf.js/blob/master/web/viewer.html)。可以尝试打开可切换副本；内置查看器和本项目阅读页的测试结果不混用。
 - **macOS Preview**：使用普通仿生版。Apple PDFKit 引擎已验证 13 页的文字、原始像素和普通仿生显示；Preview 完成了打开文件检查，未冒充逐页人工界面验收。

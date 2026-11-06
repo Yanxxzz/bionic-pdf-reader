@@ -3,7 +3,7 @@ include package.json package-lock.json
 recursive-include docs *.md *.png
 recursive-include examples *.json
 recursive-include scripts *.py *.mjs *.swift
-recursive-include tests *.py *.mjs *.ttf *.txt *.json *.swift *.applescript
+recursive-include tests *.py *.mjs *.ttf *.txt *.json
 recursive-include extension *
 recursive-include licenses *
 global-exclude __pycache__ *.py[cod]

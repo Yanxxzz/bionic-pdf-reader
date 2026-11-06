@@ -27,3 +27,5 @@ Original text is not rewritten or duplicated. Emphasis reuses embedded glyph out
 Tests exercise `make_pdf`, `GlyphCapture` / `planGlyphs`, real browser pages and packaged applications. Shared language and layout cases check behavior across runtimes. PDF tests compare original text and default-off pixels, and preserve existing layers and document structure. Native acceptance separately records application version, input method and observed operations.
 
 The 0.4.1 cleanup deletes the unused text-rewriting engine and the browser's second glyph-selection algorithm. No compatibility wrapper remains for these internal implementations. The public converter interface and reader controls are retained.
+
+Incomplete native-UI experiments are not part of the source tree or release gate. Their prior revisions remain in Git history. Passing engine tests does not imply that Safari's system chooser or Acrobat's controls have passed native acceptance; outstanding coverage is recorded in `verification.md`.
