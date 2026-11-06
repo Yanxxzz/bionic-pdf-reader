@@ -1,4 +1,4 @@
-"""Real Safari acceptance: trusted clicks, the macOS chooser and native keyboard."""
+"""Real Safari acceptance through its system chooser and native keyboard."""
 from pathlib import Path
 import functools
 import hashlib
@@ -8,8 +8,6 @@ import threading
 import time
 import unicodedata
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
-from selenium import webdriver
-from selenium.webdriver.common.by import By
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'test-results';OUT.mkdir(exist_ok=True)
@@ -45,29 +43,24 @@ def wait_for(predicate,after=0,timeout=60):
     raise AssertionError('Native Safari event not observed')
 samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
 normalize=lambda s:''.join(unicodedata.normalize('NFC',s).split())
-report={'transport':'macOS system file dialog, SafariDriver trusted click, native keyboard','cases':[],'dialogs':[]}
+report={'transport':'normal Safari, native Command+O, macOS system file dialog','cases':[],'dialogs':[]}
 permission_log=(OUT/'macos-test-permissions.log').open('w',encoding='utf-8')
 permission_helper=subprocess.Popen([str(ROOT/'.tmp/native-test-permissions')],stdout=permission_log,stderr=permission_log)
-driver=None
 try:
-    driver=webdriver.Safari()
-    driver.set_window_size(1440,1040)
-    driver.get(f'http://127.0.0.1:{server.server_port}/reader.html')
-    subprocess.run(['osascript','-e','tell application "Safari" to activate'],check=True,timeout=60)
+    report['launch']=action('launch',f'http://127.0.0.1:{server.server_port}/reader.html')
     report['browser']=wait_for(lambda e:e['type']=='ready')
-    report['capabilities']=driver.capabilities
     report['macOS']=subprocess.check_output(['sw_vers','-productVersion'],text=True).strip()
     folder=Path.home()/'Downloads/BionicPDFAcceptance';folder.mkdir(parents=True,exist_ok=True)
     for variant in ('tagged','plain'):
         source=folder/f'native-{variant}.pdf';source.write_bytes((ROOT/f'.tmp/examples/shaped-{variant}.pdf').read_bytes())
         after=len(events)
         chooser=subprocess.Popen(['osascript',str(ROOT/'tests/safari_choose_file.applescript'),str(source),str(OUT/f'safari-system-dialog-{variant}.png')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
-        driver.find_element(By.ID,'open-file').click()
+        action('open')
         stdout,stderr=chooser.communicate(timeout=90)
         report['dialogs'].append({'returncode':chooser.returncode,'stdout':stdout,'stderr':stderr})
         print('system dialog',stdout,stderr,flush=True)
         assert chooser.returncode==0,report['dialogs'][-1]
-        assert wait_for(lambda e:e['type']=='open',after)['trusted'] is True
+        assert wait_for(lambda e:e['type']=='key' and e['code']=='KeyO' and e['meta'],after)['trusted'] is True
         selected=wait_for(lambda e:e['type']=='file' and e['name']==source.name,after)
         assert selected['trusted'] is True and selected['sha256']==hashlib.sha256(source.read_bytes()).hexdigest(),selected
         report['dialogs'][-1]['selected']=selected
@@ -94,7 +87,7 @@ finally:
     (OUT/'safari-system-reader.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     (OUT/'safari-system-events.json').write_text(json.dumps(events,ensure_ascii=False,indent=2),encoding='utf-8')
     subprocess.run(['screencapture','-x',str(OUT/'safari-system-final.png')],timeout=15)
-    if driver is not None:driver.quit()
+    action('quit')
     server.shutdown()
     if permission_helper.poll() is None:permission_helper.terminate()
     permission_log.close()

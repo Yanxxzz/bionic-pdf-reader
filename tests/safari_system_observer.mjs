@@ -7,14 +7,14 @@ document.querySelector('#file-input').addEventListener('change',async event=>{
  try{const bytes=await file.arrayBuffer();result.size=bytes.byteLength;result.sha256=await digest(bytes);}catch(error){result.error=String(error);}
  await post(result);
 });
-document.addEventListener('keydown',event=>post({type:'key',trusted:event.isTrusted,code:event.code,alt:event.altKey,meta:event.metaKey}));
+document.addEventListener('keydown',event=>post({type:'key',trusted:event.isTrusted,code:event.code,alt:event.altKey,meta:event.metaKey,target:event.target.tagName}));
 let last='',busy=false;
 setInterval(async()=>{
  const frame=document.querySelector('#page-frame'),ready=document.documentElement.dataset.readerReady;
  const key=JSON.stringify([ready,frame.dataset.renderRevision,frame.dataset.renderState]);
  if(key===last||busy)return;busy=true;
  try{
-  if(ready==='true'&&frame.dataset.renderState!=='ready'){last=key;await post({type:'ready',ua:navigator.userAgent});return;}
+  if(ready==='true'&&frame.dataset.renderState!=='ready'){last=key;const r=document.querySelector('#open-file').getBoundingClientRect();await post({type:'ready',ua:navigator.userAgent,visible:document.visibilityState,title:document.title,openBounds:{x:r.x,y:r.y,width:r.width,height:r.height},viewport:{width:innerWidth,height:innerHeight},bodyText:document.body.innerText.slice(0,500)});return;}
   if(frame.dataset.renderState!=='ready')return;
   const canvas=document.querySelector('#pdf-canvas'),blob=await new Promise(resolve=>canvas.toBlob(resolve));
   await post({type:'render',revision:frame.dataset.renderRevision,page:Number(frame.dataset.renderedPage),mode:frame.dataset.mode,name:document.querySelector('#file-name').textContent,text:document.querySelector('#text-layer').textContent,pixels:await digest(await blob.arrayBuffer()),boldGlyphs:Number(canvas.dataset.boldGlyphs),scrollY});last=key;
