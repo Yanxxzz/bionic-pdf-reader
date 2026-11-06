@@ -8,6 +8,8 @@ import threading
 import time
 import unicodedata
 from http.server import SimpleHTTPRequestHandler,ThreadingHTTPServer
+from selenium import webdriver
+from selenium.webdriver.common.by import By
 
 ROOT=Path(__file__).resolve().parents[1]
 OUT=ROOT/'test-results';OUT.mkdir(exist_ok=True)
@@ -46,14 +48,24 @@ normalize=lambda s:''.join(unicodedata.normalize('NFC',s).split())
 report={'transport':'macOS system file dialog, normal Safari window','cases':[],'dialogs':[]}
 permission_log=(OUT/'macos-test-permissions.log').open('w',encoding='utf-8')
 permission_helper=subprocess.Popen([str(ROOT/'.tmp/native-test-permissions')],stdout=permission_log,stderr=permission_log)
+driver=None
 try:
-    action('launch',f'http://127.0.0.1:{server.server_port}/reader.html')
+    driver=webdriver.Safari()
+    driver.set_window_size(1440,1040)
+    driver.get(f'http://127.0.0.1:{server.server_port}/reader.html')
+    subprocess.run(['osascript','-e','tell application "Safari" to activate'],check=True,timeout=60)
     report['browser']=wait_for(lambda e:e['type']=='ready')
+    report['capabilities']=driver.capabilities
     folder=Path.home()/'Downloads/BionicPDFAcceptance';folder.mkdir(parents=True,exist_ok=True)
     for variant in ('tagged','plain'):
         source=folder/f'native-{variant}.pdf';source.write_bytes((ROOT/f'.tmp/examples/shaped-{variant}.pdf').read_bytes())
         after=len(events)
-        report['dialogs'].append(action('open',source,OUT/f'safari-system-dialog-{variant}.png'))
+        chooser=subprocess.Popen(['osascript',str(ROOT/'tests/safari_choose_file.applescript'),str(source),str(OUT/f'safari-system-dialog-{variant}.png')],stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+        driver.find_element(By.ID,'open-file').click()
+        stdout,stderr=chooser.communicate(timeout=90)
+        report['dialogs'].append({'returncode':chooser.returncode,'stdout':stdout,'stderr':stderr})
+        print('system dialog',stdout,stderr,flush=True)
+        assert chooser.returncode==0,report['dialogs'][-1]
         selected=wait_for(lambda e:e['type']=='file' and e['name']==source.name,after)
         assert selected['trusted'] is True and selected['sha256']==hashlib.sha256(source.read_bytes()).hexdigest(),selected
         report['dialogs'][-1]['selected']=selected
@@ -80,6 +92,7 @@ finally:
     (OUT/'safari-system-reader.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
     (OUT/'safari-system-events.json').write_text(json.dumps(events,ensure_ascii=False,indent=2),encoding='utf-8')
     subprocess.run(['screencapture','-x',str(OUT/'safari-system-final.png')],timeout=15)
-    action('quit');server.shutdown()
+    if driver is not None:driver.quit()
+    server.shutdown()
     if permission_helper.poll() is None:permission_helper.terminate()
     permission_log.close()
