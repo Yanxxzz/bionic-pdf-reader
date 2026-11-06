@@ -63,3 +63,5 @@ PDF 处理依赖固定版本的 pypdf 私有字体编码接口，升级时需要
 测试覆盖范围和本次版本的实测记录见 [verification.md](verification.md)。浏览器生成的带标签 / 不带标签 PDF 需要先运行 `npm run fixtures:shaped`；否则 Python 的两个对应集成测试会明确跳过。CI 的浏览器任务会生成并实际运行它们，不把跳过作为通过证据。
 
 macOS 任务使用 Apple 提供的 Safari / safaridriver 与 PDFKit；不是用 Linux WebKit 冒充 Safari。原始文字、图层关闭像素和普通仿生输出分别比较。Preview 进程启动仅证明能打开文件，不等同于人工界面验收。
+
+Safari 先用独立输入框探测原生文件读取。如果驱动无法读取，渲染测试使用内存 File，并在 `safari-environment.json` 与逐案例报告中标明；不把该情况计为系统文件选择通过。控件通过 DOM 激活并检查可见命中位置，原生鼠标点击不在这项验收范围。Chrome / Edge / Firefox 另做真实浏览器与扩展的对应检查。

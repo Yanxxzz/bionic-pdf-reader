@@ -11,8 +11,9 @@
 - **Foxit PDF Reader**：制作可切换副本，在左侧导航栏空白处右键选择 Layers，再勾选该图层。依据 [Foxit Windows 2026.1.1 官方手册](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)的 Working with Layers；菜单随系统和版本变化，尚未逐版人工实测。
 - **PDF-XChange Editor**：制作可切换副本，使用 Layers 面板。11.1.1.0 已在本机人工验证图层开关及页码、缩放保留。按 Ctrl+L 打开图层，点击灯泡开关。
 - **Firefox 内置 PDF 阅读器**：其 PDF.js 查看器有 Layers 视图，参见 [Mozilla 查看器源码](https://github.com/mozilla/pdf.js/blob/master/web/viewer.html)。可以尝试打开可切换副本；内置查看器和本项目阅读页的测试结果不混用。
-- **macOS Preview、SumatraPDF、Apple Books、手机 PDF 应用和其他阅读器**：提供不依赖新图层开关的普通仿生 PDF。该格式在 PDFium 与 PDF.js 中验证文字与画面；这些应用各自的界面尚未逐个实机测试。
-- **Safari**：可尝试本地网页阅读器或普通仿生 PDF；本机没有真实 Safari，当前不宣称已实测。
+- **macOS Preview**：使用普通仿生版。Apple PDFKit 引擎已验证 13 页的文字、原始像素和普通仿生显示；Preview 完成了打开文件检查，未冒充逐页人工界面验收。
+- **SumatraPDF、Apple Books、手机 PDF 应用和其他阅读器**：提供不依赖新图层开关的普通仿生 PDF。该格式在 PDFium、PDF.js、Apple PDFKit 中验证文字与画面；这些应用各自的界面尚未逐个实机测试。
+- **Safari**：真实 macOS Safari 已完成本地网页阅读引擎的 13 种语言、文字选择、模式切换和关闭恢复测试，并补齐文字流兼容。验收使用内存 File 和 DOM 控件激活；SafariDriver 的系统文件选择在独立探针中也读取失败，系统文件对话框和原生点击尚不列为通过项。完整边界见 [验证记录](verification.md)。
 
 ## PDF 支持边界
 
