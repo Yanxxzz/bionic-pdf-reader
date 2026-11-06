@@ -46,6 +46,7 @@ try:
             selected=driver.execute_script("const r=document.createRange();r.selectNodeContents(document.querySelector('#text-layer'));const s=getSelection();s.removeAllRanges();s.addRange(r);const value=s.toString();s.removeAllRanges();return value;")
             spaced=lambda s:' '.join(unicodedata.normalize('NFC',s).split())
             assert spaced(sample['text']) in spaced(selected),(sample['code'],'copy/selection',selected)
+            assert driver.execute_script('return window.scrollY')==0,'Selecting PDF text must not scroll the application toolbar out of view'
             original=driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")
             step=f'{variant} / {sample["code"]} / enabling bionic'
             driver.find_element(By.ID,'bionic-mode').click()
@@ -59,7 +60,7 @@ try:
             report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True})
     print('Actual Safari: shaped text, selection and toggle checks passed')
 except Exception:
-    debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,ua:navigator.userAgent}")
+    debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")
     debug['step']=step;debug['capabilities']=driver.capabilities
     (OUT/'safari-failure.json').write_text(json.dumps(debug,ensure_ascii=False,indent=2),encoding='utf-8')
     driver.save_screenshot(str(OUT/'safari-failure.png'))
