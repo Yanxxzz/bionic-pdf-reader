@@ -19,7 +19,7 @@ export function glyphMask(glyphs, current, settings) {
   const flags = new Uint8Array(text.length);
   for (const { segment: word, index } of words) {
     if (/^[A-ZА-ЯЁΑ-Ω]{1,5}$/u.test(word)) continue;
-    flags.fill(1, index, index + prefixLength(word, settings.rule));
+    flags.fill(1, index, index + prefixLength(word, settings.rule, settings.locale || 'auto'));
   }
   let position = 0;
   return units.map(unit => {

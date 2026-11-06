@@ -8,6 +8,8 @@ test('reference rule and complete combining characters',()=>{
   assert.equal(prefixLength('the'),1);
   assert.equal(prefixLength('Reading','half'),4);
   assert.equal(prefixLength('e\u0301cole','half'),4);
+  assert.equal(prefixLength('personnel','reference','fr'),5);
+  assert.equal(prefixLength('personnel','reference','en'),4);
 });
 test('each authored language has word boundaries and selected original glyphs',()=>{
   const samples=JSON.parse(fs.readFileSync(new URL('../examples/languages.json',import.meta.url)));

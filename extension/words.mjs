@@ -9,10 +9,10 @@ function segmenter(locale, granularity) {
 export function wordSpans(text, locale = 'auto') {
   return [...segmenter(locale, 'word').segment(text)].filter(s => s.isWordLike && /\p{L}/u.test(s.segment));
 }
-export function prefixLength(word, rule = 'reference') {
+export function prefixLength(word, rule = 'reference', locale = 'auto') {
   const units = [...segmenter('auto', 'grapheme').segment(word)].map(s => s.segment);
   if (units.length < 2) return 0;
   let count = Math.ceil(units.length / 2);
-  if (rule === 'reference' && /^[A-Za-z]+$/.test(word)) count = commonWords.has(word.toLowerCase()) ? 1 : units.length <= 2 ? 1 : units.length <= 5 ? 2 : 4;
+  if (rule === 'reference' && (locale === 'auto' || locale.startsWith('en')) && /^[A-Za-z]+$/.test(word)) count = commonWords.has(word.toLowerCase()) ? 1 : units.length <= 2 ? 1 : units.length <= 5 ? 2 : 4;
   return units.slice(0, count).join('').length;
 }
