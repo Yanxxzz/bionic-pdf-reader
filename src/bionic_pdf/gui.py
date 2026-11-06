@@ -136,7 +136,8 @@ HELP_TEXT='''选择你的阅读方式
 • WPS / Acrobat / Foxit / PDF-XChange：选择「可切换版」，生成后打开副本。在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。默认关闭，开关时页码和缩放保持原位。
   WPS：左侧图层图标 → 眼睛开关。
   PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。
-  Acrobat / Foxit：导航面板 → Layers / 图层。
+  Acrobat：菜单 → 视图 → 显示/隐藏 → 侧面板 → 图层。
+  Foxit：在左侧导航栏空白处右键 → 图层，再勾选该图层。
 
 • Preview / SumatraPDF / 手机阅读器：选择「普通仿生版」。打开副本即可显示加粗；要看原始效果，打开原文件。
 

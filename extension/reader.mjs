@@ -120,7 +120,6 @@ async function renderPage(myRevision, resetScroll) {
   frame.dataset.renderRevision = String(myRevision);
   frame.dataset.mode = snapshot.enabled ? 'bionic' : 'original';
   frame.dataset.renderState='ready';
-  $('page-number').value = number;
   $('prev-page').disabled = number === 1;
   $('next-page').disabled = number === pdf.numPages;
   $('page-label').textContent = pageLabels?.[number - 1] ? `书内页码 ${pageLabels[number - 1]}` : `PDF 第 ${number} 页`;
@@ -214,6 +213,7 @@ async function openFile(file) {
     $('file-name').title = file.name;
     $('page-count').textContent = String(pdf.numPages);
     $('page-number').max = String(pdf.numPages);
+    $('page-number').value = pageNumber;
     documentTitle(file.name);
     await scheduleRender(true);
     buildOutline(pdf, currentLoad);
@@ -264,8 +264,8 @@ for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', (
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
 $('file-input').addEventListener('change', async e => {
   const input=e.target,file=input.files[0];
-  // Safari may revoke access to the selected file if the input is cleared
-  // while its asynchronous read is still pending.
+  // Keep the selection while asynchronous reading and rendering finish.
+  // A newer selection must not be cleared by an older load.
   try{await openFile(file);}finally{if(input.files[0]===file)input.value='';}
 });
 $('original-mode').addEventListener('click', () => setMode(false));

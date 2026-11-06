@@ -26,6 +26,8 @@ WPS 左侧点叠纸形的「图层」图标，点 `仿生阅读 · Bionic Readin
 
 图层默认关闭。开关作用于整本副本，页面位置和缩放保持不变。阅读器是否在关闭后记住图层状态，由阅读器管理。找不到图层入口时，可以改用普通仿生版。
 
+Acrobat 找不到图层面板时，可从菜单进入「视图 → 显示/隐藏 → 侧面板 → 图层」。依据 [Adobe 官方说明](https://helpx.adobe.com/acrobat/desktop/edit-documents/pdf-layers/manage-layers.html)。Foxit 可在左侧导航栏空白处右键打开 Layers，然后勾选图层；依据 [Windows 2026.1.1 官方手册](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)第 95 页。这些菜单说明不替代逐应用实机验收。
+
 ## Firefox 与其他浏览器
 
 推荐使用 Windows 程序打开的本地阅读页，或在源码目录运行：
