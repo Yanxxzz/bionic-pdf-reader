@@ -1,6 +1,7 @@
 // Observe real native input and rendering. Never choose files or activate UI.
 const post=data=>fetch('/acceptance-report',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
 const digest=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+document.querySelector('#open-file').addEventListener('click',event=>post({type:'open',trusted:event.isTrusted}));
 document.querySelector('#file-input').addEventListener('change',async event=>{
  const file=event.target.files[0],result={type:'file',name:file?.name,trusted:event.isTrusted};
  try{const bytes=await file.arrayBuffer();result.size=bytes.byteLength;result.sha256=await digest(bytes);}catch(error){result.error=String(error);}

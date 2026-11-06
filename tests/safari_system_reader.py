@@ -1,4 +1,4 @@
-"""Acceptance in a normal Safari window, using the real macOS file chooser."""
+"""Real Safari acceptance: trusted clicks, the macOS chooser and native keyboard."""
 from pathlib import Path
 import functools
 import hashlib
@@ -45,7 +45,7 @@ def wait_for(predicate,after=0,timeout=60):
     raise AssertionError('Native Safari event not observed')
 samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
 normalize=lambda s:''.join(unicodedata.normalize('NFC',s).split())
-report={'transport':'macOS system file dialog, normal Safari window','cases':[],'dialogs':[]}
+report={'transport':'macOS system file dialog, SafariDriver trusted click, native keyboard','cases':[],'dialogs':[]}
 permission_log=(OUT/'macos-test-permissions.log').open('w',encoding='utf-8')
 permission_helper=subprocess.Popen([str(ROOT/'.tmp/native-test-permissions')],stdout=permission_log,stderr=permission_log)
 driver=None
@@ -56,6 +56,7 @@ try:
     subprocess.run(['osascript','-e','tell application "Safari" to activate'],check=True,timeout=60)
     report['browser']=wait_for(lambda e:e['type']=='ready')
     report['capabilities']=driver.capabilities
+    report['macOS']=subprocess.check_output(['sw_vers','-productVersion'],text=True).strip()
     folder=Path.home()/'Downloads/BionicPDFAcceptance';folder.mkdir(parents=True,exist_ok=True)
     for variant in ('tagged','plain'):
         source=folder/f'native-{variant}.pdf';source.write_bytes((ROOT/f'.tmp/examples/shaped-{variant}.pdf').read_bytes())
@@ -66,6 +67,7 @@ try:
         report['dialogs'].append({'returncode':chooser.returncode,'stdout':stdout,'stderr':stderr})
         print('system dialog',stdout,stderr,flush=True)
         assert chooser.returncode==0,report['dialogs'][-1]
+        assert wait_for(lambda e:e['type']=='open',after)['trusted'] is True
         selected=wait_for(lambda e:e['type']=='file' and e['name']==source.name,after)
         assert selected['trusted'] is True and selected['sha256']==hashlib.sha256(source.read_bytes()).hexdigest(),selected
         report['dialogs'][-1]['selected']=selected
