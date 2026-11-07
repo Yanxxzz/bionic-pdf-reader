@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><title>Native Safari display and file input control</title>
+<div id="patch" style="position:absolute;top:70px;left:60px;width:90px;height:90px;background:rgb(213,37,70)"></div>
+<input type="file" id="disk" style="position:absolute;top:190px;left:60px">
+<script>
+const post=e=>fetch('/proof',{method:'POST',body:JSON.stringify(e)});
+const ox=screenX,oy=screenY+outerHeight-innerHeight;
+disk.onchange=async e=>{const f=disk.files[0];const bytes=await f.arrayBuffer();const hash=await crypto.subtle.digest('SHA-256',bytes);post({kind:'control-file',trusted:e.isTrusted,sha:[...new Uint8Array(hash)].map(x=>x.toString(16).padStart(2,'0')).join('')});};
+onload=()=>requestAnimationFrame(()=>requestAnimationFrame(()=>post({kind:'control',patch:[ox+100,oy+110],button:[ox+85,oy+200]})));
+</script>

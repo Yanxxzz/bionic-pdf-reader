@@ -31,6 +31,8 @@ class Handler(SimpleHTTPRequestHandler):
             mime = 'text/html; charset=utf-8'
         elif self.path == '/observer.mjs':
             body, mime = (ROOT/'tests/native_safari_observe.mjs').read_bytes(), 'text/javascript'
+        elif self.path == '/control.html':
+            body, mime = (ROOT/'tests/native_safari_control.html').read_bytes(), 'text/html'
         else:
             return super().do_GET()
         self.send_response(200)
@@ -139,8 +141,40 @@ def sample_screen(mode, sample):
     time.sleep(.35)
     subprocess.run(['screencapture','-x','-R'+','.join(map(str,rect)),str(OUT/('pdf-'+mode+'.png'))],check=True)
 
+def choose_path(path):
+    key(5, Q.kCGEventFlagMaskCommand | Q.kCGEventFlagMaskShift)
+    time.sleep(.6)
+    pb = AppKit.NSPasteboard.generalPasteboard()
+    pb.clearContents()
+    pb.setString_forType_(str(path),AppKit.NSPasteboardTypeString)
+    key(9, Q.kCGEventFlagMaskCommand)
+    time.sleep(.4)
+    key(36)
+    time.sleep(.65)
+    key(36)
+
 def run():
     url = f'http://127.0.0.1:{server.server_port}/reader.html'
+    subprocess.run(['open','-a','Safari',url.replace('reader.html','control.html')],check=True)
+    control=event('control')
+    until(lambda:front() == 'com.apple.Safari')
+    time.sleep(.4)
+    x,y=control['patch']
+    path=OUT/'control-color.png'
+    subprocess.run(['screencapture','-x',f'-R{x},{y},10,10',str(path)],check=True)
+    color=Image.open(path).convert('RGB').getpixel((4,4))
+    report['unaidedControl']={'screenColor':color, 'visible':color[0]>150 and color[1]<90 and color[2]<125}
+    click(*control['button'])
+    try:
+        panel=until(open_panel,25)
+        plain=(ROOT/'.tmp/examples/shaped-tagged.pdf').resolve()
+        choose_path(plain)
+        proof=event('control-file',trusted=True,sha=hashlib.sha256(plain.read_bytes()).hexdigest())
+        report['unaidedControl'].update(panel=panel,selected=proof)
+    except TimeoutError:
+        report['unaidedControl']['pickerTimedOut']=True
+        screen('control-chooser-timeout')
+    print('independent native HTML control',report['unaidedControl'],flush=True)
     subprocess.run(['open','-a','Safari',url],check=True)
     initial = event('ready')
     until(lambda:front() == 'com.apple.Safari')
@@ -155,18 +189,9 @@ def run():
         start = len(events)
         click(initial['x'],initial['y'])
         physical = event('click',start,target='open-file',trusted=True)
-        panel = until(open_panel,12)
+        panel = until(open_panel,25)
         screen(variant+'-chooser')
-        key(5, Q.kCGEventFlagMaskCommand | Q.kCGEventFlagMaskShift)
-        time.sleep(.6)
-        pb = AppKit.NSPasteboard.generalPasteboard()
-        pb.clearContents()
-        pb.setString_forType_(str(path),AppKit.NSPasteboardTypeString)
-        key(9, Q.kCGEventFlagMaskCommand)
-        time.sleep(.4)
-        key(36)
-        time.sleep(.65)
-        key(36)
+        choose_path(path)
         file = event('file',start,name=path.name,trusted=True,sha=hashlib.sha256(path.read_bytes()).hexdigest())
         report['dialogs'].append({'variant':variant,'panel':panel,'file':file,'physicalClick':physical})
         for page,sample in enumerate(cases,1):

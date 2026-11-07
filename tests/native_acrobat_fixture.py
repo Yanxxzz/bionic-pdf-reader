@@ -56,6 +56,15 @@ def read(img):
     items,_ = engine(np.asarray(img))
     return [(str(text),int(box[0][0]),int(box[0][1]),int(box[2][0]),int(box[2][1])) for box,text,score in (items or [])]
 
+def observed_page():
+    img=screen(); items=read(img)
+    if any('defaultpdfapplication' in canonical(t) for t,*_ in items):
+        no = next(row for row in items if row[0].strip().lower() == 'no')
+        mouse.click(coords=((no[1]+no[3])//2,(no[2]+no[4])//2))
+        time.sleep(.6)
+        img=screen(); items=read(img)
+    return img,items
+
 def point_in_document(items):
     hdr = next((x for x in items if 'shaped' in canonical(x[0]) and 'sample' in canonical(x[0])),None)
     if hdr: return (hdr[1]+15,hdr[4]+18)
@@ -104,9 +113,8 @@ def capture_pass(mode):
     for index,sample in enumerate(samples,1):
         if index>1:
             keyboard.send_keys('{RIGHT}');time.sleep(.5)
-        shot=screen()
+        shot,items=observed_page()
         shot.save(OUT/(mode+'-'+sample['code']+'.png'))
-        items=read(shot)
         if not page_id(items,sample['code']):
             raise RuntimeError(f'Expected page {index} ({sample["code"]}), screen text: {items}')
         cursor=point_in_document(items)
