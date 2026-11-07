@@ -140,7 +140,7 @@ def read_native_copy():
 def copy_selection(header):
     _,x0,y0,x1,y1=header
     start=(x0+8,(y0+y1)//2)
-    end=(min(x0+345,490),start[1]+225)
+    end=(min(x0+345,950),start[1]+225)
     keys('{ESC}');mouse.click(coords=start);time.sleep(.35)
     mouse.press(coords=start)
     for step in range(1,9):
@@ -192,12 +192,21 @@ def capture_page(index,sample,mode):
         print(mode,index,sample['code'],'passed',flush=True)
         return
 
+def sample_body(value):
+    # Page and whole-document selections can insert different soft line breaks.
+    # The independently authored footer marks the end of the two body paragraphs.
+    match=titles.search(value)
+    assert match and 'Bionic PDF Reader' in value,value
+    return value[match.end():value.index('Bionic PDF Reader')].replace('\r','').replace('\n','')
+
 def original_clipboard():
+    global hwnd
     original=source.with_name('shaped-tagged.pdf')
     subprocess.Popen([str(reader),'/n','/A','page=1&view=Fit',str(original)])
     def original_window():
         return next((h for h,t in adobe_windows() if 'multilingual' in t.lower() and 'switchable' not in t.lower()),None)
     target=until(original_window,35)
+    hwnd=target
     window=Desktop(backend='win32').window(handle=target)
     window.maximize();window.set_focus();time.sleep(1)
     expected=[s['code'].upper() for s in samples]
@@ -211,14 +220,45 @@ def original_clipboard():
         raise RuntimeError('Could not copy all 13 original pages through Acrobat')
     (OUT/'original-clipboard.txt').write_bytes(value.encode())
     blocks=re.split(r'(?=ORIGINAL SHAPED SAMPLE\s*/)',value)
+    repick={}
     for sample,block in zip(samples,[b for b in blocks if titles.search(b)],strict=True):
         code=sample['code']
         if code not in report['pages']:
             continue
         actual=(OUT/f'off-{code}.txt').read_bytes().decode()
-        same=block.rstrip('\r\n')==actual.rstrip('\r\n')
-        report['pages'][code]['sourceClipboardEqual']=same
-        if not same: errors.append((code,'original',repr(block[:290]),repr(actual[:290])))
+        record=report['pages'][code]
+        record['sourceBodyEqual']=sample_body(block)==sample_body(actual)
+        record['sourceClipboardEqual']=block.rstrip('\r\n')==actual.rstrip('\r\n')
+        if not record['sourceBodyEqual']: errors.append((code,'original body',repr(block[:290]),repr(actual[:290])))
+        if not record['sourceClipboardEqual']: repick[code]=actual
+    if not repick: return
+    keys('{ESC}');mouse.click(coords=(495,490));keys('^{HOME}');keys('^0');time.sleep(.6)
+    for index,sample in enumerate(samples,1):
+        if not repick: break
+        if index>1:
+            mouse.click(coords=(1000,557));time.sleep(.55)
+        code=sample['code']
+        if code not in repick: continue
+        for attempt in range(3):
+            shot,items=observed_page()
+            hdr=page_header(items)
+            if hdr:
+                try: value=copy_selection(hdr)
+                except RuntimeError: continue
+                if titles.findall(value)==[code.upper()] and 'Bionic PDF Reader' in value: break
+            time.sleep(.6)
+        else:
+            print('Original single-page gesture did not select',code,flush=True)
+            continue
+        shot.save(OUT/f'original-{code}.png')
+        (OUT/f'original-{code}.txt').write_bytes(value.encode())
+        identical=value==repick[code]
+        report['pages'][code]['sourceSinglePageEqual']=identical
+        report['pages'][code]['sourceSinglePageBodyEqual']=sample_body(value)==sample_body(repick[code])
+        if not report['pages'][code]['sourceSinglePageBodyEqual']:
+            errors.append((code,'original single-page body',repr(value[:290]),repr(repick[code][:290])))
+        print('Native original single-page check',code,identical,flush=True)
+        del repick[code]
 
 try:
     assert reader.is_file(),reader
