@@ -106,14 +106,6 @@ try:
 except Exception:
     debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")
     debug['step']=step;debug['capabilities']=driver.capabilities
-    debug['controlCanvas']=driver.execute_script("""
-        const c=document.createElement('canvas'); c.width=c.height=4;
-        const ctx=c.getContext('2d');
-        return ['red','blue'].map(color=>{
-          ctx.fillStyle=color; ctx.fillRect(0,0,4,4);
-          return Array.from(ctx.getImageData(1,1,1,1).data);
-        });
-    """)
     (OUT/'safari-failure.json').write_text(json.dumps(debug,ensure_ascii=False,indent=2),encoding='utf-8')
     driver.save_screenshot(str(OUT/'safari-failure.png'))
     print(json.dumps(debug,ensure_ascii=False,indent=2),flush=True)

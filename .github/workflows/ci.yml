@@ -58,7 +58,7 @@ jobs:
           path: test-results/
           retention-days: 7
   apple-readers:
-    runs-on: macos-latest
+    runs-on: macos-26-intel
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
