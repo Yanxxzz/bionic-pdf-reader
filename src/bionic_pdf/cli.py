@@ -11,7 +11,8 @@ def main(argv=None):
     parser.add_argument('source', type=Path)
     parser.add_argument('target', type=Path)
     parser.add_argument('--mode', choices=['switchable','static'], default='switchable', help='Layer switch, or always-visible emphasis for other readers')
-    parser.add_argument('--language', choices=['auto',*LANGUAGES], default='auto', help='Document language; auto segments words without detecting language')
+    parser.add_argument('--language', choices=['auto',*LANGUAGES], default='auto',
+                        help='Set the PDF language. en uses English reference prefixes. Other choices use half words. auto keeps the source language tag.')
     parser.add_argument('--weight', type=float, default=0.026)
     args = parser.parse_args(argv)
     if not 0.005 <= args.weight <= 0.08: parser.error('--weight must be between 0.005 and 0.08')

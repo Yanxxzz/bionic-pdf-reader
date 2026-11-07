@@ -73,7 +73,7 @@ def _visual_segments(records):
             yield from _split_columns(line)
 
 
-def select_glyphs(records):
+def select_glyphs(records, rule='half'):
     selected = set()
     for segment in _visual_segments(records):
         text = ''
@@ -87,7 +87,7 @@ def select_glyphs(records):
             spans.append((start, len(text), atom['indices']))
             edge = max(edge, atom['x'] + atom['w'])
 
-        flags = segment_flags(text)
+        flags = segment_flags(text, rule)
         for start, end, indices in spans:
             if indices and flags.find(b'\x01', start, end) >= 0:
                 selected.update(indices)

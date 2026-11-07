@@ -36,7 +36,7 @@ class Maker:
         language = ttk.Frame(frame); language.pack(fill='x',pady=(12,0))
         ttk.Label(language,text='文档语言',width=9).pack(side='left')
         ttk.Combobox(language,textvariable=self.locale,state='readonly',width=24,values=list(self.language_options)).pack(side='left')
-        ttk.Label(language,text='建议明确选择文档语言。').pack(side='left',padx=12)
+        ttk.Label(language,text='英语用参考规则，自动及其他语言加粗前半词。').pack(side='left',padx=12)
         self.progress = ttk.Progressbar(frame,maximum=100); self.progress.pack(fill='x',pady=(18,10))
         ttk.Label(frame,textvariable=self.status,wraplength=650).pack(anchor='w')
         controls = ttk.Frame(frame);controls.pack(fill='x',pady=(22,0))
@@ -139,7 +139,7 @@ HELP_TEXT='''选择你的阅读方式
 
 语言与配置
 支持英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。
-建议明确选择文档语言。auto 表示自动分词，不是语言识别。浏览器内英语可用参考规则；其他语言或混合文档可选择「词语前半部分」，强度从 100% 开始。
+制作副本时，选英语会对纯英文字母词应用参考规则。自动模式和其他 12 种语言按完整字素加粗前半词。手动选择会设置副本的文档语言，自动模式沿用原文件的语言标记。多语言混排可以选自动。
 
 常见问题
 • 没有加粗：扫描图片需要先做 OCR；未嵌入字体、特殊编码、竖排、原有粗斜体和部分嵌套内容会保持原样。

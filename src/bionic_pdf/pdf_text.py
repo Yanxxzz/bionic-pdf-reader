@@ -1,6 +1,8 @@
 """Read positioned glyphs from PDF text and graphics operators."""
 import math
 import re
+from bisect import bisect_left, bisect_right
+from collections.abc import Callable
 from copy import copy
 from dataclasses import dataclass
 from io import BytesIO
@@ -119,22 +121,40 @@ def character_map(font, cid):
     return characters
 
 
-def font_widths(font, cid):
+def font_width_lookup(font, cid):
     if not cid:
         first = int(font.get('/FirstChar', 0))
-        return {first+i: float(w) for i, w in enumerate(font.get('/Widths', []))}, 0
+        widths = font['/Widths'] if '/Widths' in font else ()
+        return lambda code: float(widths[code - first]) if first <= code < first + len(widths) else 0
+
     descendant = font['/DescendantFonts'][0].get_object()
-    entries = iter(descendant.get('/W', []))
-    widths = {}
-    for first in entries:
-        first = int(first)
-        last_or_widths = next(entries)
-        if isinstance(last_or_widths, ArrayObject):
-            widths.update((first+i, float(w)) for i, w in enumerate(last_or_widths))
-        else:
-            width = float(next(entries))
-            widths.update(dict.fromkeys(range(first, int(last_or_widths)+1), width))
-    return widths, float(descendant.get('/DW', 1000))
+    entries = iter(descendant['/W'] if '/W' in descendant else ())
+    starts = [0]
+    runs = [(0, float(descendant.get('/DW', 1000)))]
+    try:
+        for first in entries:
+            first = int(first)
+            value = next(entries).get_object()
+            if isinstance(value, ArrayObject):
+                stop = first + len(value)
+            else:
+                stop = int(value) + 1
+                value = float(next(entries).get_object())
+            start, stop = max(first, 0), min(stop, 0x10000)  # Identity-H uses two-byte codes.
+            if start >= stop:
+                continue
+            left, right = bisect_left(starts, start), bisect_right(starts, stop)
+            # Later declarations override only [start, stop). Resume the old run at stop.
+            runs[left:right] = [(first, value), runs[right - 1]]
+            starts[left:right] = [start, stop]
+    except StopIteration:
+        raise ValueError('PDF 字体的字宽表不完整。') from None
+
+    def width_for(code):
+        first, value = runs[bisect_right(starts, code) - 1]
+        return float(value[code - first]) if isinstance(value, ArrayObject) else value
+
+    return width_for
 
 
 @dataclass
@@ -142,8 +162,7 @@ class TextFont:
     code_size: int
     styled: bool
     characters: list | dict
-    widths: dict
-    default_width: float
+    width_for: Callable[[int], float]
 
     @classmethod
     def from_pdf(cls, font):
@@ -152,10 +171,9 @@ class TextFont:
         if not cid and subtype not in ('/Type1', '/TrueType'):
             return None
         styled = bool(STYLED_FONT.search(str(font.get('/BaseFont', ''))))
-        widths, default = font_widths(font, cid)
         characters = {} if styled else character_map(font, cid)
         return cls(code_size=2 if cid else 1, styled=styled, characters=characters,
-                   widths=widths, default_width=default)
+                   width_for=font_width_lookup(font, cid))
 
     def text_for(self, code):
         if isinstance(self.characters, list):
@@ -263,7 +281,7 @@ class PageTextReader:
                 continue
             for start in range(0, len(raw), metrics.code_size):
                 code = int.from_bytes(raw[start:start + metrics.code_size], 'big')
-                width = metrics.widths.get(code, metrics.default_width)
+                width = metrics.width_for(code)
                 word_spacing = state.word_spacing if code == 32 else 0
                 advance = (width * size / 1000 + state.char_spacing + word_spacing) * scale
                 local = translated(state.text_matrix, 0, state.rise)

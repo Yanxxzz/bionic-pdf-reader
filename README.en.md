@@ -33,7 +33,7 @@ The in-app guide and the offline `使用指南.html` in each ZIP explain the con
 
 ## Document languages and fonts
 
-The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. The browser offers an English reference rule and a half-word rule. The desktop converter uses the half-word rule with whole grapheme clusters and preserves the original ligature glyphs. [Language support](docs/languages.md)
+The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. The browser offers an English reference rule and a half-word rule. In the desktop converter, choosing English applies the reference rule to words made up of plain English letters. Auto and the other 12 languages use half words with whole grapheme clusters. Choosing a language also sets the reading copy’s PDF language tag. [Language support](docs/languages.md)
 
 Start with a PDF whose text you can select. Image-only scans need OCR first. Vertical text, certain embedded fonts and text inside nested Form XObjects can retain their original appearance. [PDF and font compatibility](docs/compatibility.md)
 

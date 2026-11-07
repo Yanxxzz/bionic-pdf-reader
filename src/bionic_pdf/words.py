@@ -32,7 +32,7 @@ def text_flags(text, rule='half'):
     return flags
 
 
-def segment_flags(text):
+def segment_flags(text, rule='half'):
     if SKIP_SEGMENT.search(text) or regex.fullmatch(r'[A-Za-z]{1,4}', text):
         return bytearray(len(text))
-    return text_flags(text)
+    return text_flags(text, rule)

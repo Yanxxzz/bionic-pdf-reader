@@ -70,6 +70,30 @@ def test_vector_layer_has_no_duplicate_text(converted):
     assert '/OCProperties' not in PdfReader(converted[2]).root_object
     assert PdfReader(converted[2]).metadata.title.endswith(' - Bionic Reading')
 
+
+def test_document_language_changes_prefixes_and_preserves_original_text(converted, tmp_path):
+    from bionic_pdf.words import LANGUAGES
+    from pypdf.generic import TextStringObject
+
+    writer = PdfWriter()
+    writer.add_page(PdfReader(converted[0]).pages[0])
+    writer.root_object[N('/Lang')] = TextStringObject('fr-CA')
+    source = tmp_path/'tagged.pdf'
+    writer.write(source)
+    with pdfium.PdfDocument(source) as original:
+        original_text = original[0].get_textpage().get_text_range()
+    page_hashes = {}
+    for language in ('auto', *LANGUAGES):
+        target = tmp_path/f'{language}.pdf'
+        make_pdf(source, target, pages=[1], mode='static', locale=language)
+        assert PdfReader(target).root_object['/Lang'] == ('fr-CA' if language == 'auto' else language)
+        with pdfium.PdfDocument(target) as result:
+            assert result[0].get_textpage().get_text_range() == original_text
+            pixels = result[0].render(scale=1.5).to_pil().tobytes()
+            page_hashes[language] = hashlib.sha256(pixels).digest()
+    assert page_hashes['en'] != page_hashes['auto']
+    assert all(digest == page_hashes['auto'] for lang, digest in page_hashes.items() if lang != 'en')
+
 def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     source,switchable,*_=converted
     with pytest.raises(ValueError):make_pdf(source,source)

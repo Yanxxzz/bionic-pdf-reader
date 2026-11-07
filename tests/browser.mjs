@@ -39,10 +39,18 @@ try{
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
       await page.keyboard.press('Escape');
       await page.setViewportSize({width:1440,height:1040});
-      async function chooseSample(button) {
+      async function chooseSample(button, file = pdf) {
         const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator(button).click()]);
-        await chooser.setFiles(pdf);
+        await chooser.setFiles(file);
       }
+      const damaged = {name:'damaged.pdf', mimeType:'application/pdf', buffer:Buffer.from('%PDF-1.4\nbroken\n%%EOF')};
+      const waitForOpenError = () => page.waitForFunction(() => {
+        const message = document.querySelector('#message');
+        return !message.hidden && message.textContent.includes('无法打开 PDF');
+      });
+      await chooseSample('#choose-file', damaged);
+      await waitForOpenError();
+      assert.ok(await page.locator('#welcome').isVisible());
       await chooseSample('#choose-file');
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());
@@ -59,6 +67,27 @@ try{
       assert.ok(previousScroll > 0);
       await wait(2, 'bionic');
       assert.equal(await page.locator('#page-scroller').evaluate(el => el.scrollTop), 0);
+      const previousPixels = await page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL());
+      const previousText = await page.locator('#text-layer').textContent();
+      await chooseSample('#open-file', damaged);
+      await waitForOpenError();
+      assert.equal(await page.locator('#file-name').textContent(), path.basename(pdf));
+      assert.equal(await page.locator('#page-number').inputValue(), '2');
+      assert.equal(await page.locator('#reading-status').textContent(), '仿生模式 · 词首加粗');
+      assert.equal(await page.locator('#text-layer').textContent(), previousText);
+      assert.equal(await page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL()), previousPixels);
+      const locked = path.join(path.dirname(pdf), 'locked.pdf');
+      await chooseSample('#open-file', locked);
+      const password = page.locator('#pdf-password');
+      await password.fill('incorrect');
+      await password.press('Enter');
+      await page.getByText('密码不正确，请重试', {exact:true}).waitFor();
+      await password.press('Escape');
+      await page.getByRole('alert').filter({hasText:'已取消打开'}).waitFor();
+      await page.locator('#outline').getByRole('button', {name:'de', exact:true}).click();
+      await wait(3, 'bionic');
+      await page.locator('#prev-page').click();
+      await wait(2, 'bionic');
       await page.locator('#prev-page').click();
       await page.locator('#original-mode').click();
       await wait(1, 'original');
@@ -103,8 +132,31 @@ try{
       await page.locator('#rule').selectOption('half');await wait(1,'bionic');
       assert.equal(await strokes(),half,'Changing the rule restores half-word prefixes');
       const previous=await page.locator('#page-frame').getAttribute('data-render-revision');
-      await chooseSample('#open-file');
+      // Finish an older file read after a newer document has been accepted.
+      await page.evaluate(() => {
+        const slow = new File(['invalid PDF'], 'slow.pdf', {type:'application/pdf'});
+        slow.arrayBuffer = () => new Promise((_, reject) => {
+          window.finishOldRead = () => reject(new Error('superseded read'));
+        });
+        const transfer = new DataTransfer();
+        transfer.items.add(slow);
+        document.dispatchEvent(new DragEvent('drop', {dataTransfer:transfer}));
+      });
+      await page.waitForFunction(() => typeof window.finishOldRead === 'function');
+      await chooseSample('#open-file', locked);
+      await password.fill('reader-test');
+      await password.press('Enter');
       await page.waitForFunction(r=>document.querySelector('#page-frame').dataset.renderRevision!==r,previous);
+      assert.equal(await page.locator('#file-name').textContent(), 'locked.pdf');
+      assert.match(await page.locator('#text-layer').textContent(), /Password protected example/);
+      await page.evaluate(() => window.finishOldRead());
+      assert.ok(await page.locator('#message').isHidden());
+      await chooseSample('#open-file', locked);
+      await password.waitFor();
+      await page.locator('#file-input').setInputFiles(pdf);
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'multilingual.pdf');
+      await wait(1, 'bionic');
+      assert.ok(await page.locator('#password-dialog').isHidden());
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');

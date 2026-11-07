@@ -18,6 +18,7 @@ from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject a
 from .embedded_font import EmbeddedFont
 from .pdf_text import PageTextReader, matrix_multiply
 from .layout import select_glyphs
+from .words import LANGUAGES
 
 
 LAYER_NAME = '仿生阅读 · Bionic Reading'
@@ -105,8 +106,9 @@ def _page_stream_with_strokes(data, strokes, layer_tag):
 
 
 class OverlayBuilder:
-    def __init__(self, writer, layer, weight=0.026):
+    def __init__(self, writer, layer, weight, rule):
         self.writer, self.layer = writer, layer
+        self.rule = rule
         self.text_reader = PageTextReader()
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
@@ -118,7 +120,7 @@ class OverlayBuilder:
         resources = page.get('/Resources', D())
         data, records = self.text_reader.read(content, resources)
         strokes, glyph_names = {}, {}
-        for index in sorted(select_glyphs(records)):
+        for index in sorted(select_glyphs(records, self.rule)):
             record = records[index]
             glyph = self.glyphs.glyph(record['font'], record['code'], record['text'])
             if glyph is None:
@@ -168,6 +170,8 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
     source, target = Path(source), Path(target)
     if mode not in ('switchable', 'static'):
         raise ValueError('mode must be switchable or static')
+    if locale != 'auto' and locale not in LANGUAGES:
+        raise ValueError(f'不支持的文档语言：{locale}')
     if source.resolve() == target.resolve():
         raise ValueError('请为阅读副本选择不同文件名，不能覆盖原 PDF。')
     reader = PdfReader(source)
@@ -188,6 +192,11 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         if source_layers is not None:
             writer.root_object[N('/OCProperties')] = source_layers.clone(writer)
 
+    if locale != 'auto':
+        writer.root_object[N('/Lang')] = T(locale)
+    elif pages is not None and '/Lang' in reader.root_object:
+        writer.root_object[N('/Lang')] = reader.root_object['/Lang'].clone(writer)
+
     if mode == 'switchable':
         layer = _add_reading_layer(writer)
         suffix = ' - Switchable Reading'
@@ -197,7 +206,7 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         layer = None
         suffix = ' - Bionic Reading'
         subject = 'Original PDF text plus always-visible vector word-prefix emphasis.'
-    builder = OverlayBuilder(writer, layer, weight)
+    builder = OverlayBuilder(writer, layer, weight, 'reference' if locale == 'en' else 'half')
     total = len(writer.pages)
     for number, page in enumerate(writer.pages, 1):
         builder.build_page(page)

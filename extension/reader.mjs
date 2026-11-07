@@ -5,8 +5,7 @@ import {fitWidthChanged, renderPage, resetPageView} from './page-view.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
-pdfjs.GlobalWorkerOptions.workerSrc = workerURL.href;
-pdfjs.GlobalWorkerOptions.workerPort = new Worker(workerURL, { type: 'module' });
+const worker = new pdfjs.PDFWorker({port: new Worker(workerURL, {type: 'module'})});
 const $ = id => document.getElementById(id);
 const settings = { enabled: false, rule: 'reference', strength: 1, locale: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('bionic-pdf-settings') || '{}')); } catch {}
@@ -53,12 +52,12 @@ async function scheduleRender(resetScroll = false) {
   if (!activePDF) return;
   const number = pageNumber;
   const snapshot = {...settings};
+  $('prev-page').disabled = number === 1;
+  $('next-page').disabled = number === activePDF.numPages;
   $('reading-status').textContent = '正在显示页面…';
   try {
     const result = await renderPage(activePDF, number, $('zoom').value, snapshot, resetScroll);
     if (!result || pdf !== activePDF) return;
-    $('prev-page').disabled = number === 1;
-    $('next-page').disabled = number === activePDF.numPages;
     const label = pageLabels?.[number - 1];
     $('page-label').textContent = label ? `书内页码 ${label}` : `PDF 第 ${number} 页`;
     let status = '原始模式';
@@ -88,68 +87,92 @@ async function openFile(file) {
     return;
   }
   const currentLoad = ++loadRevision;
-  pdf = null;
-  await resetPageView();
-  if (currentLoad !== loadRevision) return;
-  await loadingTask?.destroy();
-  if (currentLoad !== loadRevision) return;
+  const superseded = loadingTask;
   loadingTask = null;
-  $('message').hidden = true;
-  $('reading-status').textContent = '正在打开文件…';
-  let data;
-  try { data = new Uint8Array(await file.arrayBuffer()); }
-  catch(error){
-    if(currentLoad===loadRevision){$('reading-status').textContent='未打开文件';notify(`无法读取 PDF：${error.message}。请重新选择文件。`);}
-    return;
-  }
-  if (currentLoad !== loadRevision) return;
-  const task = pdfjs.getDocument({
-    data,
-    isEvalSupported: false,
-    cMapUrl: new URL('./vendor/cmaps/', import.meta.url).href,
-    cMapPacked: true,
-    standardFontDataUrl: new URL('./vendor/standard_fonts/', import.meta.url).href,
-    wasmUrl: new URL('./vendor/wasm/', import.meta.url).href,
-    useWorkerFetch: true,
-  });
-  loadingTask = task;
-  task.onPassword = (updatePassword, reason) => {
-    $('pdf-password').value = '';
-    $('password-dialog').querySelector('h2').textContent = reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD ? '密码不正确，请重试' : '此 PDF 需要密码';
-    $('password-dialog').showModal();
-    $('password-dialog').addEventListener('close', () => {
-      if ($('password-dialog').returnValue === 'open') updatePassword($('pdf-password').value);
-      else task.destroy();
-    }, { once: true });
-  };
+  const dialog = $('password-dialog');
+  if (dialog.open) dialog.close('cancel');
+  notify(`正在打开「${file.name}」…`);
+  let task;
+  let passwordCancelled = false;
   try {
+    await superseded?.destroy();
+    if (currentLoad !== loadRevision) return;
+    const data = new Uint8Array(await file.arrayBuffer());
+    if (currentLoad !== loadRevision) return;
+    task = pdfjs.getDocument({
+      data, worker, isEvalSupported: false,
+      cMapUrl: new URL('./vendor/cmaps/', import.meta.url).href,
+      cMapPacked: true,
+      standardFontDataUrl: new URL('./vendor/standard_fonts/', import.meta.url).href,
+      wasmUrl: new URL('./vendor/wasm/', import.meta.url).href,
+      useWorkerFetch: true,
+    });
+    loadingTask = task;
+    task.onPassword = (updatePassword, reason) => {
+      if (task !== loadingTask) return;
+      $('pdf-password').value = '';
+      dialog.returnValue = 'cancel';
+      dialog.querySelector('h2').textContent = reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD ? '密码不正确，请重试' : '此 PDF 需要密码';
+      dialog.addEventListener('close', () => {
+        if (task !== loadingTask) return;
+        const password = $('pdf-password').value;
+        $('pdf-password').value = '';
+        passwordCancelled = dialog.returnValue !== 'open';
+        updatePassword(passwordCancelled ? new Error('已取消输入密码') : password);
+      }, {once: true});
+      dialog.showModal();
+    };
     const loadedPDF = await task.promise;
-    if (currentLoad !== loadRevision) { await loadedPDF.destroy(); return; }
+    if (currentLoad !== loadRevision) return;
     const labels = await loadedPDF.getPageLabels();
     if (currentLoad !== loadRevision) return;
-    pdf = loadedPDF;
-    pageLabels = labels;
-    pageNumber = 1;
-    try { pageNumber = Math.max(1, Math.min(pdf.numPages, Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)) || 1)); } catch {}
-    $('welcome').hidden = true;
-    $('document').hidden = false;
-    $('file-name').textContent = file.name;
-    $('file-name').title = file.name;
-    $('page-count').textContent = String(pdf.numPages);
-    $('page-number').max = String(pdf.numPages);
-    $('page-number').value = pageNumber;
-    document.title = `${file.name} · 仿生 PDF 阅读`;
-    await scheduleRender(true);
-    if (currentLoad === loadRevision) buildOutline(loadedPDF, currentLoad);
+    loadingTask = null;
+    $('message').hidden = true;
+    await showDocument(loadedPDF, file.name, labels);
   } catch (error) {
-    if (currentLoad !== loadRevision) return;
-    notify(`无法打开 PDF：${error.message}`);
+    if (currentLoad === loadRevision) {
+      notify(passwordCancelled ? `已取消打开「${file.name}」。` : `无法打开 PDF「${file.name}」：${error.message}`);
+    }
+  } finally {
+    if (task && loadingTask === task) {
+      loadingTask = null;
+      await task.destroy();
+    }
   }
 }
 
-async function buildOutline(activePDF, load) {
-  const outline = await activePDF.getOutline();
-  if (load !== loadRevision) return;
+async function showDocument(loadedPDF, name, labels) {
+  const previous = pdf;
+  pdf = loadedPDF;
+  pageLabels = labels;
+  pageNumber = 1;
+  try { pageNumber = Math.max(1, Math.min(pdf.numPages, Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)) || 1)); } catch {}
+  $('welcome').hidden = true;
+  $('document').hidden = false;
+  $('file-name').textContent = name;
+  $('file-name').title = name;
+  $('page-count').textContent = String(pdf.numPages);
+  $('page-number').max = String(pdf.numPages);
+  $('page-number').value = pageNumber;
+  $('page-label').textContent = '';
+  $('outline').replaceChildren();
+  document.title = `${name} · 仿生 PDF 阅读`;
+  const reset = resetPageView();
+  const rendering = scheduleRender(true);
+  await reset;
+  await previous?.destroy();
+  await rendering;
+  if (pdf === loadedPDF) await buildOutline(loadedPDF);
+}
+
+async function buildOutline(activePDF) {
+  let outline;
+  try { outline = await activePDF.getOutline(); }
+  catch {
+    if (pdf === activePDF) $('outline').textContent = '无法读取这份 PDF 的目录。';
+    return;
+  }
+  if (pdf !== activePDF) return;
   const root = $('outline');
   root.replaceChildren();
   if (!outline?.length) {
@@ -169,12 +192,12 @@ async function buildOutline(activePDF, load) {
       const button = document.createElement('button');
       button.textContent = item.title;
       button.addEventListener('click', async () => {
-        if (!item.dest) return;
+        if (!item.dest || pdf !== activePDF) return;
         const destination = typeof item.dest === 'string' ? await activePDF.getDestination(item.dest) : item.dest;
-        if (!destination || load !== loadRevision) return;
+        if (!destination || pdf !== activePDF) return;
         const ref = destination[0];
         const index = typeof ref === 'number' ? ref : await activePDF.getPageIndex(ref);
-        if (load === loadRevision) goToPage(index + 1);
+        if (pdf === activePDF) goToPage(index + 1);
       });
       target.append(button);
       if (item.items?.length) append(item.items, target);
@@ -190,6 +213,7 @@ function chooseFile() {
   else input.click();
 }
 for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', chooseFile);
+$('cancel-password').addEventListener('click', () => $('password-dialog').close('cancel'));
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
 $('file-input').addEventListener('change', async e => {
   const input=e.target,file=input.files[0];

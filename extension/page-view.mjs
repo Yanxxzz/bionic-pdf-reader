@@ -25,13 +25,15 @@ function invalidate() {
   return revision;
 }
 
-export async function resetPageView() {
-  const request = invalidate();
-  await pending;
-  if (request === revision) {
+export function resetPageView() {
+  invalidate();
+  pending = pending.then(() => {
     layouts.clear();
     displayedText = null;
-  }
+    textContainer.replaceChildren();
+    canvas.width = canvas.height = 0;
+  });
+  return pending;
 }
 
 async function drawCanvas(page, target, viewport, transform) {

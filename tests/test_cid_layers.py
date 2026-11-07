@@ -13,6 +13,26 @@ ROOT=Path(__file__).resolve().parents[1]
 def stream(writer,data):
     obj=DecodedStreamObject();obj.set_data(data);return writer._add_object(obj)
 
+
+def test_cid_width_ranges_use_space_proportional_to_the_table():
+    import tracemalloc
+    from bionic_pdf.pdf_text import TextFont
+
+    # A wide range, two narrower overrides and gaps using the default width.
+    entries = A([I(8), I(199999), I(500), I(20), A([I(610), I(620), I(630)]),
+                 I(21), I(21), I(700), I(3), A([I(410)])])
+    font = D({N('/Subtype'): N('/Type0'), N('/Encoding'): N('/Identity-H'),
+              N('/DescendantFonts'): A([D({N('/W'): entries, N('/DW'): I(900)})])})
+    tracemalloc.start()
+    try:
+        metrics = TextFont.from_pdf(font)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    assert peak < 2 * 1024**2, 'A compact CID range must not allocate one entry per code'
+    assert [metrics.width_for(c) for c in (0, 3, 7, 8, 19, 20, 21, 22, 23, 65535)] == [
+        900, 410, 900, 500, 500, 610, 700, 630, 500, 500]
+
 @pytest.mark.parametrize('pages', [None, [1]], ids=['whole-document', 'selected-page'])
 @pytest.mark.parametrize('layer_inside_text', [False, True], ids=['outer-layer', 'inner-layer'])
 def test_identity_h_and_existing_optional_content(tmp_path, pages, layer_inside_text):

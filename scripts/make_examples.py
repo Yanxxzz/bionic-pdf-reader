@@ -42,3 +42,6 @@ def create_sample(target, samples=None):
 
 if __name__=='__main__':
     print(create_sample(ROOT/'.tmp/examples/multilingual.pdf'))
+    locked = canvas.Canvas(str(ROOT/'.tmp/examples/locked.pdf'), invariant=1, encrypt='reader-test')
+    locked.drawString(48, 740, 'Password protected example')
+    locked.save()

@@ -102,7 +102,21 @@ try:
             assert page_pixels() == original, 'Disabling emphasis must restore the original PDF pixels'
             report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True,'transport':transport})
             print('Safari',variant,sample['code'],'passed',flush=True)
-    print('Actual Safari: shaped text, selection and toggle checks passed')
+    step = 'opening a damaged replacement'
+    before = page_pixels()
+    driver.execute_script("""
+        const transfer = new DataTransfer();
+        transfer.items.add(new File(['%PDF-1.4 broken'], 'damaged.pdf', {type:'application/pdf'}));
+        const input = document.getElementById('file-input');
+        input.files = transfer.files;
+        input.dispatchEvent(new Event('change', {bubbles:true}));
+    """)
+    wait.until(lambda d: '无法打开 PDF' in d.find_element(By.ID, 'message').text)
+    assert driver.find_element(By.ID, 'file-name').text == 'shaped-plain.pdf'
+    assert page_pixels() == before
+    activate_control('prev-page')
+    wait.until(lambda d: d.find_element(By.ID, 'page-frame').get_attribute('data-rendered-page') == str(len(samples) - 1))
+    print('Actual Safari: shaped text, selection, toggles and failed file replacement passed')
 except Exception:
     debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")
     debug['step']=step;debug['capabilities']=driver.capabilities
