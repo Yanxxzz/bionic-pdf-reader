@@ -57,7 +57,16 @@ def read(img):
     return [(str(text),int(box[0][0]),int(box[0][1]),int(box[2][0]),int(box[2][1])) for box,text,score in (items or [])]
 
 def observed_page():
-    for _ in range(6):
+    deadline=time.monotonic()+50
+    while time.monotonic()<deadline:
+        foreground=gui.GetForegroundWindow()
+        title=norm_title(foreground)
+        if foreground!=hwnd and title in ('Adobe Acrobat','Welcome to Adobe Acrobat Reader'):
+            print('Closing startup dialog',repr(title),flush=True)
+            keyboard.send_keys('{ESC}');time.sleep(.7)
+            if gui.GetForegroundWindow()==foreground:
+                keyboard.send_keys('%{F4}');time.sleep(.7)
+            continue
         img=screen(); items=read(img)
         labels=' '.join(canonical(t) for t,*_ in items)
         tip=next((row for row in items if canonical(row[0]).strip('.!') in ('ok','gotit','skipthetour','skiptour')),None)
@@ -75,6 +84,11 @@ def observed_page():
         elif 'pintoadobe' in labels or 'pintheadobe' in labels or 'yourtaskbar' in labels:
             button=next(row for row in items if 'nothanks' in re.sub('[^a-z]','',row[0].lower()))
             mouse.click(coords=((button[1]+button[3])//2,(button[2]+button[4])//2))
+        elif np.asarray(img.crop((70,165,490,490)).convert('L')).mean()<85:
+            # Acrobat dims its whole document while a startup web dialog is loading.
+            # Wait for its actual contents or the native modal window above.
+            time.sleep(.8)
+            continue
         else:
             return img,items
         time.sleep(.5)
@@ -174,7 +188,7 @@ try:
     process=subprocess.Popen([str(reader),'/n','/A','page=1&view=Fit&pagemode=layers',str(source)])
     hwnd=until(main_doc,80)
     app=Desktop(backend='win32').window(handle=hwnd)
-    app.maximize();app.set_focus();time.sleep(1)
+    app.maximize();app.set_focus();time.sleep(15)
     keyboard.send_keys('^0');time.sleep(1)
     first,items=observed_page();first.save(OUT/'acrobat-start.png')
     print('initial text',items,flush=True)
