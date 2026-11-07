@@ -70,6 +70,46 @@ def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     with pytest.raises(ValueError):make_pdf(switchable,tmp_path/'twice.pdf')
 
 
+def test_source_can_have_a_partial_pdf_filename(converted, tmp_path):
+    source = tmp_path/'notes.partial.pdf'
+    original = converted[0].read_bytes()
+    source.write_bytes(original)
+    target = tmp_path/'notes.pdf'
+    make_pdf(source, target, pages=[1])
+    assert source.read_bytes() == original
+    assert len(PdfReader(target).pages) == 1
+
+
+def test_restoring_graphics_state_places_emphasis_on_the_original_text(converted, tmp_path):
+    template = PdfReader(converted[0]).pages[0]
+    font = next(key for key, ref in template['/Resources']['/Font'].items()
+                if ref.get_object()['/Subtype'] == '/TrueType')
+    outer = f'BT {font} 14 Tf 23 TL 1 0 0 1 40 700 Tm (Outer) Tj '
+    inner = '0.25 g 1.5 Tc 90 Tz 3 Ts 1 0 0 1 240 600 Tm (Inner) Tj '
+    rest = '( Restored) Tj '
+    shorthand = "2 1.5 (Following words) \" (Another line) ' ET"
+    explicit = '2 Tw 1.5 Tc T* (Following words) Tj T* (Another line) Tj ET'
+    # These two pages draw the same text, one using q/Q inside the text object.
+    drawings = [outer + 'q ' + inner + 'Q ' + rest + shorthand,
+                outer + rest + explicit + f' q BT {font} 14 Tf ' + inner + 'ET Q']
+    pixels = []
+    for index, drawing in enumerate(drawings):
+        writer = PdfWriter()
+        page = writer.add_page(template)
+        stream = DecodedStreamObject()
+        stream.set_data(drawing.encode('ascii'))
+        page[N('/Contents')] = writer._add_object(stream)
+        source, target = tmp_path/f'source-{index}.pdf', tmp_path/f'bold-{index}.pdf'
+        writer.write(source)
+        make_pdf(source, target, mode='static')
+        with pdfium.PdfDocument(source) as before, pdfium.PdfDocument(target) as after:
+            pixels.append((before[0].render(scale=1.5).to_pil().tobytes(),
+                           after[0].render(scale=1.5).to_pil().tobytes()))
+    assert pixels[0][0] == pixels[1][0]
+    assert pixels[0][1] != pixels[0][0]
+    assert pixels[0][1] == pixels[1][1]
+
+
 def test_progress_reports_completed_pages_without_console_output(converted,tmp_path,capsys):
     updates=[]
     result=make_pdf(converted[0],tmp_path/'progress.pdf',pages=[1,2],

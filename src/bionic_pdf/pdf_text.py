@@ -1,61 +1,245 @@
-"""Decode original PDF character codes and track the text state used by overlays."""
-from __future__ import annotations
-
+"""Read positioned glyphs from PDF text and graphics operators."""
 import math
+import re
+from copy import copy
 from dataclasses import dataclass
 
 from pypdf._cmap import get_encoding
-from pypdf.generic import ByteStringObject, NumberObject, TextStringObject
+from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
 
 
-def raw_string(value):
-    if isinstance(value, ByteStringObject):
-        return bytes(value)
-    if isinstance(value, TextStringObject):
-        return value.original_bytes
-    raise TypeError(type(value))
+IDENTITY = (1, 0, 0, 1, 0, 0)
+STYLED_FONT = re.compile(r"bold|italic|oblique|black|heavy|demi|symbol|dingbat", re.I)
+DEVICE_COLOR = {b'g': '/DeviceGray', b'rg': '/DeviceRGB', b'k': '/DeviceCMYK'}
+
+
+def matrix_multiply(left, right):
+    a, b, c, d, e, f = left
+    g, h, i, j, k, l = right
+    return (a*g + c*h, b*g + d*h, a*i + c*j, b*i + d*j, a*k + c*l + e, b*k + d*l + f)
+
+
+def translated(matrix, x, y):
+    a, b, c, d, e, f = matrix
+    return (a, b, c, d, a*x + c*y + e, b*x + d*y + f)
 
 
 @dataclass
-class State:
-    font: str = ""
-    font_size: float = 0.0
-    matrix: tuple = (1, 0, 0, 1, 0, 0)
-    fill_cs: str = "/DeviceGray"
-    fill_values: tuple = (NumberObject(0),)
+class GraphicsState:
+    ctm: tuple = IDENTITY
+    text_matrix: tuple = IDENTITY
+    line_matrix: tuple = IDENTITY
+    position_known: bool = True
+    font: str = ''
+    font_size: float = 0
+    char_spacing: float = 0
+    word_spacing: float = 0
+    horizontal_scale: float = 1
+    rise: float = 0
+    leading: float = 0
+    fill_cs: str = '/DeviceGray'
+    fill_values: tuple = (0,)
     render_mode: int = 0
-    fill_alpha: float = 1.0
-    stroke_alpha: float = 1.0
+    fill_alpha: float = 1
+    stroke_alpha: float = 1
 
-    @property
-    def size(self):
-        return abs(self.font_size) * math.hypot(float(self.matrix[2]), float(self.matrix[3]))
+    def start_line(self, matrix):
+        self.text_matrix = self.line_matrix = matrix
+        self.position_known = True
+
+    def update(self, op, args, resources):
+        match op:
+            case b'cm':
+                self.ctm = matrix_multiply(self.ctm, tuple(map(float, args)))
+            case b'BT':
+                self.start_line(IDENTITY)
+            case b'Tf':
+                self.font, self.font_size = str(args[0]), float(args[1])
+            case b'Tm':
+                self.start_line(tuple(map(float, args)))
+            case b'Td' | b'TD':
+                x, y = map(float, args)
+                if op == b'TD':
+                    self.leading = -y
+                self.start_line(translated(self.line_matrix, x, y))
+            case b'T*' | b"'" | b'"':
+                if op == b'"':
+                    self.word_spacing, self.char_spacing = map(float, args[:2])
+                self.start_line(translated(self.line_matrix, 0, -self.leading))
+            case b'Tc':
+                self.char_spacing = float(args[0])
+            case b'Tw':
+                self.word_spacing = float(args[0])
+            case b'Tz':
+                self.horizontal_scale = float(args[0]) / 100
+            case b'Ts':
+                self.rise = float(args[0])
+            case b'TL':
+                self.leading = float(args[0])
+            case b'Tr':
+                self.render_mode = int(args[0])
+            case b'g' | b'rg' | b'k':
+                self.fill_cs, self.fill_values = DEVICE_COLOR[op], tuple(args)
+            case b'cs':
+                self.fill_cs, self.fill_values = str(args[0]), (0,)
+            case b'sc' | b'scn':
+                self.fill_values = tuple(args)
+            case b'gs':
+                entry = resources.get('/ExtGState', {}).get(args[0])
+                if entry:
+                    entry = entry.get_object()
+                    self.fill_alpha = float(entry.get('/ca', self.fill_alpha))
+                    self.stroke_alpha = float(entry.get('/CA', self.stroke_alpha))
+
+    def can_emphasize(self):
+        size = abs(self.font_size) * math.hypot(self.text_matrix[2], self.text_matrix[3])
+        return (self.position_known and self.render_mode == 0 and 6.8 <= size <= 24
+                and self.fill_alpha == self.stroke_alpha == 1 and self.fill_cs != '/Pattern'
+                and all(abs(skew) < 1e-5 for skew in (*self.text_matrix[1:3], *self.ctm[1:3])))
 
 
-class FontDecoder:
+def character_map(font, cid):
+    encoding, cmap = get_encoding(font)
+    if cid:
+        return {ord(k): v for k, v in cmap.items() if isinstance(k, str) and len(k) == 1}
+    if cmap.get(-1, 1) != 1:
+        return {}
+    characters = []
+    for code in range(256):
+        if isinstance(encoding, dict):
+            letter = encoding.get(code, chr(code))
+        else:
+            try:
+                letter = bytes([code]).decode(encoding, errors='replace')
+            except (LookupError, UnicodeError):
+                letter = chr(code)
+        characters.append(''.join(cmap.get(char, char) for char in letter))
+    return characters
+
+
+def font_widths(font, cid):
+    if not cid:
+        first = int(font.get('/FirstChar', 0))
+        return {first+i: float(w) for i, w in enumerate(font.get('/Widths', []))}, 0
+    descendant = font['/DescendantFonts'][0].get_object()
+    entries = iter(descendant.get('/W', []))
+    widths = {}
+    for first in entries:
+        first = int(first)
+        last_or_widths = next(entries)
+        if isinstance(last_or_widths, ArrayObject):
+            widths.update((first+i, float(w)) for i, w in enumerate(last_or_widths))
+        else:
+            width = float(next(entries))
+            widths.update(dict.fromkeys(range(first, int(last_or_widths)+1), width))
+    return widths, float(descendant.get('/DW', 1000))
+
+
+@dataclass
+class TextFont:
+    code_size: int
+    styled: bool
+    characters: list | dict
+    widths: dict
+    default_width: float
+
+    @classmethod
+    def from_pdf(cls, font):
+        subtype = font.get('/Subtype')
+        cid = subtype == '/Type0' and str(font.get('/Encoding')) == '/Identity-H'
+        if not cid and subtype not in ('/Type1', '/TrueType'):
+            return None
+        styled = bool(STYLED_FONT.search(str(font.get('/BaseFont', ''))))
+        widths, default = font_widths(font, cid)
+        characters = {} if styled else character_map(font, cid)
+        return cls(code_size=2 if cid else 1, styled=styled, characters=characters,
+                   widths=widths, default_width=default)
+
+    def text_for(self, code):
+        if isinstance(self.characters, list):
+            return self.characters[code]
+        return self.characters.get(code, '')
+
+
+def marked_content(args, index, resources):
+    properties = args[1] if len(args) > 1 else None
+    layer = str(properties) if args[0] == '/OC' and isinstance(properties, NameObject) else None
+    if isinstance(properties, NameObject):
+        properties = resources.get('/Properties', {}).get(properties)
+    if properties is not None:
+        properties = properties.get_object()
+    text = properties.get('/ActualText') if isinstance(properties, DictionaryObject) else None
+    actual = {'id': index, 'text': str(text)} if text is not None else None
+    return layer, actual
+
+
+class PageTextReader:
+    """Share decoded fonts across pages and keep drawing state local to each page."""
     def __init__(self):
         self.fonts = {}
+        self.skipped_fonts = set()
 
-    def font_map(self, font):
-        """Decode a resolved, supported font; the converter owns eligibility checks."""
-        reference = getattr(font, "indirect_reference", None)
-        key = (reference.idnum, reference.generation) if reference else id(font)
-        if key not in self.fonts:
-            encoding, cmap = get_encoding(font)
-            if font.get('/Subtype') == '/Type0':
-                self.fonts[key] = {ord(k): v for k, v in cmap.items() if isinstance(k, str) and len(k) == 1} or None
-            elif cmap.get(-1, 1) != 1:
-                self.fonts[key] = None
+    def read(self, operations, resources):
+        state = GraphicsState()
+        saved, marked, records = [], [], []
+        for index, (args, op) in enumerate(operations):
+            if op == b'q':
+                # Inside a text object this includes both text matrices (ISO 32000-2 §9.4.1).
+                saved.append(copy(state))
+            elif op == b'Q':
+                if saved:
+                    state = saved.pop()
+            elif op in (b'BDC', b'BMC'):
+                marked.append(marked_content(args, index, resources))
+            elif op == b'EMC':
+                if marked:
+                    marked.pop()
             else:
-                mapping = []
-                for value in range(256):
-                    if isinstance(encoding, dict):
-                        letter = encoding.get(value, chr(value))
-                    else:
-                        try:
-                            letter = bytes([value]).decode(encoding, errors="replace")
-                        except (LookupError, UnicodeError):
-                            letter = chr(value)
-                    mapping.append("".join(cmap.get(char, char) for char in letter))
-                self.fonts[key] = mapping
-        return self.fonts[key]
+                state.update(op, args, resources)
+                if op in (b'Tj', b'TJ', b"'", b'"'):
+                    values = args[0] if op == b'TJ' else args[-1:]
+                    records.extend(self._show_text(values, state, resources, marked))
+        return records
+
+    def _show_text(self, values, state, resources, marked):
+        reference = resources.get('/Font', {}).get(state.font)
+        if reference is None:
+            state.position_known = False
+            return
+        font = reference.get_object()
+        key = getattr(font, 'indirect_reference', None) or id(font)
+        if key not in self.fonts:
+            self.fonts[key] = TextFont.from_pdf(font)
+        metrics = self.fonts[key]
+        if metrics is None:
+            self.skipped_fonts.add(str(font.get('/BaseFont', 'unknown')))
+            state.position_known = False
+            return
+
+        eligible = not metrics.styled and state.can_emphasize()
+        actual = next((text for _, text in marked if text is not None), None)
+        layers = tuple(layer for layer, _ in marked if layer)
+        size, scale = state.font_size, state.horizontal_scale
+        for item in values:
+            if isinstance(item, TextStringObject):
+                raw = item.original_bytes
+            elif isinstance(item, bytes):
+                raw = item
+            else:  # A number in a TJ array adjusts the position of the next glyph.
+                offset = -float(item) * size * scale / 1000
+                state.text_matrix = translated(state.text_matrix, offset, 0)
+                continue
+            for start in range(0, len(raw), metrics.code_size):
+                code = int.from_bytes(raw[start:start + metrics.code_size], 'big')
+                width = metrics.widths.get(code, metrics.default_width)
+                word_spacing = state.word_spacing if code == 32 else 0
+                advance = (width * size / 1000 + state.char_spacing + word_spacing) * scale
+                matrix = matrix_multiply(state.ctm, translated(state.text_matrix, 0, state.rise))
+                yield {
+                    'font': font, 'code': code, 'text': metrics.text_for(code),
+                    'x': min(matrix[4], matrix[4] + matrix[0] * advance),
+                    'y': matrix[5], 'w': abs(matrix[0] * advance), 'h': abs(size * matrix[3]),
+                    'matrix': matrix, 'tz': scale, 'size': size, 'actual': actual,
+                    'eligible': eligible, 'oc': layers, 'cs': state.fill_cs, 'color': state.fill_values,
+                }
+                state.text_matrix = translated(state.text_matrix, advance, 0)

@@ -7,5 +7,10 @@ CASES=json.loads((Path(__file__).with_name('layout-cases.json')).read_text(encod
 
 @pytest.mark.parametrize('case',CASES,ids=lambda c:c['name'])
 def test_layout_prefixes(case):
-    records=[{'text':text,'x':i*10,'y':100,'w':10,'h':15,'font':'normal','eligible':True,'actual':case.get('actual',[None]*len(case['text']))[i]} for i,text in enumerate(case['text'])]
+    records = [{
+        'text': text, 'x': case['x'][i] if 'x' in case else i*10,
+        'y': case['y'][i] if 'y' in case else 100,
+        'w': 10, 'h': 15, 'font': 'normal', 'eligible': True,
+        'actual': case['actual'][i] if 'actual' in case else None,
+    } for i, text in enumerate(case['text'])]
     assert sorted(select_glyphs(records))==case['selected']

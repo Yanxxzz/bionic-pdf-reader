@@ -1,41 +1,94 @@
-"""Select prefixes across positioned glyph runs, retaining ActualText clusters."""
+"""Map word prefixes in a visual line or column back to the original glyphs."""
 from collections import defaultdict
-import regex
-from .words import text_flags
+import re
+
+from .words import segment_flags
+
+
+def _same_line(first, other):
+    height = other['h']
+    return (abs(first['y'] - other['y']) <= max(first['h'], height) * 0.32
+            and abs(first['h'] - height) < max(1, height * 0.15))
+
+
+def _split_columns(line):
+    columns = []
+    edge = float('-inf')
+    for item in sorted(line, key=lambda r: r['x']):
+        if not columns or item['x'] - edge > 2 * item['h']:
+            columns.append([])
+        columns[-1].append(item)
+        edge = max(edge, item['x'] + item['w'])
+    return columns
+
+
+def _atoms_by_font(records):
+    # ActualText can give one logical spelling to several physical glyphs.
+    clusters, scopes = [], {}
+    for index, record in enumerate(records):
+        scope = record.get('actual')
+        if scope is None:
+            clusters.append([index])
+        elif scope['id'] in scopes:
+            scopes[scope['id']].append(index)
+        else:
+            indices = scopes[scope['id']] = [index]
+            clusters.append(indices)
+
+    fonts = defaultdict(list)
+    for indices in clusters:
+        members = [records[i] for i in indices]
+        base = max(members, key=lambda r: r['w'])
+        scope = base.get('actual')
+        text = scope['text'] if scope else base['text']
+        if scope and (re.search(r'[\r\n\u0085\u2028\u2029]', text)
+                      or not all(_same_line(base, r) for r in members)
+                      or len(_split_columns(members)) > 1):
+            # Keep each position occupied. A paragraph has no single glyph position.
+            for record in members:
+                fonts[id(record['font'])].append({**record, 'text': '\0', 'indices': ()})
+            continue
+
+        left = min(r['x'] for r in members)
+        right = max(r['x'] + r['w'] for r in members)
+        eligible = all(r['eligible'] for r in members) and not re.search(r'\s', text.strip())
+        fonts[id(base['font'])].append({
+            'text': text, 'indices': indices if eligible else (),
+            'x': left, 'w': right - left, 'y': base['y'], 'h': base['h'],
+        })
+    return fonts.values()
+
+
+def _visual_segments(records):
+    for atoms in _atoms_by_font(records):
+        lines = []
+        for atom in sorted(atoms, key=lambda r: (r['y'], r['x'])):
+            for line in reversed(lines[-3:]):
+                if _same_line(line[0], atom):
+                    line.append(atom)
+                    break
+            else:
+                lines.append([atom])
+        for line in lines:
+            yield from _split_columns(line)
+
 
 def select_glyphs(records):
-    atoms=[];scopes={}
-    for i,record in enumerate(records):
-        scope=record.get('actual')
-        if scope is not None:
-            key=scope['id']
-            if key not in scopes:
-                scopes[key]={'text':scope['text'],'records':[]};atoms.append(scopes[key])
-            scopes[key]['records'].append((i,record))
-        else:atoms.append({'text':record['text'],'records':[(i,record)]})
-    groups=defaultdict(list)
-    for atom in atoms:
-        members=atom['records'];base=max(members,key=lambda pair:pair[1]['w'])[1]
-        atom.update(x=min(r['x'] for _,r in members),right=max(r['x']+r['w'] for _,r in members),y=base['y'],h=base['h'])
-        # One ActualText scope is an indivisible shaped unit. Paragraph-sized
-        # replacement spans cannot reliably map a prefix to their glyphs.
-        atom['eligible']=all(r['eligible'] for _,r in members) and '\x00' not in atom['text'] and not regex.search(r'\s',atom['text'].strip())
-        groups[id(base['font'])].append(atom)
-    selected=set()
-    for atoms in groups.values():
-        lines=[]
-        for atom in sorted(atoms,key=lambda a:(a['y'],a['x'])):
-            line=next((line for line in reversed(lines[-3:]) if abs(line[0]['y']-atom['y'])<=max(line[0]['h'],atom['h'])*0.32 and abs(line[0]['h']-atom['h'])<max(1,atom['h']*.15)),None)
-            if line is None:lines.append([atom])
-            else:line.append(atom)
-        for line in lines:
-            text='';spans=[];right=None
-            for atom in sorted(line,key=lambda a:a['x']):
-                if right is not None and atom['x']-right>atom['h']*.18 and text and not text[-1].isspace():text+=' '
-                start=len(text);text+=atom['text'];spans.append((start,len(text),atom));right=max(right or atom['right'],atom['right'])
-            if '\x00' in text or regex.search(r'[=+<>∑∫√±×÷≤≥∞]|https?://|www\.|@|_',text):continue
-            if regex.fullmatch(r'[A-Za-z]{1,4}',text):continue
-            flags=text_flags(text)
-            for start,end,atom in spans:
-                if atom['eligible'] and any(flags[start:end]):selected.update(i for i,_ in atom['records'])
+    selected = set()
+    for segment in _visual_segments(records):
+        text = ''
+        spans = []
+        edge = float('-inf')
+        for atom in segment:
+            if text and atom['x'] - edge > atom['h'] * 0.18 and not text[-1].isspace():
+                text += ' '
+            start = len(text)
+            text += atom['text']
+            spans.append((start, len(text), atom['indices']))
+            edge = max(edge, atom['x'] + atom['w'])
+
+        flags = segment_flags(text)
+        for start, end, indices in spans:
+            if indices and flags.find(b'\x01', start, end) >= 0:
+                selected.update(indices)
     return selected

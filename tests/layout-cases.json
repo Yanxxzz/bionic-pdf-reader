@@ -60,6 +60,12 @@
     ]
   },
   {
+    "name": "accented uppercase abbreviation within Polish prose",
+    "locale": "pl",
+    "text": ["k","l","u","b"," ","Ł","K","S"],
+    "selected": [0,1]
+  },
+  {
     "name": "Ukrainian prefix",
     "locale": "uk",
     "text": [
@@ -138,6 +144,22 @@
       "x"
     ],
     "selected": []
+  },
+  {
+    "name": "prose beside a formula in a separate column",
+    "locale": "en",
+    "text": ["R","e","a","d","i","n","g","x","=","2"],
+    "x": [0,10,20,30,40,50,60,200,210,220],
+    "selected": [0,1,2,3]
+  },
+  {
+    "name": "an ActualText word spanning two rows leaves the other column readable",
+    "locale": "en",
+    "text": ["?","?","R","e","a","d","i","n","g"],
+    "actual": [{"id":0,"text":"office"},{"id":0,"text":"office"},null,null,null,null,null,null,null],
+    "x": [0,0,200,210,220,230,240,250,260],
+    "y": [100,130,100,100,100,100,100,100,100],
+    "selected": [2,3,4,5]
   },
   {
     "name": "short isolated function remains original",

@@ -5,13 +5,11 @@ vector Form XObjects; no duplicate text or rasterized pages are introduced.
 """
 from __future__ import annotations
 
-import copy
 import io
-import re
 import time
 from collections.abc import Callable
 from pathlib import Path
-
+from tempfile import TemporaryDirectory
 
 from fontTools.cffLib import CFFFontSet
 from fontTools.ttLib import TTFont
@@ -21,24 +19,12 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject as N,
     NumberObject as I, FloatObject as F, TextStringObject as T,
     DecodedStreamObject)
-from .pdf_text import FontDecoder, State, raw_string
+from .pdf_text import PageTextReader, matrix_multiply
 from .layout import select_glyphs
-
-STYLED_FONT = re.compile(r"bold|italic|oblique|black|heavy|demi|symbol|dingbat", re.I)
 
 
 def num(value):
     return f'{float(value):.7f}'.rstrip('0').rstrip('.') or '0'
-
-
-def matrix_multiply(left, right):
-    a,b,c,d,e,f = left
-    g,h,i,j,k,l = right
-    return (a*g+c*h, b*g+d*h, a*i+c*j, b*i+d*j, a*k+c*l+e, b*k+d*l+f)
-
-
-def translated(matrix, x, y):
-    return matrix_multiply(matrix, (1,0,0,1,x,y))
 
 
 class PathPen(BasePen):
@@ -56,7 +42,7 @@ class GlyphLibrary:
     def __init__(self, writer, weight):
         self.writer, self.weight = writer, weight
         self.fonts, self.forms = {}, {}
-        self.skipped = set()
+        self.skipped_fonts = set()
     def font(self, font):
         key = font.indirect_reference.idnum if getattr(font, 'indirect_reference', None) else id(font)
         if key in self.fonts: return self.fonts[key]
@@ -97,7 +83,9 @@ class GlyphLibrary:
         return info
     def glyph(self, font, byte, unicode_text):
         info = self.font(font)
-        if not info: self.skipped.add(str(font.get('/BaseFont'))); return None
+        if not info:
+            self.skipped_fonts.add(str(font.get('/BaseFont')))
+            return None
         name = info['differences'].get(byte)
         if not name and 'glyph_order' not in info:
             name = info.get('byte_cmap',{}).get(byte)
@@ -134,137 +122,36 @@ class GlyphLibrary:
 class OverlayBuilder:
     def __init__(self, writer, layer, weight=0.026):
         self.writer, self.layer = writer, layer
-        self.decoder = FontDecoder()
+        self.text_reader = PageTextReader()
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
-        self.widths = {}
         save = DecodedStreamObject()
         save.set_data(b'q\n')
         self.save_graphics_state = writer._add_object(save)
-    def font_widths(self,font):
-        key = font.indirect_reference.idnum if getattr(font,'indirect_reference',None) else id(font)
-        if key not in self.widths:
-            if font.get('/Subtype') == '/Type0':
-                child = font['/DescendantFonts'][0].get_object()
-                values, table, i = child.get('/W',[]), {}, 0
-                while i < len(values):
-                    start = int(values[i]); value = values[i+1]; i += 2
-                    if isinstance(value,A): table.update({start+j:float(w) for j,w in enumerate(value)})
-                    else:
-                        end,width = int(value),float(values[i]); i += 1
-                        table.update({c:width for c in range(start,end+1)})
-                default = float(child.get('/DW',1000))
-            else:
-                first = int(font.get('/FirstChar',0))
-                table = {first+i:float(w) for i,w in enumerate(font.get('/Widths',[]))}
-                default = 0
-            self.widths[key] = table,default
-        return self.widths[key]
-    def read_glyphs(self, operations, resources):
-        state, ctm, line_matrix = State(), (1,0,0,1,0,0), (1,0,0,1,0,0)
-        tc, tw, tz, rise, leading = 0.0, 0.0, 1.0, 0.0, 0.0
-        stack = []
-        marked, records, actual_serial = [], [], 0
-        position_known = True
-        for args, op in operations:
-            if op in (b'BDC',b'BMC'):
-                properties=args[1] if op==b'BDC' else None
-                if isinstance(properties,N):properties=resources.get('/Properties',{}).get(properties)
-                if hasattr(properties,'get_object'):properties=properties.get_object()
-                actual=properties.get('/ActualText') if isinstance(properties,D) else None
-                node={'oc':str(args[1]) if op==b'BDC' and str(args[0])=='/OC' and isinstance(args[1],N) else None,'actual':None}
-                if actual is not None:
-                    node['actual']={'id':actual_serial,'text':str(actual)};actual_serial+=1
-                marked.append(node)
-            elif op == b'EMC' and marked: marked.pop()
-            if op == b'q': stack.append((copy.copy(state), ctm, tc, tw, tz, rise, leading))
-            elif op == b'Q' and stack:
-                matrix = state.matrix
-                state, ctm, tc, tw, tz, rise, leading = stack.pop()
-                state.matrix = matrix
-            elif op == b'cm': ctm = matrix_multiply(ctm, tuple(map(float,args)))
-            elif op == b'BT': state.matrix = line_matrix = (1,0,0,1,0,0); position_known = True
-            elif op == b'Tf': state.font, state.font_size = str(args[0]), float(args[1])
-            elif op == b'Tm': state.matrix = line_matrix = tuple(map(float,args)); position_known = True
-            elif op in (b'Td', b'TD', b'T*'):
-                if op == b'T*': x,y = 0,-leading
-                else:
-                    x,y = map(float,args)
-                    if op == b'TD': leading = -y
-                line_matrix = translated(line_matrix,x,y); state.matrix = line_matrix; position_known = True
-            elif op == b'Tc': tc = float(args[0])
-            elif op == b'Tw': tw = float(args[0])
-            elif op == b'Tz': tz = float(args[0])/100
-            elif op == b'Ts': rise = float(args[0])
-            elif op == b'TL': leading = float(args[0])
-            elif op == b'Tr': state.render_mode = int(args[0])
-            elif op in (b'g',b'rg',b'k'):
-                state.fill_cs = {b'g':'/DeviceGray',b'rg':'/DeviceRGB',b'k':'/DeviceCMYK'}[op]
-                state.fill_values = tuple(args)
-            elif op == b'cs': state.fill_cs = str(args[0]); state.fill_values = (I(0),)
-            elif op in (b'sc',b'scn'): state.fill_values = tuple(args)
-            elif op == b'gs':
-                gs = resources.get('/ExtGState',{}).get(args[0])
-                if gs:
-                    gs = gs.get_object()
-                    state.fill_alpha = float(gs.get('/ca',state.fill_alpha))
-                    state.stroke_alpha = float(gs.get('/CA',state.stroke_alpha))
-            if op in (b"'", b'"'):
-                if op == b'"': tw,tc = float(args[0]),float(args[1])
-                line_matrix = translated(line_matrix,0,-leading); state.matrix = line_matrix; position_known = True
-            if op not in (b'Tj', b'TJ', b"'", b'"'): continue
-            values = args[0] if op == b'TJ' else A([args[-1]])
-            font = resources.get('/Font',{}).get(state.font)
-            if font is None: position_known = False; continue
-            font = font.get_object()
-            cid = font.get('/Subtype') == '/Type0' and str(font.get('/Encoding')) == '/Identity-H'
-            if not (cid or font.get('/Subtype') in ('/Type1','/TrueType')):
-                self.glyphs.skipped.add(str(font.get('/BaseFont','unknown')))
-                position_known = False; continue
-            styled = bool(STYLED_FONT.search(str(font.get('/BaseFont',''))))
-            cmap = (self.decoder.font_map(font) if not styled else None) or {}
-            actual=next((node['actual'] for node in marked if node['actual'] is not None),None)
-            eligible=position_known and state.render_mode==0 and 6.8<=state.size<=24 and state.fill_alpha==state.stroke_alpha==1 and state.fill_cs!='/Pattern' and not styled and abs(float(state.matrix[1]))<1e-5 and abs(float(state.matrix[2]))<1e-5 and abs(ctm[1])<1e-5 and abs(ctm[2])<1e-5
-            unit = 2 if cid else 1
-            widths, default_width = self.font_widths(font)
-            layers = tuple(node['oc'] for node in marked if node['oc'])
-            for item in values:
-                if not isinstance(item,(T,bytes)):
-                    state.matrix=translated(state.matrix,-float(item)*state.font_size*tz/1000,0);continue
-                raw=raw_string(item)
-                for offset in range(0,len(raw),unit):
-                    code=int.from_bytes(raw[offset:offset+unit],'big')
-                    text=cmap.get(code,'') if isinstance(cmap,dict) else cmap[code]
-                    width=widths.get(code,default_width)
-                    advance=(width*state.font_size/1000+tc+(tw if code==32 else 0))*tz
-                    matrix=matrix_multiply(ctm,translated(state.matrix,0,rise))
-                    records.append({
-                        'font': font, 'code': code, 'text': text,
-                        'x': min(matrix[4], matrix[4] + matrix[0] * advance),
-                        'y': matrix[5], 'w': abs(matrix[0] * advance), 'h': abs(state.font_size * matrix[3]),
-                        'matrix': matrix, 'tz': tz, 'size': state.font_size,
-                        'actual': actual, 'eligible': eligible, 'oc': layers,
-                        'cs': state.fill_cs, 'color': state.fill_values,
-                    })
-                    state.matrix=translated(state.matrix,advance,0)
-        return records
 
     def build_page(self, page):
         content = page.get_contents()
         if content is None:
             return
         resources = page.get('/Resources', D())
-        records = self.read_glyphs(content.operations, resources)
+        records = self.text_reader.read(content.operations, resources)
         commands, used = [], {}
         for index in sorted(select_glyphs(records)):
-            record=records[index]
-            glyph=self.glyphs.glyph(record['font'],record['code'],record['text'])
-            if glyph is None:continue
-            key,reference,fm=glyph;used[key]=reference
-            transform=matrix_multiply(record['matrix'],matrix_multiply((record['size']*record['tz'],0,0,record['size'],0,0),fm))
-            oc=record['oc']
-            draw='q '+' '.join(map(num,transform))+' cm '+record['cs']+' CS '+' '.join(map(str,record['color']))+' SCN '+str(key)+' Do Q'
-            commands.append(' '.join('/OC '+tag+' BDC' for tag in oc)+' '+draw+' EMC'*len(oc))
+            record = records[index]
+            glyph = self.glyphs.glyph(record['font'], record['code'], record['text'])
+            if glyph is None:
+                continue
+            name, reference, font_matrix = glyph
+            used[name] = reference
+            size = record['size']
+            scale = (size * record['tz'], 0, 0, size, 0, 0)
+            transform = matrix_multiply(record['matrix'], matrix_multiply(scale, font_matrix))
+            matrix = ' '.join(map(num, transform))
+            color = ' '.join(map(str, record['color']))
+            draw = f"q {matrix} cm {record['cs']} CS {color} SCN {name} Do Q"
+            layers = record['oc']
+            begin = ' '.join(f'/OC {tag} BDC' for tag in layers)
+            commands.append(f'{begin} {draw}' + ' EMC' * len(layers))
         if commands:
             if self.layer is not None:
                 properties = resources.get('/Properties')
@@ -320,11 +207,10 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
     subject='Original PDF text plus optional vector word-prefix emphasis. Toggle the Bionic Reading layer in your reader.' if mode=='switchable' else 'Original PDF text plus always-visible vector word-prefix emphasis.'
     writer.add_metadata({'/Title':str((reader.metadata.title if reader.metadata else None) or Path(source).stem)+suffix,'/Subject':subject})
     target = Path(target)
-    temporary = target.with_name(target.stem+'.partial.pdf')
-    try:
+    with TemporaryDirectory(dir=target.parent) as staging:
+        temporary = Path(staging) / 'reading.pdf'
         writer.write(temporary)
         temporary.replace(target)
-    finally:
-        if temporary.exists(): temporary.unlink()
     return {'pages':len(writer.pages),'glyphs':builder.count,'glyph_forms':len(builder.glyphs.forms),
-        'skipped_fonts':sorted(builder.glyphs.skipped),'mode':mode,'locale':locale,'seconds':time.monotonic()-started}
+        'skipped_fonts':sorted(builder.text_reader.skipped_fonts | builder.glyphs.skipped_fonts),
+        'mode':mode,'locale':locale,'seconds':time.monotonic()-started}

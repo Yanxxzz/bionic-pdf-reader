@@ -17,6 +17,7 @@ def test_graphemes_and_reference():
     assert prefix_length('e\u0301cole')==4
     assert prefix_length('Reading','reference')==4
     assert prefix_length('the','reference')==1
+    assert text_flags('the','reference') == b'\x01\x00\x00'
     assert not any(text_flags('PDF X A'))
 
 def test_support_scope_matches_language_controls():

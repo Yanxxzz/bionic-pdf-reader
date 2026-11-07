@@ -4,8 +4,9 @@
 
 浏览器实时绘制使用 PDF.js，制作阅读副本使用 pypdf / fontTools；两条路径各保留一套实现。
 
-- `extension/`：`reader.mjs` 管理文件、页面和控件；`layout.mjs` 捕获字形、选择词首和修复复制文字；`words.mjs` 负责词界与规则。
-- `src/bionic_pdf/`：`converter.py` 管理 PDF 状态、矢量图层和输出；`pdf_text.py` 解码字体字符；`layout.py` / `words.py` 选择词首。CLI 与 GUI 调用同一个 `make_pdf()`，通过页数回调接收进度。
+- 浏览器的 `reader.mjs` 管理文件、页面和控件。`layout.mjs` 从 PDF.js 捕获字形，按行和栏映射词首并修复复制文字。
+- 桌面端的 `pdf_text.py` 读取 PDF 指令，跟踪字体、颜色和字形位置。`layout.py` 将词首映射到原字形，`converter.py` 绘制矢量笔画并保存副本。CLI 和 GUI 共用 `make_pdf()`。
+- 修改阅读规则时，浏览器和桌面端分别改 `words.mjs` 和 `words.py`。两端的排版测试共用 `tests/layout-cases.json`，可以在同一个例子里指定字形位置和预期加粗范围。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。
 - `scripts/`：原创示例、开放字体子集、Windows 程序和发布包构建。
 - `docs/`：安装、兼容性、语言与开发说明。
