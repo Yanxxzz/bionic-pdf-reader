@@ -281,7 +281,12 @@ async function buildOutline(activePDF, load) {
   append(outline, root);
 }
 
-for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', () => $('file-input').click());
+function chooseFile() {
+  const input = $('file-input');
+  if (typeof input.showPicker === 'function') input.showPicker();
+  else input.click();
+}
+for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', chooseFile);
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
 $('file-input').addEventListener('change', async e => {
   const input=e.target,file=input.files[0];
@@ -311,7 +316,7 @@ $('outline-toggle').addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if(document.querySelector('dialog[open]'))return;
   if (e.altKey && e.code === 'KeyB') { e.preventDefault(); setMode(!settings.enabled); return; }
-  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); $('file-input').click(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); chooseFile(); return; }
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || getSelection()?.toString()) return;
   if (e.code === 'ArrowLeft') { e.preventDefault(); goToPage(pageNumber - 1); }
   if (e.code === 'ArrowRight') { e.preventDefault(); goToPage(pageNumber + 1); }

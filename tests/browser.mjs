@@ -39,7 +39,11 @@ try{
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
       await page.keyboard.press('Escape');
       await page.setViewportSize({width:1440,height:1040});
-      await page.locator('#file-input').setInputFiles(pdf);
+      async function chooseSample(button) {
+        const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.locator(button).click()]);
+        await chooser.setFiles(pdf);
+      }
+      await chooseSample('#choose-file');
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());
       const wait=async(n,mode)=>page.waitForFunction(({n,mode})=>{const f=document.querySelector('#page-frame');return f.dataset.renderedPage===String(n)&&f.dataset.mode===mode;},{n,mode});
@@ -84,7 +88,7 @@ try{
       await page.locator('#rule').selectOption('half');await wait(1,'bionic');
       assert.equal(await strokes(),half,'Changing the rule restores half-word prefixes');
       const previous=await page.locator('#page-frame').getAttribute('data-render-revision');
-      await page.locator('#file-input').setInputFiles(pdf);
+      await chooseSample('#open-file');
       await page.waitForFunction(r=>document.querySelector('#page-frame').dataset.renderRevision!==r,previous);
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
