@@ -126,17 +126,7 @@ def clipboard_text():
     finally:
         cb.CloseClipboard()
 
-def copy_selection(items):
-    # Start inside the heading, end below both paragraphs on this fitted page.
-    # A drag selects this page only, even in continuous view.
-    _,x0,y0,x1,y1=next(row for row in items if 'shaped' in canonical(row[0]) and 'sample' in canonical(row[0]))
-    start=(x0+8,(y0+y1)//2)
-    end=(min(x0+345,490),start[1]+225)
-    mouse.press(coords=start)
-    for step in range(1,9):
-        mouse.move(coords=tuple(a+(b-a)*step//8 for a,b in zip(start,end)))
-        time.sleep(.04)
-    mouse.release(coords=end)
+def read_native_copy():
     cb.OpenClipboard()
     try:
         cb.EmptyClipboard();cb.SetClipboardText('waiting for native Acrobat copy',win32con.CF_UNICODETEXT)
@@ -145,28 +135,46 @@ def copy_selection(items):
     def fresh():
         value=clipboard_text()
         return value if value and value!='waiting for native Acrobat copy' else None
-    copied=until(fresh,6)
+    return until(fresh,6)
+
+def copy_selection(header):
+    _,x0,y0,x1,y1=header
+    start=(x0+8,(y0+y1)//2)
+    end=(min(x0+345,490),start[1]+225)
+    keys('{ESC}');mouse.click(coords=start);time.sleep(.35)
+    mouse.press(coords=start)
+    for step in range(1,9):
+        mouse.move(coords=tuple(a+(b-a)*step//8 for a,b in zip(start,end)))
+        time.sleep(.04)
+    mouse.release(coords=end)
+    copied=read_native_copy()
     keys('{ESC}');mouse.click(coords=(end[0],end[1]+8));mouse.move(coords=(730,485));time.sleep(.15)
     return copied
 
-def page_id(items,code):
-    return any('sample' in t.lower() and re.sub(r'[^a-z]', '', t.lower()).endswith(code) for t,*_ in items)
+titles=re.compile(r'SHAPED\s+SAMPLE\s*/\s*([A-Z]{2})')
+
+def page_header(items):
+    return next((row for row in items if 'original' in canonical(row[0]) and ('shaped' in canonical(row[0]) or 'sample' in canonical(row[0]))),None)
 
 def capture_page(index,sample,mode):
-    for attempt in range(2):
+    for attempt in range(3):
         shot,items=observed_page()
         shot.save(OUT/(mode+'-'+sample['code']+'.png'))
-        if not page_id(items,sample['code']):
-            raise RuntimeError(f'Expected page {index} ({sample["code"]}), screen text: {items}')
-        cursor=point_in_document(items)
+        hdr=page_header(items)
+        if not hdr:
+            if attempt<2: time.sleep(.6);continue
+            raise RuntimeError(f'Could not see page heading {index}: {items}')
+        cursor=(hdr[1]+15,hdr[4]+18)
         try:
-            text=copy_selection(items)
+            text=copy_selection(hdr)
+            if titles.findall(text)!=[sample['code'].upper()]:
+                raise RuntimeError(f'Native selection on {mode}/{sample["code"]} contained {titles.findall(text)}')
         except RuntimeError:
-            if attempt: raise
+            if attempt==2: raise
             screen().save(OUT/'copy-interrupted.png')
             continue
         (OUT/(mode+'-'+sample['code']+'.txt')).write_bytes(text.encode('utf-8'))
-        assert canonical(sample['text']) in canonical(text), (mode,sample['code'],repr(text[:550]))
+        assert len(text)>80 and 'Bionic PDF Reader' in text, (mode,sample['code'],repr(text))
         if mode=='on':
             old=(OUT/('off-'+sample['code']+'.txt')).read_bytes()
             assert old==text.encode('utf-8'), 'Clipboard text differs'
@@ -179,9 +187,38 @@ def capture_page(index,sample,mode):
             gain=int((before[rect]-after[rect]).sum())
             changed=int((np.abs(before[rect]-after[rect])>6).sum())
             assert gain>300 and changed>20,(sample['code'],gain,changed)
-            report['pages'][sample['code']]={'nativeClipboardEqual':True,'changedPixels':changed,'extraInk':gain}
+            report['pages'][sample['code']]={'nativeClipboardEqual':True,'changedPixels':changed,'extraInk':gain,
+                'authoredPhrase':canonical(sample['text']) in canonical(text),'clipboardBytes':len(old)}
         print(mode,index,sample['code'],'passed',flush=True)
         return
+
+def original_clipboard():
+    original=source.with_name('shaped-tagged.pdf')
+    subprocess.Popen([str(reader),'/n','/A','page=1&view=Fit',str(original)])
+    def original_window():
+        return next((h for h,t in adobe_windows() if 'multilingual' in t.lower() and 'switchable' not in t.lower()),None)
+    target=until(original_window,35)
+    window=Desktop(backend='win32').window(handle=target)
+    window.maximize();window.set_focus();time.sleep(1)
+    expected=[s['code'].upper() for s in samples]
+    for attempt in range(4):
+        keys('{ESC}');mouse.click(coords=(495,495));keys('^a');time.sleep(.4)
+        if attempt: keys('^a');time.sleep(.3)
+        value=read_native_copy()
+        if titles.findall(value)==expected: break
+        print('Original selection contained',titles.findall(value),flush=True)
+    else:
+        raise RuntimeError('Could not copy all 13 original pages through Acrobat')
+    (OUT/'original-clipboard.txt').write_bytes(value.encode())
+    blocks=re.split(r'(?=ORIGINAL SHAPED SAMPLE\s*/)',value)
+    for sample,block in zip(samples,[b for b in blocks if titles.search(b)],strict=True):
+        code=sample['code']
+        if code not in report['pages']:
+            continue
+        actual=(OUT/f'off-{code}.txt').read_bytes().decode()
+        same=block.rstrip('\r\n')==actual.rstrip('\r\n')
+        report['pages'][code]['sourceClipboardEqual']=same
+        if not same: errors.append((code,'original',repr(block[:290]),repr(actual[:290])))
 
 try:
     assert reader.is_file(),reader
@@ -221,15 +258,21 @@ try:
     eye=layer_button(first,items)
     report['window']=norm_title(hwnd)
     report['layerEye']=eye
+    errors=[]
     for index,sample in enumerate(samples,1):
         observed_page()
         if index>1:
-            mouse.click(coords=(1000,453));keys('^a');keys(str(index)+'{ENTER}');time.sleep(.6)
+            mouse.click(coords=(1000,557));time.sleep(.6) # Next page in the visible native navigation rail.
         mouse.move(coords=(730,485))
-        capture_page(index,sample,'off')
-        mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.45)
-        capture_page(index,sample,'on')
-        mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.4)
+        for mode in ('off','on'):
+            try: capture_page(index,sample,mode)
+            except Exception as exc:
+                errors.append((sample['code'],mode,str(exc)))
+                print('Page diagnosis',errors[-1],flush=True)
+            mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.45)
+    report['errors']=errors
+    original_clipboard()
+    assert not errors,errors
     assert len(report['pages'])==13
     report['passed']=True
 finally:
