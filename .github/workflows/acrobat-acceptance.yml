@@ -32,6 +32,13 @@ jobs:
           if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'Adobe') { throw 'Invalid Adobe signature' }
           $proc = Start-Process -FilePath $setup -ArgumentList '-sfx_nu /sAll /rs /msi EULA_ACCEPT=YES' -WindowStyle Hidden -Wait -PassThru
           if ($proc.ExitCode -notin 0,3010) { throw "Adobe setup failed with $($proc.ExitCode)" }
+          # Suppress first-launch tips and subscription offers only on this disposable VM.
+          foreach ($product in @('Acrobat Reader', 'Adobe Acrobat')) {
+            $pref = "HKLM:\SOFTWARE\Policies\Adobe\$product\DC\FeatureLockDown"
+            New-Item -Path $pref -Force | Out-Null
+            New-ItemProperty -Path $pref -Name bToggleFTE -PropertyType DWord -Value 1 -Force | Out-Null
+            New-ItemProperty -Path $pref -Name bAcroSuppressUpsell -PropertyType DWord -Value 1 -Force | Out-Null
+          }
       - run: python -m pip install pywinauto pywin32 Pillow rapidocr-onnxruntime
       - run: python -X utf8 tests/native_acrobat_fixture.py
       - uses: actions/upload-artifact@v7

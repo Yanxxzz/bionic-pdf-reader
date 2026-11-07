@@ -60,7 +60,10 @@ def observed_page():
     for _ in range(6):
         img=screen(); items=read(img)
         labels=' '.join(canonical(t) for t,*_ in items)
-        if 'defaultpdfapplication' in labels:
+        if 'welcometoacrobatreader' in labels and 'continue' in labels:
+            button=next(row for row in items if row[0].strip().lower()=='continue')
+            mouse.click(coords=((button[1]+button[3])//2,(button[2]+button[4])//2))
+        elif 'defaultpdfapplication' in labels:
             button=next(row for row in items if row[0].strip().lower()=='no')
             mouse.click(coords=((button[1]+button[3])//2,(button[2]+button[4])//2))
         elif '7-dayfreetrial' in labels or 'trypremiumfeatures' in labels:
@@ -170,8 +173,7 @@ try:
     app=Desktop(backend='win32').window(handle=hwnd)
     app.maximize();app.set_focus();time.sleep(1)
     keyboard.send_keys('^0');time.sleep(1)
-    first=screen();first.save(OUT/'acrobat-start.png')
-    items=read(first)
+    first,items=observed_page();first.save(OUT/'acrobat-start.png')
     print('initial text',items,flush=True)
     if not any('bionicreading' in canonical(t) for t,*_ in items):
         # The installed version starts in the new UI with All tools open and
@@ -180,8 +182,7 @@ try:
         mouse.click(coords=(261,108));time.sleep(.4)
         mouse.click(coords=(1000,269));time.sleep(.8)
         keyboard.send_keys('^0');time.sleep(.5)
-        first=screen();first.save(OUT/'acrobat-layers.png')
-        items=read(first)
+        first,items=observed_page();first.save(OUT/'acrobat-layers.png')
         print('layer panel',items,flush=True)
     docpoint=point_in_document(items)
     assert docpoint,items
