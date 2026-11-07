@@ -101,6 +101,23 @@ def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     with pytest.raises(ValueError):make_pdf(switchable,tmp_path/'slice.pdf',pages=[1])
 
 
+@pytest.mark.parametrize('pages', [[0], [-1], [1, 99], [1.5], [True], []])
+def test_invalid_page_selection_preserves_output(converted, tmp_path, pages):
+    target = tmp_path/'existing.pdf'
+    target.write_bytes(b'previous output')
+    with pytest.raises(ValueError, match='页'):
+        make_pdf(converted[0], target, pages=iter(pages))
+    assert target.read_bytes() == b'previous output'
+
+
+def test_selected_pages_keep_requested_order_and_repetitions(converted, tmp_path):
+    target = tmp_path/'selected.pdf'
+    make_pdf(converted[0], target, pages=iter([2, 1, 2]))
+    with pdfium.PdfDocument(converted[0]) as source, pdfium.PdfDocument(target) as result:
+        assert [page.get_textpage().get_text_range() for page in result] == [
+            source[i].get_textpage().get_text_range() for i in (1, 0, 1)]
+
+
 def test_source_can_have_a_partial_pdf_filename(converted, tmp_path):
     source = tmp_path/'notes.partial.pdf'
     original = converted[0].read_bytes()

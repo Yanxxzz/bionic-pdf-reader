@@ -39,7 +39,7 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 ## 命令行与开发
 
-在源码目录用 Python 3.11 或更新版本安装后，可分别生成两种阅读副本。
+Python 3.11 或更新版本可以安装发布页上的 `.whl`，也可以在源码目录运行下面的命令。安装后运行 `bionic-pdf-gui` 可打开制作工具和内置的本地阅读页。
 
 ```sh
 python -m pip install .

@@ -186,8 +186,14 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
     writer = PdfWriter(clone_from=reader) if pages is None else PdfWriter()
     writer.pdf_header = b'%PDF-1.6'
     if pages is not None:
+        source_pages = reader.pages
+        page_count = len(source_pages)
         for number in pages:
-            writer.add_page(reader.pages[number - 1])
+            if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= page_count:
+                raise ValueError(f'页码必须是 1 到 {page_count} 之间的整数。')
+            writer.add_page(source_pages[number - 1])
+        if not writer.pages:
+            raise ValueError('请至少选择一页。')
         # Page resources refer to layers whose controls live in the document catalog.
         if source_layers is not None:
             writer.root_object[N('/OCProperties')] = source_layers.clone(writer)

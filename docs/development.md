@@ -48,7 +48,7 @@ Windows 包构建完成后运行 `python scripts/audit_release.py dist`，核对
 
 ## 维护与发布
 
-1. 同步 `pyproject.toml`、Python `__version__`、扩展 `manifest.json` 和 `package.json` 的版本。
+1. 同步 `pyproject.toml`、Python `__version__`、扩展清单、阅读页版本标识、`package.json` 和 `package-lock.json` 的版本。
 2. 阅读器、文档语言或下载方式有变化时，先在 `docs/compatibility.md` 和 `docs/verification.md` 更新适配方式与实测范围，再同步中英文 README 的选用表和 GitHub About 的简介、主题。README 的下载入口指向 `releases/latest`，版本细节记在 CHANGELOG。
 3. 运行测试，构建，检查源码与包中不包含私人 PDF、机器路径或凭据。
 4. 推送发布分支，等待 CI 的 Python、浏览器、macOS 阅读引擎和 Windows 打包测试通过。

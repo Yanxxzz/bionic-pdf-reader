@@ -39,7 +39,7 @@ Start with a PDF whose text you can select. Image-only scans need OCR first. Ver
 
 ## Command line and development
 
-From a source checkout with Python 3.11 or later, install the converter and make a switchable or static copy.
+With Python 3.11 or later, install the wheel from the Releases page or run the commands below from a source checkout. Run `bionic-pdf-gui` for the converter window and its bundled local reader.
 
 ```sh
 python -m pip install .

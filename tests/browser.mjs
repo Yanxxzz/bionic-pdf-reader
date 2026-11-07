@@ -55,6 +55,21 @@ try{
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());
       const wait=async(n,mode)=>page.waitForFunction(({n,mode})=>{const f=document.querySelector('#page-frame');return f.dataset.renderedPage===String(n)&&f.dataset.mode===mode;},{n,mode});
+      // Old or damaged settings can coexist with a valid language preference.
+      await page.evaluate(() => {
+        const progress = Object.keys(localStorage).find(key => key.startsWith('bionic-page-'));
+        localStorage.setItem(progress, '2.5');
+        localStorage.setItem('bionic-pdf-settings', JSON.stringify({locale:'fr', rule:'retired', enabled:'false', strength:99}));
+      });
+      await page.reload();
+      await page.waitForSelector('html[data-reader-ready]');
+      assert.equal(await page.locator('#language').inputValue(), 'fr');
+      assert.equal(await page.locator('#rule').inputValue(), 'reference');
+      assert.equal(await page.locator('#strength-value').textContent(), '100%');
+      assert.equal(await page.locator('#original-mode').getAttribute('aria-pressed'), 'true');
+      await chooseSample('#choose-file');
+      await wait(1, 'original');
+      assert.equal(await page.locator('#page-number').inputValue(), '1');
       // A mode change can supersede the render requested by a page turn.
       const previousScroll = await page.evaluate(() => {
         const scroller = document.querySelector('#page-scroller');
@@ -67,6 +82,10 @@ try{
       assert.ok(previousScroll > 0);
       await wait(2, 'bionic');
       assert.equal(await page.locator('#page-scroller').evaluate(el => el.scrollTop), 0);
+      await page.locator('#page-number').fill('');
+      await page.locator('#page-number').press('Enter');
+      assert.equal(await page.locator('#page-number').inputValue(), '2');
+      assert.equal(await page.locator('#page-frame').getAttribute('data-rendered-page'), '2');
       const previousPixels = await page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL());
       const previousText = await page.locator('#text-layer').textContent();
       await chooseSample('#open-file', damaged);
@@ -127,10 +146,14 @@ try{
       await page.locator('#language').selectOption('fr');await page.locator('#bionic-mode').click();await wait(1,'bionic');
       const strokes=()=>page.locator('#pdf-canvas').getAttribute('data-bold-glyphs');
       const half=await strokes();
+      const sample = page.locator('#sample-word b');
+      const halfPreview = await sample.textContent();
       await page.locator('#language').selectOption('en');await wait(1,'bionic');
       assert.notEqual(await strokes(),half,'Changing language updates English reference prefixes');
+      assert.notEqual(await sample.textContent(), halfPreview);
       await page.locator('#rule').selectOption('half');await wait(1,'bionic');
       assert.equal(await strokes(),half,'Changing the rule restores half-word prefixes');
+      assert.equal(await sample.textContent(), halfPreview);
       const previous=await page.locator('#page-frame').getAttribute('data-render-revision');
       // Finish an older file read after a newer document has been accepted.
       await page.evaluate(() => {

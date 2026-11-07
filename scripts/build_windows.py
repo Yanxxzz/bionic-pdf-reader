@@ -5,7 +5,7 @@ import sys
 ROOT=Path(__file__).resolve().parents[1]
 command=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--windowed',
          '--name','BionicPDF','--paths',str(ROOT/'src'),
-         '--collect-all','regex','--add-data',str(ROOT/'extension')+':reader',
+         '--collect-all','regex','--add-data',str(ROOT/'extension')+':bionic_pdf/reader',
          '--distpath',str(ROOT/'dist'),'--workpath',str(ROOT/'build/windows'),
          '--specpath',str(ROOT/'build'),str(ROOT/'scripts/app_entry.py')]
 subprocess.run(command,check=True,cwd=ROOT)

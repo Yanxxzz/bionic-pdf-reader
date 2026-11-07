@@ -7,11 +7,22 @@ import {fitWidthChanged, renderPage, resetPageView} from './page-view.mjs';
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
 const worker = new pdfjs.PDFWorker({port: new Worker(workerURL, {type: 'module'})});
 const $ = id => document.getElementById(id);
-const settings = { enabled: false, rule: 'reference', strength: 1, locale: 'auto' };
-try { Object.assign(settings, JSON.parse(localStorage.getItem('bionic-pdf-settings') || '{}')); } catch {}
+const settings = {enabled: false, rule: $('rule').value, strength: $('strength').valueAsNumber / 100, locale: $('language').value};
+try {
+  const saved = JSON.parse(localStorage.getItem('bionic-pdf-settings')) ?? {};
+  for (const [key, control] of [['locale', $('language')], ['rule', $('rule')]]) {
+    if ([...control.options].some(option => option.value === saved[key])) settings[key] = saved[key];
+  }
+  if (typeof saved.enabled === 'boolean') settings.enabled = saved.enabled;
+  const slider = $('strength');
+  const percent = saved.strength * 100;
+  if (Number.isFinite(saved.strength) && percent >= Number(slider.min) && percent <= Number(slider.max)) {
+    slider.value = String(percent);
+    settings.strength = slider.valueAsNumber / 100;
+  }
+} catch {}
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
 let loadRevision = 0, messageTimer = null;
-if(![...$('language').options].some(option=>option.value===settings.locale))settings.locale='auto';
 
 function notify(text) {
   clearTimeout(messageTimer);
@@ -31,13 +42,14 @@ function updateModeUI() {
   $('language').value = settings.locale;
   $('strength').value = Math.round(settings.strength * 100);
   $('strength-value').textContent = `${Math.round(settings.strength * 100)}%`;
-  $('rule-note').textContent = settings.rule === 'half'
+  $('rule-note').textContent = settings.rule === 'half' || !['auto', 'en'].includes(settings.locale)
     ? '强调每个单词前半部分的字母，保留原来的字符间距。'
     : '英文使用参考项目规则，其他语言按词语前半部分加粗。';
-  const count = prefixLength('Reading', settings.rule);
+  const sample = $('sample-word').textContent;
+  const count = prefixLength(sample, settings.rule, settings.locale);
   const bold = document.createElement('b');
-  bold.textContent = 'Reading'.slice(0, count);
-  $('sample-word').replaceChildren(bold, document.createTextNode('Reading'.slice(count)));
+  bold.textContent = sample.slice(0, count);
+  $('sample-word').replaceChildren(bold, document.createTextNode(sample.slice(count)));
 }
 function setMode(enabled) {
   if (settings.enabled === enabled) return;
@@ -73,10 +85,15 @@ async function scheduleRender(resetScroll = false) {
   }
 }
 
+function pageInRange(number, total, fallback) {
+  return Number.isInteger(number) ? Math.min(total, Math.max(1, number)) : fallback;
+}
 function goToPage(number) {
-  if (!pdf || !Number.isFinite(number)) return;
-  pageNumber = Math.min(pdf.numPages, Math.max(1, Math.trunc(number)));
-  $('page-number').value = pageNumber;
+  if (!pdf) return;
+  const next = pageInRange(number, pdf.numPages, pageNumber);
+  $('page-number').value = next;
+  if (next === pageNumber) return;
+  pageNumber = next;
   scheduleRender(true);
 }
 
@@ -146,7 +163,7 @@ async function showDocument(loadedPDF, name, labels) {
   pdf = loadedPDF;
   pageLabels = labels;
   pageNumber = 1;
-  try { pageNumber = Math.max(1, Math.min(pdf.numPages, Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)) || 1)); } catch {}
+  try { pageNumber = pageInRange(Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)), pdf.numPages, 1); } catch {}
   $('welcome').hidden = true;
   $('document').hidden = false;
   $('file-name').textContent = name;
@@ -224,7 +241,7 @@ $('file-input').addEventListener('change', async e => {
 $('original-mode').addEventListener('click', () => setMode(false));
 $('bionic-mode').addEventListener('click', () => setMode(true));
 $('rule').addEventListener('change', e => { settings.rule = e.target.value; persistSettings(); updateModeUI(); scheduleRender(); });
-$('language').addEventListener('change', e => { settings.locale = e.target.value; persistSettings(); scheduleRender(); });
+$('language').addEventListener('change', e => { settings.locale = e.target.value; persistSettings(); updateModeUI(); scheduleRender(); });
 let strengthTimer;
 $('strength').addEventListener('input', e => {
   settings.strength = Number(e.target.value) / 100;
@@ -233,8 +250,8 @@ $('strength').addEventListener('input', e => {
 });
 $('prev-page').addEventListener('click', () => goToPage(pageNumber - 1));
 $('next-page').addEventListener('click', () => goToPage(pageNumber + 1));
-$('page-number').addEventListener('change', e => goToPage(Number(e.target.value)));
-$('page-number').addEventListener('keydown', e => { if (e.key === 'Enter') goToPage(Number(e.target.value)); });
+$('page-number').addEventListener('change', e => goToPage(e.target.valueAsNumber));
+$('page-number').addEventListener('keydown', e => { if (e.key === 'Enter') goToPage(e.target.valueAsNumber); });
 $('zoom').addEventListener('change', () => scheduleRender());
 $('outline-toggle').addEventListener('click', () => {
   $('outline').hidden = !$('outline').hidden;
