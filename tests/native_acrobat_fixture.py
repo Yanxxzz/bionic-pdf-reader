@@ -52,6 +52,9 @@ def main_doc():
 def screen():
     return ImageGrab.grab().convert('RGB')
 
+def keys(sequence):
+    keyboard.send_keys(sequence,vk_packet=False)
+
 def read(img):
     items,_ = engine(np.asarray(img))
     return [(str(text),int(box[0][0]),int(box[0][1]),int(box[2][0]),int(box[2][1])) for box,text,score in (items or [])]
@@ -63,9 +66,9 @@ def observed_page():
         title=norm_title(foreground)
         if foreground!=hwnd and title in ('Adobe Acrobat','Welcome to Adobe Acrobat Reader'):
             print('Closing startup dialog',repr(title),flush=True)
-            keyboard.send_keys('{ESC}');time.sleep(.7)
+            keys('{ESC}');time.sleep(.7)
             if gui.GetForegroundWindow()==foreground:
-                keyboard.send_keys('%{F4}');time.sleep(.7)
+                keys('%{F4}');time.sleep(.7)
             continue
         img=screen(); items=read(img)
         labels=' '.join(canonical(t) for t,*_ in items)
@@ -138,12 +141,12 @@ def copy_selection(items):
     try:
         cb.EmptyClipboard();cb.SetClipboardText('waiting for native Acrobat copy',win32con.CF_UNICODETEXT)
     finally: cb.CloseClipboard()
-    keyboard.send_keys('^c')
+    keys('^c')
     def fresh():
         value=clipboard_text()
         return value if value and value!='waiting for native Acrobat copy' else None
     copied=until(fresh,6)
-    keyboard.send_keys('{ESC}');mouse.click(coords=(end[0],end[1]+8));mouse.move(coords=(730,485));time.sleep(.15)
+    keys('{ESC}');mouse.click(coords=(end[0],end[1]+8));mouse.move(coords=(730,485));time.sleep(.15)
     return copied
 
 def page_id(items,code):
@@ -196,17 +199,22 @@ try:
               'enabled',gui.IsWindowEnabled(hwnd),'point',norm_title(gui.GetAncestor(gui.WindowFromPoint((1000,269)),2)),
               'panel',[(t,x,y) for t,x,y,*_ in items if y<200 and (90<y or 'read' in t.lower())],flush=True)
         assert first.size==(1024,768)
+        if not gui.IsWindowEnabled(hwnd):
+            time.sleep(.7)
+            continue
+        app.set_focus();time.sleep(.3)
+        left_open=any(x<45 and 90<y<125 and canonical(t) in ('alltools','read') for t,x,y,*_ in items)
+        if left_open:
+            mouse.move(coords=(261,108));time.sleep(.3);mouse.click(coords=(261,108));time.sleep(.8)
+            continue
         if any('bionicreading' in canonical(t) for t,*_ in items):
             eye=layer_button(first,items)
             break
-        app.set_focus()
-        if any(x<45 and 90<y<125 and canonical(t) in ('alltools','read') for t,x,y,*_ in items):
-            mouse.click(coords=(261,108));time.sleep(.6)
         mouse.click(coords=(1000,269));time.sleep(1)
     else:
         raise RuntimeError('Native Layers panel did not open')
     # Fit the complete page (not only its width) after the panel is open.
-    mouse.click(coords=(310,365));keyboard.send_keys('^0');mouse.move(coords=(730,485));time.sleep(.8)
+    mouse.click(coords=(490,505));keys('{ESC}');keys('^0');mouse.move(coords=(730,485));time.sleep(.8)
     first,items=observed_page();first.save(OUT/'acrobat-layers.png')
     docpoint=point_in_document(items)
     assert docpoint,items
@@ -216,7 +224,7 @@ try:
     for index,sample in enumerate(samples,1):
         observed_page()
         if index>1:
-            mouse.click(coords=(1000,453));keyboard.send_keys('^a');keyboard.send_keys(str(index)+'{ENTER}');time.sleep(.6)
+            mouse.click(coords=(1000,453));keys('^a');keys(str(index)+'{ENTER}');time.sleep(.6)
         mouse.move(coords=(730,485))
         capture_page(index,sample,'off')
         mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.45)
