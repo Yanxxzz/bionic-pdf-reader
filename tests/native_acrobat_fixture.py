@@ -57,13 +57,22 @@ def read(img):
     return [(str(text),int(box[0][0]),int(box[0][1]),int(box[2][0]),int(box[2][1])) for box,text,score in (items or [])]
 
 def observed_page():
-    img=screen(); items=read(img)
-    if any('defaultpdfapplication' in canonical(t) for t,*_ in items):
-        no = next(row for row in items if row[0].strip().lower() == 'no')
-        mouse.click(coords=((no[1]+no[3])//2,(no[2]+no[4])//2))
-        time.sleep(.6)
+    for _ in range(6):
         img=screen(); items=read(img)
-    return img,items
+        labels=' '.join(canonical(t) for t,*_ in items)
+        if 'defaultpdfapplication' in labels:
+            button=next(row for row in items if row[0].strip().lower()=='no')
+            mouse.click(coords=((button[1]+button[3])//2,(button[2]+button[4])//2))
+        elif '7-dayfreetrial' in labels or 'trypremiumfeatures' in labels:
+            assert img.size==(1024,768)
+            mouse.click(coords=(909,80))  # Close the first-launch offer.
+        elif 'pintoadobe' in labels or 'pintheadobe' in labels or 'yourtaskbar' in labels:
+            button=next(row for row in items if 'nothanks' in re.sub('[^a-z]','',row[0].lower()))
+            mouse.click(coords=((button[1]+button[3])//2,(button[2]+button[4])//2))
+        else:
+            return img,items
+        time.sleep(.5)
+    raise RuntimeError('First-launch prompts still cover the native window')
 
 def point_in_document(items):
     hdr = next((x for x in items if 'shaped' in canonical(x[0]) and 'sample' in canonical(x[0])),None)
@@ -94,34 +103,47 @@ def clipboard_text():
     finally:
         cb.CloseClipboard()
 
-def copy_selection():
+def copy_selection(items):
+    # Start inside the heading, end below both paragraphs on this fitted page.
+    # A drag selects this page only, even in continuous view.
+    _,x0,y0,x1,y1=next(row for row in items if 'shaped' in canonical(row[0]) and 'sample' in canonical(row[0]))
+    start=(x0+8,(y0+y1)//2)
+    end=(min(x0+345,490),start[1]+225)
+    mouse.press(coords=start)
+    for step in range(1,9):
+        mouse.move(coords=tuple(a+(b-a)*step//8 for a,b in zip(start,end)))
+        time.sleep(.04)
+    mouse.release(coords=end)
     cb.OpenClipboard()
     try:
         cb.EmptyClipboard();cb.SetClipboardText('waiting for native Acrobat copy',win32con.CF_UNICODETEXT)
     finally: cb.CloseClipboard()
-    keyboard.send_keys('^a');time.sleep(.25);keyboard.send_keys('^c')
-    copied=until(lambda: (v if 'shaped' in v.lower() else None) if (v:=clipboard_text()) else None,7)
-    keyboard.send_keys('{ESC}');time.sleep(.15)
+    keyboard.send_keys('^c')
+    def fresh():
+        value=clipboard_text()
+        return value if value and value!='waiting for native Acrobat copy' else None
+    copied=until(fresh,6)
+    keyboard.send_keys('{ESC}');mouse.click(coords=(end[0],end[1]+8));mouse.move(coords=(730,485));time.sleep(.15)
     return copied
 
 def page_id(items,code):
     return any('sample' in t.lower() and re.sub(r'[^a-z]', '', t.lower()).endswith(code) for t,*_ in items)
 
-def capture_pass(mode):
-    mouse.click(coords=docpoint)
-    keyboard.send_keys('^{HOME}');time.sleep(.6)
-    for index,sample in enumerate(samples,1):
-        if index>1:
-            keyboard.send_keys('{RIGHT}');time.sleep(.5)
+def capture_page(index,sample,mode):
+    for attempt in range(2):
         shot,items=observed_page()
         shot.save(OUT/(mode+'-'+sample['code']+'.png'))
         if not page_id(items,sample['code']):
             raise RuntimeError(f'Expected page {index} ({sample["code"]}), screen text: {items}')
         cursor=point_in_document(items)
-        mouse.click(coords=cursor)
-        text=copy_selection()
-        assert canonical(sample['text']) in canonical(text), (mode,sample['code'],repr(text[:300]))
+        try:
+            text=copy_selection(items)
+        except RuntimeError:
+            if attempt: raise
+            screen().save(OUT/'copy-interrupted.png')
+            continue
         (OUT/(mode+'-'+sample['code']+'.txt')).write_bytes(text.encode('utf-8'))
+        assert canonical(sample['text']) in canonical(text), (mode,sample['code'],repr(text[:550]))
         if mode=='on':
             old=(OUT/('off-'+sample['code']+'.txt')).read_bytes()
             assert old==text.encode('utf-8'), 'Clipboard text differs'
@@ -130,12 +152,13 @@ def capture_pass(mode):
             before=np.asarray(Image.open(OUT/('off-'+sample['code']+'.png')).convert('L'),dtype=np.int16)
             after=np.asarray(shot.convert('L'),dtype=np.int16)
             x,y=cursor
-            rect=np.s_[y+6:y+135,max(0,x-16):min(x+540,before.shape[1])]
+            rect=np.s_[y+6:y+135,max(0,x-16):min(x+385,498)]
             gain=int((before[rect]-after[rect]).sum())
             changed=int((np.abs(before[rect]-after[rect])>6).sum())
             assert gain>300 and changed>20,(sample['code'],gain,changed)
             report['pages'][sample['code']]={'nativeClipboardEqual':True,'changedPixels':changed,'extraInk':gain}
         print(mode,index,sample['code'],'passed',flush=True)
+        return
 
 try:
     assert reader.is_file(),reader
@@ -165,9 +188,14 @@ try:
     eye=layer_button(first,items)
     report['window']=norm_title(hwnd)
     report['layerEye']=eye
-    capture_pass('off')
-    mouse.click(coords=eye);time.sleep(.6)
-    capture_pass('on')
+    for index,sample in enumerate(samples,1):
+        observed_page()
+        mouse.click(coords=(1000,453));keyboard.send_keys('^a');keyboard.send_keys(str(index)+'{ENTER}');time.sleep(.6)
+        mouse.move(coords=(730,485))
+        capture_page(index,sample,'off')
+        mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.45)
+        capture_page(index,sample,'on')
+        mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.4)
     assert len(report['pages'])==13
     report['passed']=True
 finally:

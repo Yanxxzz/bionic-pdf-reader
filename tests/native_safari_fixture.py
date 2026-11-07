@@ -135,11 +135,13 @@ def normalize(value):
 def screen(name):
     subprocess.run(['screencapture','-x',str(OUT/(name+'.png'))],timeout=6,check=False)
 
-def sample_screen(mode, sample):
+def sample_screen(case, mode, sample):
     rect = sample['onscreen']
     assert min(rect[2:]) > 35, rect
     time.sleep(.35)
-    subprocess.run(['screencapture','-x','-R'+','.join(map(str,rect)),str(OUT/('pdf-'+mode+'.png'))],check=True)
+    path=OUT/f'{case}-{mode}.png'
+    subprocess.run(['screencapture','-x','-R'+','.join(map(str,rect)),str(path)],check=True)
+    return Image.open(path).convert('RGB')
 
 def choose_path(path):
     key(5, Q.kCGEventFlagMaskCommand | Q.kCGEventFlagMaskShift)
@@ -200,8 +202,8 @@ def run():
                 key(124)
             original = event('render',start,page=page,mode='original',file=path.name)
             assert original['ink'] and original['count'] == 0
-            if variant == 'tagged' and page == 1:
-                sample_screen('original', original)
+            case=f"{variant}-{sample['code']}"
+            original_screen=sample_screen(case,'original',original)
             for field in ('text','selection'):
                 assert normalize(sample['text']) in normalize(original[field]),(page,field,original)
             start = len(events)
@@ -209,20 +211,17 @@ def run():
             bold = event('render',start,page=page,mode='bionic')
             assert bold['ink'] and bold['count']>0 and bold['pixels']!=original['pixels']
             assert bold['text']==original['text'] and bold['selection']==original['selection']
-            if variant == 'tagged' and page == 1:
-                sample_screen('bionic', bold)
+            bold_screen=sample_screen(case,'bionic',bold)
             start = len(events)
             key(11,Q.kCGEventFlagMaskAlternate)
             restored = event('render',start,page=page,mode='original')
             assert restored['pixels']==original['pixels']
-            if variant == 'tagged' and page == 1:
-                sample_screen('restored', restored)
-            report['cases'].append({'language':sample['code'],'variant':variant,'restored':True})
-    original, bold, restored = [Image.open(OUT/f'pdf-{m}.png').convert('RGB') for m in ('original','bionic','restored')]
-    report['screen'] = {'inkPixels':sum(original.convert('L').histogram()[:190]),
-        'emphasisVisible': ImageChops.difference(original,bold).getbbox() is not None,
-        'restored': ImageChops.difference(original,restored).getbbox() is None}
-    assert report['screen']['inkPixels'] > 100 and report['screen']['emphasisVisible'] and report['screen']['restored'], report['screen']
+            restored_screen=sample_screen(case,'restored',restored)
+            screen_result={'inkPixels':sum(original_screen.convert('L').histogram()[:190]),
+                'emphasisVisible': ImageChops.difference(original_screen,bold_screen).getbbox() is not None,
+                'restored': ImageChops.difference(original_screen,restored_screen).getbbox() is None}
+            report['cases'].append({'language':sample['code'],'variant':variant,'restored':True,'screen':screen_result})
+            assert screen_result['inkPixels']>100 and screen_result['emphasisVisible'] and screen_result['restored'],(case,screen_result)
     report['passed'] = True
 
 server = LocalServer(('127.0.0.1',0),functools.partial(Handler,directory=str(ROOT/'extension')))
