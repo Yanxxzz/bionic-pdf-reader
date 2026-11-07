@@ -26,9 +26,11 @@ WPS 左侧点叠纸形的「图层」图标，点 `仿生阅读 · Bionic Readin
 
 图层默认关闭。开关作用于整本副本，页面位置和缩放保持不变。阅读器是否在关闭后记住图层状态，由阅读器管理。找不到图层入口时，可以改用普通仿生版。
 
-Acrobat 找不到图层面板时，可从菜单进入「视图 → 显示/隐藏 → 侧面板 → 图层」。依据 [Adobe 官方说明](https://helpx.adobe.com/acrobat/desktop/edit-documents/pdf-layers/manage-layers.html)。Foxit 可在左侧导航栏空白处右键打开 Layers，然后勾选图层；依据 [Windows 2026.1.1 官方手册](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)第 95 页。这些菜单说明不替代逐应用实机验收。
+Acrobat Reader 的新版界面可点右侧叠纸形的「图层」图标，再点 `仿生阅读 · Bionic Reading` 左边的小方框。也可从「视图 → 显示/隐藏 → 侧面板 → 图层」打开面板。[Adobe 官方说明](https://helpx.adobe.com/acrobat/desktop/edit-documents/pdf-layers/manage-layers.html)
 
-## Firefox 与其他浏览器
+Foxit 可在左侧导航栏的空白处右键打开 Layers，然后勾选图层。[Foxit Windows 手册，第 95 页](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)
+
+## Safari、Firefox 与其他浏览器
 
 推荐使用 Windows 程序打开的本地阅读页，或在源码目录运行：
 
@@ -36,7 +38,7 @@ Acrobat 找不到图层面板时，可从菜单进入「视图 → 显示/隐藏
 python -m http.server 8765 --bind 127.0.0.1 --directory extension
 ```
 
-打开 `http://127.0.0.1:8765/reader.html`。Safari、Firefox 等浏览器的具体引擎验证状态见[兼容性说明](compatibility.md)。
+打开 `http://127.0.0.1:8765/reader.html`。在 Safari 点「打开 PDF」，从 macOS 文件窗口选中本地 PDF。在阅读页按 `Option+B` 或点「仿生」开启词首加粗，点「原始」即可在同一页恢复。[兼容性说明](compatibility.md)
 
 Firefox 临时扩展：解压 `bionic-pdf-firefox-temporary-版本.zip`，进入 `about:debugging#/runtime/this-firefox`，选择「临时载入附加组件」，打开解压目录中的 `manifest.json`。这个包供开发测试，重启 Firefox 后会移除；当前没有 Mozilla 签名，不是可永久安装的商店版本。
 
@@ -48,7 +50,7 @@ Firefox 临时扩展：解压 `bionic-pdf-firefox-temporary-版本.zip`，进入
 - **是否提高阅读速度**：这是可选的视觉呈现方式。是否适合你需要自行比较，项目没有提高阅读速度或理解率的效果保证。
 - **为什么原阅读器仍提示云同步**：本工具不上传 PDF；第三方阅读器的云同步由该阅读器的设置管理。
 
-## 更新到 0.4.0
+## 更新已有安装
 
 Chrome / Edge：将新 ZIP 解压到固定文件夹，在扩展管理页重新加载该文件夹。保留原扩展时可更新同一目录并点「重新加载」。Windows：关闭旧工具，完整解压新包，再运行新 BionicPDF.exe。新包不会修改已经生成的阅读副本；需要新算法时，从原始 PDF 重新制作一份。
 
