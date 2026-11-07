@@ -20,8 +20,8 @@ from pywinauto import Desktop, keyboard, mouse
 from rapidocr_onnxruntime import RapidOCR
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT/'test-results'
-OUT.mkdir(exist_ok=True)
+OUT = ROOT/'test-results'/os.environ.get('ACROBAT_ATTEMPT','primary')
+OUT.mkdir(parents=True,exist_ok=True)
 source = ROOT/'.tmp/examples/shaped-switchable.pdf'
 reader = Path(os.environ['ProgramFiles'])/'Adobe/Acrobat DC/Acrobat/Acrobat.exe'
 samples = json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
@@ -188,19 +188,26 @@ try:
     process=subprocess.Popen([str(reader),'/n','/A','page=1&view=Fit&pagemode=layers',str(source)])
     hwnd=until(main_doc,80)
     app=Desktop(backend='win32').window(handle=hwnd)
-    app.maximize();app.set_focus();time.sleep(15)
-    keyboard.send_keys('^0');time.sleep(1)
-    first,items=observed_page();first.save(OUT/'acrobat-start.png')
-    print('initial text',items,flush=True)
-    if not any('bionicreading' in canonical(t) for t,*_ in items):
-        # The installed version starts in the new UI with All tools open and
-        # Layers collapsed in the right navigation rail (verified on this desktop).
-        assert first.size == (1024,768) and any('alltools' in canonical(t) for t,*_ in items)
-        mouse.click(coords=(261,108));time.sleep(.4)
-        mouse.click(coords=(1000,269));time.sleep(.8)
-        keyboard.send_keys('^0');time.sleep(.5)
-        first,items=observed_page();first.save(OUT/'acrobat-layers.png')
-        print('layer panel',items,flush=True)
+    app.maximize();app.set_focus();time.sleep(1)
+    for attempt in range(12):
+        first,items=observed_page()
+        first.save(OUT/f'layer-setup-{attempt}.png')
+        print('layer setup',attempt,'foreground',norm_title(gui.GetForegroundWindow()),
+              'enabled',gui.IsWindowEnabled(hwnd),'point',norm_title(gui.GetAncestor(gui.WindowFromPoint((1000,269)),2)),
+              'panel',[(t,x,y) for t,x,y,*_ in items if y<200 and (90<y or 'read' in t.lower())],flush=True)
+        assert first.size==(1024,768)
+        if any('bionicreading' in canonical(t) for t,*_ in items):
+            eye=layer_button(first,items)
+            break
+        app.set_focus()
+        if any(x<45 and 90<y<125 and canonical(t) in ('alltools','read') for t,x,y,*_ in items):
+            mouse.click(coords=(261,108));time.sleep(.6)
+        mouse.click(coords=(1000,269));time.sleep(1)
+    else:
+        raise RuntimeError('Native Layers panel did not open')
+    # Fit the complete page (not only its width) after the panel is open.
+    mouse.click(coords=(310,365));keyboard.send_keys('^0');mouse.move(coords=(730,485));time.sleep(.8)
+    first,items=observed_page();first.save(OUT/'acrobat-layers.png')
     docpoint=point_in_document(items)
     assert docpoint,items
     eye=layer_button(first,items)
@@ -208,7 +215,8 @@ try:
     report['layerEye']=eye
     for index,sample in enumerate(samples,1):
         observed_page()
-        mouse.click(coords=(1000,453));keyboard.send_keys('^a');keyboard.send_keys(str(index)+'{ENTER}');time.sleep(.6)
+        if index>1:
+            mouse.click(coords=(1000,453));keyboard.send_keys('^a');keyboard.send_keys(str(index)+'{ENTER}');time.sleep(.6)
         mouse.move(coords=(730,485))
         capture_page(index,sample,'off')
         mouse.click(coords=eye);mouse.move(coords=(730,485));time.sleep(.45)
