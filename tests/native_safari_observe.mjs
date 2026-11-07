@@ -3,6 +3,18 @@ const send = e => fetch('/proof', {method: 'POST', body: JSON.stringify(e)});
 const digest = async bytes => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), x => x.toString(16).padStart(2, '0')).join('');
 const frame = document.querySelector('#page-frame');
 const button = document.querySelector('#open-file');
+function colors(options) {
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = 4;
+    const ctx = c.getContext('2d', options);
+    return ['red','blue'].map(color => {
+      ctx.fillStyle = color;
+      ctx.fillRect(0,0,4,4);
+      return Array.from(ctx.getImageData(1,1,1,1).data);
+    });
+  } catch (e) { return String(e); }
+}
 function buttonPoint() {
   const r = button.getBoundingClientRect();
   return {x: screenX + r.x + r.width / 2, y: screenY + outerHeight - innerHeight + r.y + r.height / 2,
@@ -31,10 +43,10 @@ new MutationObserver(async () => {
       selection:range.toString(), count:Number(canvas.dataset.boldGlyphs), ink, width:canvas.width, height:canvas.height};
     snapshot.pixels = await digest(data);
     await send(snapshot);
-  } catch (error) { await send({kind:'error',message:String(error)}); }
+  } catch (error) { await send({kind:'error',message:String(error),gpu:colors({}),cpu:colors({willReadFrequently:true})}); }
 }).observe(frame, {attributes:true});
 const ready=setInterval(()=>{
   if(document.documentElement.dataset.readerReady!=='true')return;
   clearInterval(ready);
-  send({kind:'ready',...buttonPoint()});
+  send({kind:'ready',...buttonPoint(),gpu:colors({}),cpu:colors({willReadFrequently:true})});
 },100);
