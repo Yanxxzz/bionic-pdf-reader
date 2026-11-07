@@ -60,7 +60,10 @@ def observed_page():
     for _ in range(6):
         img=screen(); items=read(img)
         labels=' '.join(canonical(t) for t,*_ in items)
-        if 'welcometoacrobatreader' in labels and 'continue' in labels:
+        tip=next((row for row in items if canonical(row[0]).strip('.!') in ('ok','gotit','skipthetour','skiptour')),None)
+        if tip:
+            mouse.click(coords=((tip[1]+tip[3])//2,(tip[2]+tip[4])//2))
+        elif 'welcometoacrobatreader' in labels and 'continue' in labels:
             button=next(row for row in items if row[0].strip().lower()=='continue')
             mouse.click(coords=((button[1]+button[3])//2,(button[2]+button[4])//2))
         elif 'defaultpdfapplication' in labels:
