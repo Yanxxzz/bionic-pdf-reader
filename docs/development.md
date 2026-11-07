@@ -2,10 +2,10 @@
 
 ## 结构
 
-浏览器实时绘制使用 PDF.js，制作阅读副本使用 pypdf / fontTools；两条路径各保留一套实现。
+浏览器用 PDF.js 在原页上切换显示。桌面工具用 pypdf 和 fontTools 生成可切换或始终加粗的 PDF 副本。
 
-- 浏览器的 `reader.mjs` 管理文件、页面和控件。`layout.mjs` 从 PDF.js 捕获字形，按行和栏映射词首并修复复制文字。
-- 桌面端的 `pdf_text.py` 读取 PDF 指令，跟踪字体、颜色和字形位置。`layout.py` 将词首映射到原字形，`converter.py` 绘制矢量笔画并保存副本。CLI 和 GUI 共用 `make_pdf()`。
+- 浏览器的 `reader.mjs` 负责打开文档、导航和阅读设置。`page-view.mjs` 在一个页面视图内安排绘制、取消过时的请求、复用词首结果并保留可选择的文字层。`layout.mjs` 根据字形位置计算词首，处理复制用的文字。
+- 桌面端的 `pdf_text.py` 读取文字与绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 根据 PDF 编码找到嵌入字体中的轮廓，包括字码与复制文字指向不同字形的情形。`converter.py` 复用这些轮廓、写入图层并保存副本。CLI 和 GUI 共用 `make_pdf()`。
 - 修改阅读规则时，浏览器和桌面端分别改 `words.mjs` 和 `words.py`。两端的排版测试共用 `tests/layout-cases.json`，可以在同一个例子里指定字形位置和预期加粗范围。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。
 - `scripts/`：原创示例、开放字体子集、Windows 程序和发布包构建。
@@ -49,7 +49,7 @@ Windows 包构建完成后运行 `python scripts/audit_release.py dist`，核对
 ## 维护与发布
 
 1. 同步 `pyproject.toml`、Python `__version__`、扩展 `manifest.json` 和 `package.json` 的版本。
-2. 更新 CHANGELOG、兼容性与语言范围。新的阅读器应分别记录文档依据和实测结果。
+2. 阅读器、文档语言或下载方式有变化时，先在 `docs/compatibility.md` 和 `docs/verification.md` 更新适配方式与实测范围，再同步中英文 README 的选用表和 GitHub About 的简介、主题。README 的下载入口指向 `releases/latest`，版本细节记在 CHANGELOG。
 3. 运行测试，构建，检查源码与包中不包含私人 PDF、机器路径或凭据。
 4. 推送发布分支，等待 CI 的 Python、浏览器、macOS 阅读引擎和 Windows 打包测试通过。
 5. 创建 `v版本` tag 和草稿 Release，上传包、许可和 SHA256 清单。

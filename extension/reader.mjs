@@ -1,7 +1,7 @@
 import './compat.mjs';
 import * as pdfjs from './vendor/pdf.mjs';
 import { prefixLength } from './words.mjs';
-import {GlyphCapture,planGlyphs,repairTextContent} from './layout.mjs';
+import {fitWidthChanged, renderPage, resetPageView} from './page-view.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -11,40 +11,8 @@ const $ = id => document.getElementById(id);
 const settings = { enabled: false, rule: 'reference', strength: 1, locale: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('bionic-pdf-settings') || '{}')); } catch {}
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
-let activeTask = null, displayedText = null, renderQueue = Promise.resolve();
-let revision = 0, loadRevision = 0, messageTimer = null;
+let loadRevision = 0, messageTimer = null;
 if(![...$('language').options].some(option=>option.value===settings.locale))settings.locale='auto';
-const pageLayouts = new Map();
-
-async function drawCanvas(page, canvas, viewport, transform) {
-  activeTask = page.render({canvas, viewport, transform,
-    annotationMode: pdfjs.AnnotationMode.ENABLE});
-  try { await activeTask.promise; }
-  finally { activeTask = null; }
-}
-
-async function pagePlan(page, viewport, {rule, locale}) {
-  let entry = pageLayouts.get(page);
-  if (!entry) {
-    const capture = new GlyphCapture();
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    canvas.bionicReader = capture;
-    try { await drawCanvas(page, canvas, viewport); }
-    finally { canvas.width = canvas.height = 0; }
-    entry = {capture};
-  }
-  if (entry.rule !== rule || entry.locale !== locale) {
-    entry.plan = planGlyphs(entry.capture, {rule, locale});
-    entry.rule = rule;
-    entry.locale = locale;
-  }
-  pageLayouts.delete(page);
-  pageLayouts.set(page, entry);
-  if (pageLayouts.size > 4) pageLayouts.delete(pageLayouts.keys().next().value);
-  return entry.plan;
-}
 
 function notify(text) {
   clearTimeout(messageTimer);
@@ -80,93 +48,30 @@ function setMode(enabled) {
   scheduleRender();
 }
 
-async function renderPage(myRevision, resetScroll) {
-  if (!pdf || myRevision !== revision) return;
+async function scheduleRender(resetScroll = false) {
   const activePDF = pdf;
+  if (!activePDF) return;
   const number = pageNumber;
+  const snapshot = {...settings};
   $('reading-status').textContent = '正在显示页面…';
-  const page = await activePDF.getPage(number);
-  if (myRevision !== revision) return;
-  const base = page.getViewport({ scale: 1 });
-  const zoom = $('zoom').value;
-  const available = Math.max(240, $('page-scroller').clientWidth - (innerWidth <= 760 ? 24 : 56));
-  const scale = zoom === 'fit' ? available / base.width : Number(zoom);
-  const viewport = page.getViewport({ scale });
-  const outputScale = Math.min(devicePixelRatio || 1, 2);
-  const scroller = $('page-scroller');
-  const scrollTop = resetScroll ? 0 : scroller.scrollTop;
-  const canvas = $('pdf-canvas');
-  const frame = $('page-frame');
-  const layer = $('text-layer');
-  canvas.width = Math.round(viewport.width * outputScale);
-  canvas.height = Math.round(viewport.height * outputScale);
-  canvas.style.width = `${viewport.width}px`;
-  canvas.style.height = `${viewport.height}px`;
-  frame.style.width = `${viewport.width}px`;
-  frame.style.height = `${viewport.height}px`;
-  frame.style.setProperty('--total-scale-factor', String(scale));
-  frame.style.setProperty('--scale-factor', String(scale));
-  if (displayedText?.page !== page) {
-    displayedText = null;
-    layer.replaceChildren();
-  }
-  const snapshot = { ...settings };
-  const plan = await pagePlan(page, base, snapshot);
-  if (myRevision !== revision) return;
-  let run = 0;
-  const bionic = {
-    enabled: snapshot.enabled,
-    strength: snapshot.strength,
-    stroked: 0,
-    mask: glyphs => {
-      const mask=plan.masks[run++];
-      if(mask?.length!==glyphs.length)throw new Error('PDF glyph capture and rendering are out of sync');
-      return mask;
-    },
-  };
-  canvas.bionicReader = bionic;
-  await drawCanvas(page, canvas, viewport, outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0]);
-  if (myRevision !== revision) return;
-  if (displayedText) {
-    displayedText.layer.update({viewport});
-  } else {
-    const content = repairTextContent(await page.getTextContent(), plan.repairs, base);
-    if (myRevision !== revision) return;
-    const textLayer = new pdfjs.TextLayer({textContentSource: content, container: layer, viewport});
-    activeTask = textLayer;
-    try { await textLayer.render(); }
-    finally { activeTask = null; }
-    if (myRevision !== revision) return;
-    displayedText = {page, layer: textLayer, hasText: content.items.some(item => /\p{L}/u.test(item.str || ''))};
-  }
-  canvas.dataset.boldGlyphs = String(bionic.stroked);
-  frame.dataset.renderedPage = String(number);
-  frame.dataset.renderRevision = String(myRevision);
-  frame.dataset.mode = snapshot.enabled ? 'bionic' : 'original';
-  frame.dataset.renderState='ready';
-  $('prev-page').disabled = number === 1;
-  $('next-page').disabled = number === pdf.numPages;
-  $('page-label').textContent = pageLabels?.[number - 1] ? `书内页码 ${pageLabels[number - 1]}` : `PDF 第 ${number} 页`;
-  $('reading-status').textContent = !displayedText.hasText ? '图片页或无可识别文字，保留原页'
-    : snapshot.enabled ? bionic.stroked?'仿生模式 · 词首加粗':'此页没有可加粗文字，保留原页' : '原始模式';
-  scroller.scrollTop = scrollTop;
-  try { localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, String(number)); } catch {}
-}
-
-function scheduleRender(resetScroll = false) {
-  if (!pdf) return renderQueue;
-  const myRevision = ++revision;
-  $('page-frame').dataset.renderState='rendering';
-  delete $('page-frame').dataset.renderedPage;
-  delete $('page-frame').dataset.mode;
-  activeTask?.cancel();
-  renderQueue = renderQueue.then(() => renderPage(myRevision, resetScroll)).catch(error => {
-    if (myRevision !== revision || error.name === 'RenderingCancelledException' || error.name === 'AbortException') return;
+  try {
+    const result = await renderPage(activePDF, number, $('zoom').value, snapshot, resetScroll);
+    if (!result || pdf !== activePDF) return;
+    $('prev-page').disabled = number === 1;
+    $('next-page').disabled = number === activePDF.numPages;
+    const label = pageLabels?.[number - 1];
+    $('page-label').textContent = label ? `书内页码 ${label}` : `PDF 第 ${number} 页`;
+    let status = '原始模式';
+    if (!result.hasText) status = '图片页或无可识别文字，保留原页';
+    else if (snapshot.enabled) status = result.stroked ? '仿生模式 · 词首加粗' : '此页没有可加粗文字，保留原页';
+    $('reading-status').textContent = status;
+    try { localStorage.setItem(`bionic-page-${activePDF.fingerprints[0]}`, String(number)); } catch {}
+  } catch (error) {
+    if (pdf !== activePDF) return;
     $('reading-status').textContent = '此页暂时无法显示';
     notify(`无法显示此页：${error.message}`);
     console.error(error);
-  });
-  return renderQueue;
+  }
 }
 
 function goToPage(number) {
@@ -184,11 +89,8 @@ async function openFile(file) {
   }
   const currentLoad = ++loadRevision;
   pdf = null;
-  ++revision;
-  activeTask?.cancel();
-  await renderQueue;
+  await resetPageView();
   if (currentLoad !== loadRevision) return;
-  pageLayouts.clear();
   await loadingTask?.destroy();
   if (currentLoad !== loadRevision) return;
   loadingTask = null;
@@ -271,7 +173,8 @@ async function buildOutline(activePDF, load) {
         const destination = typeof item.dest === 'string' ? await activePDF.getDestination(item.dest) : item.dest;
         if (!destination || load !== loadRevision) return;
         const ref = destination[0];
-        goToPage((typeof ref === 'number' ? ref : await activePDF.getPageIndex(ref)) + 1);
+        const index = typeof ref === 'number' ? ref : await activePDF.getPageIndex(ref);
+        if (load === loadRevision) goToPage(index + 1);
       });
       target.append(button);
       if (item.items?.length) append(item.items, target);
@@ -329,10 +232,11 @@ document.addEventListener('drop', e => { e.preventDefault(); dragCounter = 0; $(
 let resizeTimer;
 addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  if(pdf&&$('zoom').value==='fit')resizeTimer=setTimeout(()=>{
-    const available=Math.max(240,$('page-scroller').clientWidth-(innerWidth<=760?24:56));
-    if(pdf&&$('zoom').value==='fit'&&Math.abs(available-parseFloat($('pdf-canvas').style.width||'0'))>.5)scheduleRender();
-  },180);
+  if (pdf && $('zoom').value === 'fit') {
+    resizeTimer = setTimeout(() => {
+      if (pdf && $('zoom').value === 'fit' && fitWidthChanged()) scheduleRender();
+    }, 180);
+  }
 });
 updateModeUI();
 document.documentElement.dataset.readerReady='true';

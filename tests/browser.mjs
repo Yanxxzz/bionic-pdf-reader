@@ -47,6 +47,21 @@ try{
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());
       const wait=async(n,mode)=>page.waitForFunction(({n,mode})=>{const f=document.querySelector('#page-frame');return f.dataset.renderedPage===String(n)&&f.dataset.mode===mode;},{n,mode});
+      // A mode change can supersede the render requested by a page turn.
+      const previousScroll = await page.evaluate(() => {
+        const scroller = document.querySelector('#page-scroller');
+        scroller.scrollTop = 250;
+        const top = scroller.scrollTop;
+        document.querySelector('#next-page').click();
+        document.querySelector('#bionic-mode').click();
+        return top;
+      });
+      assert.ok(previousScroll > 0);
+      await wait(2, 'bionic');
+      assert.equal(await page.locator('#page-scroller').evaluate(el => el.scrollTop), 0);
+      await page.locator('#prev-page').click();
+      await page.locator('#original-mode').click();
+      await wait(1, 'original');
       for(let n=1;n<pages;n++){
         if(n>1){await page.locator('#page-number').fill(String(n));await page.locator('#page-number').press('Enter');await wait(n,'original');}
         const text=await page.locator('#text-layer').textContent();

@@ -5,20 +5,17 @@ vector Form XObjects; no duplicate text or rasterized pages are introduced.
 """
 from __future__ import annotations
 
-import io
 import time
 from collections.abc import Callable
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from fontTools.cffLib import CFFFontSet
-from fontTools.ttLib import TTFont
 from fontTools.pens.basePen import BasePen
-from fontTools import agl
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject as N,
-    NumberObject as I, FloatObject as F, TextStringObject as T,
+    FloatObject as F, TextStringObject as T,
     DecodedStreamObject)
+from .embedded_font import EmbeddedFont
 from .pdf_text import PageTextReader, matrix_multiply
 from .layout import select_glyphs
 
@@ -46,80 +43,36 @@ class GlyphLibrary:
         self.writer, self.weight = writer, weight
         self.fonts, self.forms = {}, {}
         self.skipped_fonts = set()
-    def font(self, font):
-        key = font.indirect_reference.idnum if getattr(font, 'indirect_reference', None) else id(font)
-        if key in self.fonts: return self.fonts[key]
-        info = None
-        cid = font.get('/Subtype') == '/Type0'
-        descendant = font['/DescendantFonts'][0].get_object() if cid else font
-        descriptor = descendant.get('/FontDescriptor')
-        descriptor = descriptor.get_object() if descriptor else {}
-        try:
-            if '/FontFile3' in descriptor and descriptor['/FontFile3'].get('/Subtype') == '/Type1C':
-                cff = CFFFontSet()
-                cff.decompile(io.BytesIO(descriptor['/FontFile3'].get_data()), None)
-                top = cff[cff.fontNames[0]]
-                info = {'glyphs': top.CharStrings, 'matrix': tuple(top.FontMatrix), 'bbox': tuple(top.FontBBox), 'owner': cff}
-            elif '/FontFile2' in descriptor:
-                tt = TTFont(io.BytesIO(descriptor['/FontFile2'].get_data()))
-                upem = tt['head'].unitsPerEm
-                info = {'glyphs': tt.getGlyphSet(), 'matrix': (1/upem,0,0,1/upem,0,0),
-                    'bbox': (tt['head'].xMin,tt['head'].yMin,tt['head'].xMax,tt['head'].yMax), 'owner': tt,
-                    'cmap': tt.getBestCmap() or {},
-                    'byte_cmap': next((t.cmap for t in tt['cmap'].tables if t.platformID==1 and t.platEncID==0),{})}
-                if cid:
-                    cidmap = descendant.get('/CIDToGIDMap')
-                    info['cidmap'] = cidmap.get_object().get_data() if cidmap is not None and hasattr(cidmap.get_object(),'get_data') else None
-                    info['glyph_order'] = tt.getGlyphOrder()
-            if info:
-                encoding = font.get('/Encoding')
-                differences, index = {}, 0
-                if isinstance(encoding, D):
-                    for item in encoding.get('/Differences', []):
-                        if isinstance(item, (int, I)): index = int(item)
-                        else: differences[index] = str(item)[1:]; index += 1
-                info['differences'] = differences
-                info['key'] = key
-        except (KeyError, ValueError, AssertionError):
-            info = None
-        self.fonts[key] = info
-        return info
-    def glyph(self, font, byte, unicode_text):
-        info = self.font(font)
-        if not info:
+
+    def glyph(self, font, code, text):
+        font_key = getattr(font, 'indirect_reference', None) or id(font)
+        if font_key not in self.fonts:
+            self.fonts[font_key] = EmbeddedFont.from_pdf(font)
+        embedded = self.fonts[font_key]
+        if embedded is None:
             self.skipped_fonts.add(str(font.get('/BaseFont')))
             return None
-        name = info['differences'].get(byte)
-        if not name and 'glyph_order' not in info:
-            name = info.get('byte_cmap',{}).get(byte)
-        if 'glyph_order' in info:
-            cidmap = info['cidmap']
-            gid = int.from_bytes(cidmap[byte*2:byte*2+2],'big') if cidmap is not None else byte
-            name = info['glyph_order'][gid] if gid < len(info['glyph_order']) else None
-        if not name:
-            if len(unicode_text) == 1:
-                name = info.get('cmap', {}).get(ord(unicode_text)) or agl.UV2AGL.get(ord(unicode_text))
-            elif unicode_text in ('fi', 'fl', 'ff', 'ffi', 'ffl'):
-                name = unicode_text
-        if not name or name not in info['glyphs']: return None
-        key = (info['key'], name)
+        name = embedded.glyph_name(code, text)
+        if name is None:
+            return None
+        key = (font_key, name)
         if key not in self.forms:
-            pen = PathPen(info['glyphs'])
-            info['glyphs'][name].draw(pen)
+            pen = PathPen(embedded.glyphs)
+            embedded.glyphs[name].draw(pen)
             if not pen.commands: return None
             # Width is in the glyph's units, so all text sizes share this form.
-            em_scale = max(abs(info['matrix'][0]), abs(info['matrix'][3]))
+            em_scale = max(abs(embedded.matrix[0]), abs(embedded.matrix[3]))
             line_width = self.weight / em_scale
             content = ('q ' + num(line_width) + ' w 1 j 1 J\n' + '\n'.join(pen.commands) + '\nS Q\n').encode('ascii')
             form = DecodedStreamObject()
             form.set_data(content)
-            x0,y0,x1,y1 = info['bbox']
+            x0,y0,x1,y1 = embedded.bbox
             form.update({N('/Type'): N('/XObject'), N('/Subtype'): N('/Form'),
                 N('/BBox'): A(F(x) for x in (x0-line_width,y0-line_width,x1+line_width,y1+line_width)),
                 N('/Resources'): D()})
             self.forms[key] = (N('/BRGlyph' + str(len(self.forms))), self.writer._add_object(form.flate_encode()))
         name, reference = self.forms[key]
-        return name, reference, info['matrix']
+        return name, reference, embedded.matrix
 
 
 def _bind_resource(resources, group, preferred, reference):

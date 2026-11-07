@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pypdfium2 as pdfium
 from pypdf import PdfReader,PdfWriter
-from pypdf.generic import NameObject as N,ArrayObject as A,DecodedStreamObject
+from pypdf.generic import NameObject as N,ArrayObject as A,DictionaryObject,NumberObject,DecodedStreamObject
 from bionic_pdf import make_pdf
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -106,6 +106,36 @@ def test_restoring_graphics_state_places_emphasis_on_the_original_text(converted
         with pdfium.PdfDocument(source) as before, pdfium.PdfDocument(target) as after:
             pixels.append((before[0].render(scale=1.5).to_pil().tobytes(),
                            after[0].render(scale=1.5).to_pil().tobytes()))
+    assert pixels[0][0] == pixels[1][0]
+    assert pixels[0][1] != pixels[0][0]
+    assert pixels[0][1] == pixels[1][1]
+
+
+def test_indirect_font_encoding_draws_the_same_prefix_as_a_direct_encoding(converted, tmp_path):
+    pixels = []
+    for representation in ('direct', 'indirect'):
+        writer = PdfWriter()
+        page = writer.add_page(PdfReader(converted[0]).pages[0])
+        fonts = page['/Resources']['/Font']
+        name = next(name for name in fonts if fonts[name]['/Subtype'] == '/TrueType')
+        font = fonts[name]
+        embedded = DecodedStreamObject()
+        embedded.set_data((ROOT/'tests/assets/fonts/Latin.ttf').read_bytes())
+        font['/FontDescriptor'][N('/FontFile2')] = writer._add_object(embedded)
+        # Code 65 copies as A via ToUnicode, but the source explicitly draws the B outline.
+        encoding = DictionaryObject({N('/Type'): N('/Encoding'), N('/BaseEncoding'): N('/WinAnsiEncoding'),
+                                     N('/Differences'): A([NumberObject(65), N('/B')])})
+        font[N('/Encoding')] = writer._add_object(encoding) if representation == 'indirect' else encoding
+        drawing = DecodedStreamObject()
+        drawing.set_data(f'BT {name} 14 Tf 1 0 0 1 20 50 Tm (Alpha readers explore actual glyphs.) Tj ET'.encode())
+        page[N('/Contents')] = writer._add_object(drawing)
+        source, target = tmp_path/f'{representation}.pdf', tmp_path/f'{representation}-bold.pdf'
+        writer.write(source)
+        make_pdf(source, target, mode='static')
+        with pdfium.PdfDocument(source) as before, pdfium.PdfDocument(target) as after:
+            for doc in (before, after):
+                assert doc[0].get_textpage().get_text_range() == 'Alpha readers explore actual glyphs.'
+            pixels.append(tuple(doc[0].render(scale=2).to_pil().tobytes() for doc in (before, after)))
     assert pixels[0][0] == pixels[1][0]
     assert pixels[0][1] != pixels[0][0]
     assert pixels[0][1] == pixels[1][1]
