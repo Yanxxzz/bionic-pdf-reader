@@ -96,7 +96,7 @@ def copy_selection():
     return copied
 
 def page_id(items,code):
-    return any('sample' in t.lower() and re.search(r'(?:/|\s)'+code+r'\s*$',t,re.I) for t,*_ in items)
+    return any('sample' in t.lower() and re.sub(r'[^a-z]', '', t.lower()).endswith(code) for t,*_ in items)
 
 def capture_pass(mode):
     mouse.click(coords=docpoint)
@@ -142,6 +142,16 @@ try:
     first=screen();first.save(OUT/'acrobat-start.png')
     items=read(first)
     print('initial text',items,flush=True)
+    if not any('bionicreading' in canonical(t) for t,*_ in items):
+        # The installed version starts in the new UI with All tools open and
+        # Layers collapsed in the right navigation rail (verified on this desktop).
+        assert first.size == (1024,768) and any('alltools' in canonical(t) for t,*_ in items)
+        mouse.click(coords=(261,108));time.sleep(.4)
+        mouse.click(coords=(1000,269));time.sleep(.8)
+        keyboard.send_keys('^0');time.sleep(.5)
+        first=screen();first.save(OUT/'acrobat-layers.png')
+        items=read(first)
+        print('layer panel',items,flush=True)
     docpoint=point_in_document(items)
     assert docpoint,items
     eye=layer_button(first,items)

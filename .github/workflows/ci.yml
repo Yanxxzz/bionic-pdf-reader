@@ -19,7 +19,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Verify the candidate reader is unchanged
-        run: git diff --exit-code 20f4dd56c25ce9a12da5f7d44f395c00b23bf436 HEAD -- extension examples
+        run: git diff --exit-code ff79b681ce7fc6190095220b5149cad46d461f8a HEAD -- extension src examples
       - uses: actions/download-artifact@v8
         with:
           name: shaped-pdfs
@@ -29,7 +29,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - run: python -m pip install pyobjc-framework-Quartz pyobjc-framework-ApplicationServices
+      - run: python -m pip install pyobjc-framework-Quartz pyobjc-framework-ApplicationServices Pillow
       - run: python tests/native_safari_fixture.py
       - uses: actions/upload-artifact@v7
         if: always()

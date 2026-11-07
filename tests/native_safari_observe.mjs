@@ -38,9 +38,13 @@ new MutationObserver(async () => {
     for (let i=0; i<data.length && !ink; i+=4) ink = data[i+3]>0 && data[i]<220;
     const layer = document.querySelector('#text-layer');
     const range = document.createRange(); range.selectNodeContents(layer);
+    const r = canvas.getBoundingClientRect(), scroller = document.querySelector('#page-scroller').getBoundingClientRect();
+    const left = Math.ceil(Math.max(r.x+r.width*.06,scroller.left+4,0)), right = Math.floor(Math.min(r.x+r.width*.94,scroller.right-5,innerWidth-2));
+    const top = Math.ceil(Math.max(r.y+r.height*.075,scroller.top+2,0)), bottom = Math.floor(Math.min(r.y+r.height*.4,scroller.bottom-5,innerHeight-3));
     const snapshot = {kind:'render', rev:revision, file:document.querySelector('#file-name').textContent,
       page:Number(frame.dataset.renderedPage), mode:frame.dataset.mode, text:layer.textContent,
-      selection:range.toString(), count:Number(canvas.dataset.boldGlyphs), ink, width:canvas.width, height:canvas.height};
+      selection:range.toString(), count:Number(canvas.dataset.boldGlyphs), ink, width:canvas.width, height:canvas.height,
+      onscreen:[Math.round(screenX+left),Math.round(screenY+outerHeight-innerHeight+top),right-left,bottom-top]};
     snapshot.pixels = await digest(data);
     await send(snapshot);
   } catch (error) { await send({kind:'error',message:String(error),gpu:colors({}),cpu:colors({willReadFrequently:true})}); }
