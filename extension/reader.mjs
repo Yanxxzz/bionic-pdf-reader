@@ -17,7 +17,7 @@ if(![...$('language').options].some(option=>option.value===settings.locale))sett
 const pageLayouts = new Map();
 
 async function drawCanvas(page, canvas, viewport, transform) {
-  activeTask = page.render({canvasContext: canvas.getContext('2d'), viewport, transform,
+  activeTask = page.render({canvas, viewport, transform,
     annotationMode: pdfjs.AnnotationMode.ENABLE});
   try { await activeTask.promise; }
   finally { activeTask = null; }
