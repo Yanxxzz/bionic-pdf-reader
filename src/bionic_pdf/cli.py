@@ -1,6 +1,7 @@
 import argparse
 import json
 from pathlib import Path
+from pypdf.errors import PyPdfError
 from . import __version__, make_pdf
 from .words import LANGUAGES
 
@@ -19,8 +20,8 @@ def main(argv=None):
             print(f'PROGRESS {current}/{total}',flush=True)
     try:
         result = make_pdf(args.source, args.target, weight=args.weight, mode=args.mode, locale=args.language, progress=progress)
-    except (OSError, ValueError) as error:
-        parser.exit(1, f'{error}\n')
+    except (OSError, ValueError, PyPdfError) as error:
+        parser.exit(1, f'无法生成阅读副本：{error}\n')
     print(f'DONE {args.target}',flush=True)
     print(json.dumps(result, ensure_ascii=False))
     return 0

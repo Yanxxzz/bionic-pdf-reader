@@ -14,7 +14,8 @@ def stream(writer,data):
     obj=DecodedStreamObject();obj.set_data(data);return writer._add_object(obj)
 
 @pytest.mark.parametrize('pages', [None, [1]], ids=['whole-document', 'selected-page'])
-def test_identity_h_and_existing_optional_content(tmp_path, pages):
+@pytest.mark.parametrize('layer_inside_text', [False, True], ids=['outer-layer', 'inner-layer'])
+def test_identity_h_and_existing_optional_content(tmp_path, pages, layer_inside_text):
     font_path=ROOT/'tests/assets/fonts/Latin.ttf';font=TTFont(font_path)
     cmap=font.getBestCmap();upem=font['head'].unitsPerEm
     text='Reading languages preserves original characters.'
@@ -41,7 +42,12 @@ def test_identity_h_and_existing_optional_content(tmp_path, pages):
         N('/XObject'): writer._add_object(D({N('/BRGlyph0'): writer._add_object(stamp)})),
     })
     encoded=''.join(f'{codes[ord(c)]:04x}' for c in text)
-    page[N('/Contents')]=stream(writer,f'/OC /BRBionic BDC /BRGlyph0 Do BT /F0 14 Tf 1 0 0 1 48 740 Tm <{encoded}> Tj ET EMC'.encode())
+    text_setup = 'BT /F0 14 Tf 1 0 0 1 48 740 Tm'
+    if layer_inside_text:
+        drawing = f'/OC /BRBionic BDC /BRGlyph0 Do EMC {text_setup} /OC /BRBionic BDC <{encoded}> Tj EMC ET'
+    else:
+        drawing = f'/OC /BRBionic BDC /BRGlyph0 Do {text_setup} <{encoded}> Tj ET EMC'
+    page[N('/Contents')] = stream(writer, drawing.encode())
     source,target,on,hidden=[tmp_path/name for name in ('cid.pdf','converted.pdf','on.pdf','hidden.pdf')]
     writer.write(source)
     report=make_pdf(source,target,pages=pages);assert report['glyphs']>10

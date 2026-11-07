@@ -63,7 +63,7 @@ class GlyphLibrary:
             # Width is in the glyph's units, so all text sizes share this form.
             em_scale = max(abs(embedded.matrix[0]), abs(embedded.matrix[3]))
             line_width = self.weight / em_scale
-            content = ('q ' + num(line_width) + ' w 1 j 1 J\n' + '\n'.join(pen.commands) + '\nS Q\n').encode('ascii')
+            content = ('q ' + num(line_width) + ' w 1 j 1 J [] 0 d\n' + '\n'.join(pen.commands) + '\nS Q\n').encode('ascii')
             form = DecodedStreamObject()
             form.set_data(content)
             x0,y0,x1,y1 = embedded.bbox
@@ -87,23 +87,37 @@ def _bind_resource(resources, group, preferred, reference):
     return name
 
 
+def _page_stream_with_strokes(data, strokes, layer_tag):
+    """Insert strokes before their text objects without re-encoding any source bytes."""
+    begin, end = b'\n', b'\n'
+    if layer_tag is not None:
+        begin, end = f'\n/OC {layer_tag} BDC\n'.encode('ascii'), b'\nEMC\n'
+    parts = []
+    cursor = 0
+    for offset in sorted(strokes):
+        commands = '\n'.join(strokes[offset]).encode('ascii')
+        parts.extend((data[cursor:offset], begin, commands, end))
+        cursor = offset
+    parts.append(data[cursor:])
+    stream = DecodedStreamObject()
+    stream.set_data(b''.join(parts))
+    return stream.flate_encode()
+
+
 class OverlayBuilder:
     def __init__(self, writer, layer, weight=0.026):
         self.writer, self.layer = writer, layer
         self.text_reader = PageTextReader()
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
-        save = DecodedStreamObject()
-        save.set_data(b'q\n')
-        self.save_graphics_state = writer._add_object(save)
 
     def build_page(self, page):
         content = page.get_contents()
         if content is None:
             return
         resources = page.get('/Resources', D())
-        records = self.text_reader.read(content.operations, resources)
-        commands, glyph_names = [], {}
+        data, records = self.text_reader.read(content, resources)
+        strokes, glyph_names = {}, {}
         for index in sorted(select_glyphs(records)):
             record = records[index]
             glyph = self.glyphs.glyph(record['font'], record['code'], record['text'])
@@ -115,26 +129,23 @@ class OverlayBuilder:
             name = glyph_names[preferred]
             size = record['size']
             scale = (size * record['tz'], 0, 0, size, 0, 0)
-            transform = matrix_multiply(record['matrix'], matrix_multiply(scale, font_matrix))
+            transform = matrix_multiply(record['text_matrix'], matrix_multiply(scale, font_matrix))
             matrix = ' '.join(map(num, transform))
             color = ' '.join(map(str, record['color']))
-            draw = f"q {matrix} cm {record['cs']} CS {color} SCN {name} Do Q"
+            color_space = N(record['cs']).renumber().decode('ascii')
+            draw = f"q {matrix} cm {color_space} CS {color} SCN {name} Do Q"
             layers = record['oc']
-            begin = ' '.join(f'/OC {tag} BDC' for tag in layers)
-            commands.append(f'{begin} {draw}' + ' EMC' * len(layers))
-        if not commands:
+            open_layers = ''.join(f'/OC {tag.renumber().decode("ascii")} BDC ' for tag in layers)
+            strokes.setdefault(record['text_start'], []).append(open_layers + draw + ' EMC' * len(layers))
+            self.count += 1
+        if not strokes:
             return
-        self.count += len(commands)
+        layer_tag = None
         if self.layer is not None:
-            tag = _bind_resource(resources, '/Properties', N('/BRBionic'), self.layer)
-            commands.insert(0, f'/OC {tag} BDC')
-            commands.append('EMC')
-        stream = DecodedStreamObject()
-        stream.set_data(('\nQ\n' + '\n'.join(commands) + '\n').encode('ascii'))
-        # Keep shared source streams untouched by giving this page its own array.
-        original = page['/Contents']
-        parts = original if isinstance(original, A) else [page.raw_get('/Contents')]
-        page[N('/Contents')] = A([self.save_graphics_state, *parts, self.writer._add_object(stream.flate_encode())])
+            layer_tag = _bind_resource(resources, '/Properties', N('/BRBionic'), self.layer)
+        # Do not mutate the source stream: pages can share it but use different resources.
+        stream = _page_stream_with_strokes(data, strokes, layer_tag)
+        page[N('/Contents')] = self.writer._add_object(stream)
 
 
 def _add_reading_layer(writer):
@@ -160,8 +171,8 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
     if source.resolve() == target.resolve():
         raise ValueError('请为阅读副本选择不同文件名，不能覆盖原 PDF。')
     reader = PdfReader(source)
-    if reader.is_encrypted and not reader.decrypt(''):
-        raise ValueError('请先打开并另存为未加密的 PDF。')
+    if reader.is_encrypted:
+        raise ValueError('这份 PDF 已加密。制作工具无法保留原有密码和权限，已停止导出。')
     source_layers = reader.root_object.get('/OCProperties')
     if source_layers is not None:
         groups = source_layers.get_object().get('/OCGs', A()).get_object()
@@ -196,6 +207,8 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         raise ValueError('未找到可处理的文字层或可用嵌入字体；扫描版需先做 OCR。')
     title = reader.metadata.title if reader.metadata else None
     writer.add_metadata({'/Title': str(title or source.stem) + suffix, '/Subject': subject})
+    # Drop replaced page streams only when no other page, Form or resource uses them.
+    writer.compress_identical_objects(remove_duplicates=False, remove_unreferenced=True)
     with TemporaryDirectory(dir=target.parent) as staging:
         temporary = Path(staging) / 'reading.pdf'
         writer.write(temporary)

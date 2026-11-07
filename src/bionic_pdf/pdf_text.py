@@ -3,9 +3,10 @@ import math
 import re
 from copy import copy
 from dataclasses import dataclass
+from io import BytesIO
 
 from pypdf._cmap import get_encoding
-from pypdf.generic import ArrayObject, DictionaryObject, NameObject, TextStringObject
+from pypdf.generic import ArrayObject, ContentStream, DictionaryObject, NameObject, TextStringObject
 
 
 IDENTITY = (1, 0, 0, 1, 0, 0)
@@ -42,6 +43,7 @@ class GraphicsState:
     render_mode: int = 0
     fill_alpha: float = 1
     stroke_alpha: float = 1
+    paint_scope: int = 0
 
     def start_line(self, matrix):
         self.text_matrix = self.line_matrix = matrix
@@ -163,7 +165,7 @@ class TextFont:
 
 def marked_content(args, index, resources):
     properties = args[1] if len(args) > 1 else None
-    layer = str(properties) if args[0] == '/OC' and isinstance(properties, NameObject) else None
+    layer = properties if args[0] == '/OC' else None
     if isinstance(properties, NameObject):
         properties = resources.get('/Properties', {}).get(properties)
     if properties is not None:
@@ -173,15 +175,35 @@ def marked_content(args, index, resources):
     return layer, actual
 
 
+class _TextOperations(list):
+    """Record actual BT byte positions while pypdf tokenizes the original content."""
+
+    def __init__(self, data, pdf):
+        super().__init__()
+        self.starts = {}
+        with BytesIO(data) as self._cursor:
+            parser = ContentStream(None, pdf)
+            parser._operations = self
+            parser._parse_content_stream(self._cursor)
+
+    def append(self, operation):
+        if operation[1] == b'BT':
+            self.starts[len(self)] = self._cursor.tell() - len(b'BT')
+        super().append(operation)
+
+
 class PageTextReader:
     """Share decoded fonts across pages and keep drawing state local to each page."""
     def __init__(self):
         self.fonts = {}
         self.skipped_fonts = set()
 
-    def read(self, operations, resources):
+    def read(self, content, resources):
+        data = content.get_data()
+        operations = _TextOperations(data, content.pdf)
         state = GraphicsState()
         saved, marked, records = [], [], []
+        anchor = None
         for index, (args, op) in enumerate(operations):
             if op == b'q':
                 # Inside a text object this includes both text matrices (ISO 32000-2 §9.4.1).
@@ -190,18 +212,24 @@ class PageTextReader:
                 if saved:
                     state = saved.pop()
             elif op in (b'BDC', b'BMC'):
-                marked.append(marked_content(args, index, resources))
+                marked.append((index, *marked_content(args, index, resources)))
             elif op == b'EMC':
                 if marked:
                     marked.pop()
             else:
                 state.update(op, args, resources)
-                if op in (b'Tj', b'TJ', b"'", b'"'):
+                if op == b'BT':
+                    anchor = (operations.starts[index], state.ctm, state.paint_scope, index)
+                elif op == b'ET':
+                    anchor = None
+                elif op in (b'gs', b'W', b'W*'):
+                    state.paint_scope = index + 1
+                elif anchor is not None and op in (b'Tj', b'TJ', b"'", b'"'):
                     values = args[0] if op == b'TJ' else args[-1:]
-                    records.extend(self._show_text(values, state, resources, marked))
-        return records
+                    records.extend(self._show_text(values, state, resources, marked, anchor))
+        return data, records
 
-    def _show_text(self, values, state, resources, marked):
+    def _show_text(self, values, state, resources, marked, anchor):
         reference = resources.get('/Font', {}).get(state.font)
         if reference is None:
             state.position_known = False
@@ -216,9 +244,13 @@ class PageTextReader:
             state.position_known = False
             return
 
-        eligible = not metrics.styled and state.can_emphasize()
-        actual = next((text for _, text in marked if text is not None), None)
-        layers = tuple(layer for layer, _ in marked if layer)
+        text_start, initial_ctm, initial_scope, start_index = anchor
+        layers = tuple(layer for index, layer, _ in marked if index > start_index and layer is not None)
+        # Strokes are painted immediately before BT. An inner mask/clip cannot be lifted outside it.
+        eligible = (not metrics.styled and state.can_emphasize()
+                    and state.ctm == initial_ctm and state.paint_scope == initial_scope
+                    and all(isinstance(layer, NameObject) for layer in layers))
+        actual = next((text for _, _, text in marked if text is not None), None)
         size, scale = state.font_size, state.horizontal_scale
         for item in values:
             if isinstance(item, TextStringObject):
@@ -226,20 +258,21 @@ class PageTextReader:
             elif isinstance(item, bytes):
                 raw = item
             else:  # A number in a TJ array adjusts the position of the next glyph.
-                offset = -float(item) * size * scale / 1000
-                state.text_matrix = translated(state.text_matrix, offset, 0)
+                adjustment = -float(item) * size * scale / 1000
+                state.text_matrix = translated(state.text_matrix, adjustment, 0)
                 continue
             for start in range(0, len(raw), metrics.code_size):
                 code = int.from_bytes(raw[start:start + metrics.code_size], 'big')
                 width = metrics.widths.get(code, metrics.default_width)
                 word_spacing = state.word_spacing if code == 32 else 0
                 advance = (width * size / 1000 + state.char_spacing + word_spacing) * scale
-                matrix = matrix_multiply(state.ctm, translated(state.text_matrix, 0, state.rise))
+                local = translated(state.text_matrix, 0, state.rise)
+                matrix = matrix_multiply(state.ctm, local)
                 yield {
                     'font': font, 'code': code, 'text': metrics.text_for(code),
                     'x': min(matrix[4], matrix[4] + matrix[0] * advance),
                     'y': matrix[5], 'w': abs(matrix[0] * advance), 'h': abs(size * matrix[3]),
-                    'matrix': matrix, 'tz': scale, 'size': size, 'actual': actual,
+                    'text_matrix': local, 'text_start': text_start, 'tz': scale, 'size': size, 'actual': actual,
                     'eligible': eligible, 'oc': layers, 'cs': state.fill_cs, 'color': state.fill_values,
                 }
                 state.text_matrix = translated(state.text_matrix, advance, 0)

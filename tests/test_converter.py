@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 import runpy
 from pathlib import Path
 import pytest
@@ -9,6 +10,11 @@ from pypdf.generic import NameObject as N,ArrayObject as A,DictionaryObject,Numb
 from bionic_pdf import make_pdf
 
 ROOT=Path(__file__).resolve().parents[1]
+
+def source_bytes_without_test_layer(page):
+    # These fixtures have no source OCG. Remove only our blocks before the real BT operators.
+    return re.sub(rb'\n/OC /BRBionic BDC\n.*?\nEMC\n(?=BT)', b'',
+                  page.get_contents().get_data(), flags=re.DOTALL)
 
 @pytest.fixture(scope='module')
 def converted(tmp_path_factory):
@@ -36,7 +42,7 @@ def test_original_bytes_and_structure(converted):
         assert a.mediabox==b.mediabox and a.cropbox==b.cropbox
         assert len(a.get('/Annots',[]))==len(b.get('/Annots',[]))
         if a.get_contents() is not None:
-            assert a.get_contents().get_data() in b.get_contents().get_data()
+            assert source_bytes_without_test_layer(b) == a.get_contents().get_data()
     assert report['glyphs']>100
 
 def test_text_and_default_pixels_for_all_example_pages(converted):
@@ -150,6 +156,26 @@ def test_progress_reports_completed_pages_without_console_output(converted,tmp_p
     assert capsys.readouterr().out==''
 
 
+def test_only_real_text_objects_receive_strokes(converted, tmp_path):
+    writer = PdfWriter()
+    page = writer.add_page(PdfReader(converted[0]).pages[0])
+    fonts = page['/Resources']['/Font']
+    name = next(key for key in fonts if fonts[key]['/Subtype'] == '/TrueType')
+    # BT also occurs in a comment, the inline RGB image's six data bytes, and a text string.
+    data = (b'% BT in a comment\nq 12 0 0 12 40 100 cm BI /W 2 /H 1 /BPC 8 /CS /RGB ID BT)ET/ EI Q\n'
+            + f'BT {name} 15 Tf 1 0 0 1 20 50 Tm [(Readers BT) 80 ( ET enjoy words.)] TJ ET'.encode())
+    stream = DecodedStreamObject()
+    stream.set_data(data)
+    page[N('/Contents')] = writer._add_object(stream)
+    source, target = tmp_path/'operators.pdf', tmp_path/'operators-off.pdf'
+    writer.write(source)
+    report = make_pdf(source, target)
+    assert report['glyphs'] > 0
+    assert source_bytes_without_test_layer(PdfReader(target).pages[0]) == data
+    with pdfium.PdfDocument(source) as plain, pdfium.PdfDocument(target) as off:
+        assert plain[0].render().to_pil().tobytes() == off[0].render().to_pil().tobytes()
+
+
 def test_pages_keep_shared_original_content_streams(converted, tmp_path):
     writer = PdfWriter()
     first = writer.add_page(PdfReader(converted[0]).pages[0])
@@ -162,17 +188,27 @@ def test_pages_keep_shared_original_content_streams(converted, tmp_path):
         page[N('/Resources')] = first.raw_get('/Resources')
         page[N('/Contents')] = contents
 
+    # The very same stream can also be painted as a Form on another page.
+    body.get_object().update({N('/Type'): N('/XObject'), N('/Subtype'): N('/Form'),
+                              N('/BBox'): first.mediabox, N('/Resources'): first.raw_get('/Resources')})
+    wrapper = writer.add_blank_page(first.mediabox.width, first.mediabox.height)
+    wrapper[N('/Resources')] = DictionaryObject({N('/XObject'): DictionaryObject({N('/Original'): body})})
+    use_form = DecodedStreamObject()
+    use_form.set_data(b'/Original Do')
+    wrapper[N('/Contents')] = writer._add_object(use_form)
+
     source, target = tmp_path/'shared.pdf', tmp_path/'shared-static.pdf'
     writer.write(source)
     make_pdf(source, target, mode='static')
     output = PdfReader(target)
-    streams = [page['/Contents'] for page in output.pages]
-    assert all(isinstance(parts, A) for parts in streams)
-    assert [len(parts) for parts in streams] == [3, 4, 4]
-    assert all(parts[1].get_object()._data == body.get_object()._data for parts in streams)
-    assert all(parts[2].get_object().get_data() == comment.get_data() for parts in streams[1:])
+    streams = [page.get_contents().get_data() for page in output.pages]
+    assert streams[1] == streams[2]
+    assert streams[1].endswith(comment.get_data() + b'\n')
+    original_form = output.pages[3]['/Resources']['/XObject']['/Original']
+    assert original_form._data == body.get_object()._data
     with pdfium.PdfDocument(source) as original, pdfium.PdfDocument(target) as updated:
         original_pixels = original[0].render().to_pil().tobytes()
         bold_pixels = updated[0].render().to_pil().tobytes()
         assert bold_pixels != original_pixels
-        assert all(page.render().to_pil().tobytes() == bold_pixels for page in updated)
+        assert all(updated[i].render().to_pil().tobytes() == bold_pixels for i in (1, 2))
+        assert updated[3].render().to_pil().tobytes() == original_pixels
