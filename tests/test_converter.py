@@ -68,6 +68,7 @@ def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     source,switchable,*_=converted
     with pytest.raises(ValueError):make_pdf(source,source)
     with pytest.raises(ValueError):make_pdf(switchable,tmp_path/'twice.pdf')
+    with pytest.raises(ValueError):make_pdf(switchable,tmp_path/'slice.pdf',pages=[1])
 
 
 def test_source_can_have_a_partial_pdf_filename(converted, tmp_path):

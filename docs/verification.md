@@ -5,12 +5,12 @@
 日期：2026-11-07，北京时间。架构精简完成后停止继续验收，尚未满足新版发布条件。
 
 - 删除停用的 PDF 文字改写引擎和浏览器备用字形选择算法；转换进度改为回调，GUI 不再全局重定向标准输出。
-- 本地 38 项 Python、22 项 JavaScript 测试通过，覆盖嵌套绘图状态、双栏公式、跨行复制、原文件名冲突和 13 种语言的词首。用重构前后的转换器生成三份样例副本，共 40 页，逐页文字与像素一致。
+- 本地 39 项 Python、22 项 JavaScript 测试通过，覆盖嵌套绘图状态、双栏公式、跨行复制、文件名与图层资源重名，以及 13 种语言的词首。用重构前后的转换器生成三份样例副本，共 40 页，逐页文字与像素一致。另用已有图层和图形的样例检查整本与选页导出、图层开关和静态副本。
 - Chrome、Edge、Firefox 验证了同页切换时的文字选区、切换语言或规则后的词首，以及带标签和无标签样例的复制顺序。Chrome 扩展也完成了加载和切换测试。各次提交的跨平台结果见[发布分支的 CI 记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/workflows/ci.yml?query=branch%3Arelease%2Fv0.4.1)。
 - Windows 独立转换、GUI、内置使用指南和 6 个候选下载包校验通过；候选包未发布。
 - Foxit PDF Reader 2026.2.1.39815：原生界面检查了 13 种语言页面、默认关闭、开关与翻页状态、页码及缩放保留。原生全选复制覆盖 13 种语言，开关前后的全文一致。未把代表页面的开关检查说成每页都做了完整开关循环。
 - Acrobat Reader 26.3.22075.0：完成首次启动协议，图层和多语言实机验收仍未完成。窗口恢复被电脑控制工具的人工输入保护反复拦截，按用户要求停止继续操作。
-- Safari 的自动测试在 macOS 26 Intel 上读取 PDF 的实际像素，检查开启加粗和关闭恢复。GitHub 的 macOS 26 ARM64 镜像更新到 Safari 27.2 后，连独立 4×4 纯色画布也在读取像素时抛出 `InvalidStateError`。[ARM64 测试记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42344744563)
+- Safari 自动测试读取 PDF 的实际像素，检查开启加粗和关闭恢复。GitHub 的 macOS 26 ARM64 镜像更新到 Safari 27.2 后，连独立 4×4 纯色画布也在读取像素时抛出 `InvalidStateError`。Intel Mac 的两次复测均在 Safari 建立会话时超时。Apple PDFKit 已完成检查。[ARM64 像素记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42344744563) · [Intel Mac 复测](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42345480438)
 - Safari 普通窗口的系统文件选择仍待实机验收。自动测试会记录输入文件的方式。
 - 没有创建 v0.4.1 标签或 Release；正式下载仍为 v0.4.0。美术风格未更改。
 

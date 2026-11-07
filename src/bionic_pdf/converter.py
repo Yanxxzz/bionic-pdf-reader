@@ -23,6 +23,9 @@ from .pdf_text import PageTextReader, matrix_multiply
 from .layout import select_glyphs
 
 
+LAYER_NAME = '仿生阅读 · Bionic Reading'
+
+
 def num(value):
     return f'{float(value):.7f}'.rstrip('0').rstrip('.') or '0'
 
@@ -119,6 +122,18 @@ class GlyphLibrary:
         return name, reference, info['matrix']
 
 
+def _bind_resource(resources, group, preferred, reference):
+    """Bind the object without displacing a resource used by the original page."""
+    entries = resources.setdefault(N(group), D()).get_object()
+    name = preferred
+    suffix = 1
+    while name in entries and entries.raw_get(name) != reference:
+        name = N(f'{preferred}_{suffix}')
+        suffix += 1
+    entries[name] = reference
+    return name
+
+
 class OverlayBuilder:
     def __init__(self, writer, layer, weight=0.026):
         self.writer, self.layer = writer, layer
@@ -135,14 +150,16 @@ class OverlayBuilder:
             return
         resources = page.get('/Resources', D())
         records = self.text_reader.read(content.operations, resources)
-        commands, used = [], {}
+        commands, glyph_names = [], {}
         for index in sorted(select_glyphs(records)):
             record = records[index]
             glyph = self.glyphs.glyph(record['font'], record['code'], record['text'])
             if glyph is None:
                 continue
-            name, reference, font_matrix = glyph
-            used[name] = reference
+            preferred, reference, font_matrix = glyph
+            if preferred not in glyph_names:
+                glyph_names[preferred] = _bind_resource(resources, '/XObject', preferred, reference)
+            name = glyph_names[preferred]
             size = record['size']
             scale = (size * record['tz'], 0, 0, size, 0, 0)
             transform = matrix_multiply(record['matrix'], matrix_multiply(scale, font_matrix))
@@ -152,65 +169,86 @@ class OverlayBuilder:
             layers = record['oc']
             begin = ' '.join(f'/OC {tag} BDC' for tag in layers)
             commands.append(f'{begin} {draw}' + ' EMC' * len(layers))
-        if commands:
-            if self.layer is not None:
-                properties = resources.get('/Properties')
-                if not properties: properties = D(); resources[N('/Properties')] = properties
-                properties[N('/BRBionic')] = self.layer
-            xobjects = resources.get('/XObject')
-            if not xobjects: xobjects = D(); resources[N('/XObject')] = xobjects
-            xobjects.update(used)
-            stream = DecodedStreamObject()
-            start, end = (b'/OC /BRBionic BDC\n', b'\nEMC\n') if self.layer is not None else (b'', b'\n')
-            stream.set_data(b'\nQ\n' + start + '\n'.join(commands).encode('ascii') + end)
-            # A PDF can share content streams between pages. Wrap the references
-            # in a new page-local array so neither the streams nor a shared array is edited.
-            original = page['/Contents']
-            parts = original if isinstance(original, A) else [page.raw_get('/Contents')]
-            page[N('/Contents')] = A([self.save_graphics_state, *parts, self.writer._add_object(stream.flate_encode())])
-            self.count += len(commands)
+        if not commands:
+            return
+        self.count += len(commands)
+        if self.layer is not None:
+            tag = _bind_resource(resources, '/Properties', N('/BRBionic'), self.layer)
+            commands.insert(0, f'/OC {tag} BDC')
+            commands.append('EMC')
+        stream = DecodedStreamObject()
+        stream.set_data(('\nQ\n' + '\n'.join(commands) + '\n').encode('ascii'))
+        # Keep shared source streams untouched by giving this page its own array.
+        original = page['/Contents']
+        parts = original if isinstance(original, A) else [page.raw_get('/Contents')]
+        page[N('/Contents')] = A([self.save_graphics_state, *parts, self.writer._add_object(stream.flate_encode())])
 
+
+def _add_reading_layer(writer):
+    catalog = writer.root_object
+    properties = catalog.setdefault(N('/OCProperties'), D()).get_object()
+    default = D({N('/Name'): T('Reading mode'), N('/BaseState'): N('/ON')})
+    config = properties.setdefault(N('/D'), default).get_object()
+    layer = writer._add_object(D({N('/Type'): N('/OCG'), N('/Name'): T(LAYER_NAME)}))
+    properties.setdefault(N('/OCGs'), A()).get_object().append(layer)
+    for key in ('/OFF', '/Order'):
+        config.setdefault(N(key), A()).get_object().append(layer)
+    catalog[N('/PageMode')] = N('/UseOC')
+    return layer
 
 
 def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale='auto', *,
              progress: Callable[[int, int], None] | None = None):
     """Create a reading copy; optionally report each processed page as (current, total)."""
     started = time.monotonic()
-    if mode not in ('switchable','static'): raise ValueError('mode must be switchable or static')
-    if Path(source).resolve() == Path(target).resolve(): raise ValueError('请为阅读副本选择不同文件名，不能覆盖原 PDF。')
+    source, target = Path(source), Path(target)
+    if mode not in ('switchable', 'static'):
+        raise ValueError('mode must be switchable or static')
+    if source.resolve() == target.resolve():
+        raise ValueError('请为阅读副本选择不同文件名，不能覆盖原 PDF。')
     reader = PdfReader(source)
-    if reader.is_encrypted and not reader.decrypt(''): raise ValueError('请先打开并另存为未加密的 PDF。')
+    if reader.is_encrypted and not reader.decrypt(''):
+        raise ValueError('请先打开并另存为未加密的 PDF。')
+    source_layers = reader.root_object.get('/OCProperties')
+    if source_layers is not None:
+        groups = source_layers.get_object().get('/OCGs', A()).get_object()
+        if any(group.get_object().get('/Name') == LAYER_NAME for group in groups):
+            raise ValueError('这份 PDF 已包含仿生开关，请直接在 WPS 中切换，或选择原始 PDF。')
+
     writer = PdfWriter(clone_from=reader) if pages is None else PdfWriter()
     writer.pdf_header = b'%PDF-1.6'
     if pages is not None:
-        for number in pages: writer.add_page(reader.pages[number-1])
-    existing = writer._root_object.get('/OCProperties')
-    if existing and any(str(x.get_object().get('/Name','')) == '仿生阅读 · Bionic Reading' for x in existing.get('/OCGs',[])):
-        raise ValueError('这份 PDF 已包含仿生开关，请直接在 WPS 中切换，或选择原始 PDF。')
-    layer = writer._add_object(D({N('/Type'):N('/OCG'), N('/Name'):T('仿生阅读 · Bionic Reading')})) if mode == 'switchable' else None
-    if existing and layer is not None:
-        existing.setdefault(N('/OCGs'),A()).append(layer)
-        config = existing.setdefault(N('/D'),D())
-        config.setdefault(N('/OFF'),A()).append(layer)
-        config.setdefault(N('/Order'),A()).append(layer)
-    elif layer is not None:
-        writer._root_object[N('/OCProperties')] = D({N('/OCGs'):A([layer]),
-            N('/D'):D({N('/Name'):T('Reading mode'),N('/BaseState'):N('/ON'),N('/OFF'):A([layer]),N('/Order'):A([layer])})})
-    if layer is not None: writer._root_object[N('/PageMode')] = N('/UseOC')
-    builder = OverlayBuilder(writer,layer,weight)
-    for i,page in enumerate(writer.pages):
+        for number in pages:
+            writer.add_page(reader.pages[number - 1])
+        # Page resources refer to layers whose controls live in the document catalog.
+        if source_layers is not None:
+            writer.root_object[N('/OCProperties')] = source_layers.clone(writer)
+
+    if mode == 'switchable':
+        layer = _add_reading_layer(writer)
+        suffix = ' - Switchable Reading'
+        subject = ('Original PDF text plus optional vector word-prefix emphasis. '
+                   'Toggle the Bionic Reading layer in your reader.')
+    else:
+        layer = None
+        suffix = ' - Bionic Reading'
+        subject = 'Original PDF text plus always-visible vector word-prefix emphasis.'
+    builder = OverlayBuilder(writer, layer, weight)
+    total = len(writer.pages)
+    for number, page in enumerate(writer.pages, 1):
         builder.build_page(page)
         if progress is not None:
-            progress(i + 1, len(writer.pages))
-    if builder.count == 0: raise ValueError('未找到可处理的文字层或可用嵌入字体；扫描版需先做 OCR。')
-    suffix=' - Switchable Reading' if mode=='switchable' else ' - Bionic Reading'
-    subject='Original PDF text plus optional vector word-prefix emphasis. Toggle the Bionic Reading layer in your reader.' if mode=='switchable' else 'Original PDF text plus always-visible vector word-prefix emphasis.'
-    writer.add_metadata({'/Title':str((reader.metadata.title if reader.metadata else None) or Path(source).stem)+suffix,'/Subject':subject})
-    target = Path(target)
+            progress(number, total)
+    if builder.count == 0:
+        raise ValueError('未找到可处理的文字层或可用嵌入字体；扫描版需先做 OCR。')
+    title = reader.metadata.title if reader.metadata else None
+    writer.add_metadata({'/Title': str(title or source.stem) + suffix, '/Subject': subject})
     with TemporaryDirectory(dir=target.parent) as staging:
         temporary = Path(staging) / 'reading.pdf'
         writer.write(temporary)
         temporary.replace(target)
-    return {'pages':len(writer.pages),'glyphs':builder.count,'glyph_forms':len(builder.glyphs.forms),
-        'skipped_fonts':sorted(builder.text_reader.skipped_fonts | builder.glyphs.skipped_fonts),
-        'mode':mode,'locale':locale,'seconds':time.monotonic()-started}
+    return {
+        'pages': total, 'glyphs': builder.count, 'glyph_forms': len(builder.glyphs.forms),
+        'skipped_fonts': sorted(builder.text_reader.skipped_fonts | builder.glyphs.skipped_fonts),
+        'mode': mode, 'locale': locale, 'seconds': time.monotonic() - started,
+    }
