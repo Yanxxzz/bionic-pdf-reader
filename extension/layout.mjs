@@ -4,12 +4,10 @@ const rtl=/[\p{Script=Arabic}\p{Script=Hebrew}]/u;
 const letter=/[\p{L}\p{N}]/u;
 
 export class GlyphCapture {
-  constructor(){this.runs=[];this.records=[];this.scopes=[];this.serial=0;}
-  renderer(){return {enabled:true,strength:1,stroked:0,
-    beginMarkedContent:text=>this.scopes.push(typeof text==='string'?{id:this.serial++,text}:null),
-    endMarkedContent:()=>this.scopes.pop(),
-    mask:(glyphs,current,matrix,visible=true)=>{this.capture(glyphs,current,matrix,visible);return null;}};}
-  capture(glyphs,c,m,visible=true){
+  constructor(){this.enabled=true;this.runs=[];this.records=[];this.scopes=[];this.serial=0;}
+  beginMarkedContent(text){this.scopes.push(typeof text==='string'?{id:this.serial++,text}:null);}
+  endMarkedContent(){this.scopes.pop();}
+  mask(glyphs,c,m,visible=true){
     const run=this.runs.length;this.runs.push(glyphs.length);
     if(!visible)return;
     const actual=this.scopes.find(s=>s!==null)||null;

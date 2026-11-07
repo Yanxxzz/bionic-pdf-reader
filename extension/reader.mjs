@@ -11,21 +11,39 @@ const $ = id => document.getElementById(id);
 const settings = { enabled: false, rule: 'reference', strength: 1, locale: 'auto' };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('bionic-pdf-settings') || '{}')); } catch {}
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
-let renderTask = null, textTask = null, renderQueue = Promise.resolve();
+let activeTask = null, displayedText = null, renderQueue = Promise.resolve();
 let revision = 0, loadRevision = 0, messageTimer = null;
 if(![...$('language').options].some(option=>option.value===settings.locale))settings.locale='auto';
-const captures=new Map();
+const pageLayouts = new Map();
 
-async function capturePage(page){
-  if(captures.has(page)){const value=captures.get(page);captures.delete(page);captures.set(page,value);return value;}
-  const promise=(async()=>{
-    const capture=new GlyphCapture(),viewport=page.getViewport({scale:1}),canvas=document.createElement('canvas');
-    canvas.width=Math.ceil(viewport.width);canvas.height=Math.ceil(viewport.height);canvas.bionicReader=capture.renderer();
-    try{await page.render({canvasContext:canvas.getContext('2d'),viewport,annotationMode:pdfjs.AnnotationMode.ENABLE}).promise;return {capture,viewport};}
-    finally{canvas.width=canvas.height=0;}
-  })();
-  captures.set(page,promise);while(captures.size>4)captures.delete(captures.keys().next().value);
-  try{return await promise;}catch(error){captures.delete(page);throw error;}
+async function drawCanvas(page, canvas, viewport, transform) {
+  activeTask = page.render({canvasContext: canvas.getContext('2d'), viewport, transform,
+    annotationMode: pdfjs.AnnotationMode.ENABLE});
+  try { await activeTask.promise; }
+  finally { activeTask = null; }
+}
+
+async function pagePlan(page, viewport, {rule, locale}) {
+  let entry = pageLayouts.get(page);
+  if (!entry) {
+    const capture = new GlyphCapture();
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    canvas.bionicReader = capture;
+    try { await drawCanvas(page, canvas, viewport); }
+    finally { canvas.width = canvas.height = 0; }
+    entry = {capture};
+  }
+  if (entry.rule !== rule || entry.locale !== locale) {
+    entry.plan = planGlyphs(entry.capture, {rule, locale});
+    entry.rule = rule;
+    entry.locale = locale;
+  }
+  pageLayouts.delete(page);
+  pageLayouts.set(page, entry);
+  if (pageLayouts.size > 4) pageLayouts.delete(pageLayouts.keys().next().value);
+  return entry.plan;
 }
 
 function notify(text) {
@@ -88,11 +106,14 @@ async function renderPage(myRevision, resetScroll) {
   frame.style.height = `${viewport.height}px`;
   frame.style.setProperty('--total-scale-factor', String(scale));
   frame.style.setProperty('--scale-factor', String(scale));
-  layer.replaceChildren();
+  if (displayedText?.page !== page) {
+    displayedText = null;
+    layer.replaceChildren();
+  }
   const snapshot = { ...settings };
-  const captured=await capturePage(page);
-  if(myRevision!==revision)return;
-  const plan=planGlyphs(captured.capture,snapshot);let run=0;
+  const plan = await pagePlan(page, base, snapshot);
+  if (myRevision !== revision) return;
+  let run = 0;
   const bionic = {
     enabled: snapshot.enabled,
     strength: snapshot.strength,
@@ -104,21 +125,20 @@ async function renderPage(myRevision, resetScroll) {
     },
   };
   canvas.bionicReader = bionic;
-  renderTask = page.render({
-    canvasContext: canvas.getContext('2d'),
-    viewport,
-    transform: outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0],
-    annotationMode: pdfjs.AnnotationMode.ENABLE,
-  });
-  await renderTask.promise;
-  renderTask = null;
+  await drawCanvas(page, canvas, viewport, outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0]);
   if (myRevision !== revision) return;
-  const content = repairTextContent(await page.getTextContent(),plan.repairs,captured.viewport);
-  if (myRevision !== revision) return;
-  textTask = new pdfjs.TextLayer({ textContentSource: content, container: layer, viewport });
-  await textTask.render();
-  textTask = null;
-  if (myRevision !== revision) return;
+  if (displayedText) {
+    displayedText.layer.update({viewport});
+  } else {
+    const content = repairTextContent(await page.getTextContent(), plan.repairs, base);
+    if (myRevision !== revision) return;
+    const textLayer = new pdfjs.TextLayer({textContentSource: content, container: layer, viewport});
+    activeTask = textLayer;
+    try { await textLayer.render(); }
+    finally { activeTask = null; }
+    if (myRevision !== revision) return;
+    displayedText = {page, layer: textLayer, hasText: content.items.some(item => /\p{L}/u.test(item.str || ''))};
+  }
   canvas.dataset.boldGlyphs = String(bionic.stroked);
   frame.dataset.renderedPage = String(number);
   frame.dataset.renderRevision = String(myRevision);
@@ -127,8 +147,7 @@ async function renderPage(myRevision, resetScroll) {
   $('prev-page').disabled = number === 1;
   $('next-page').disabled = number === pdf.numPages;
   $('page-label').textContent = pageLabels?.[number - 1] ? `书内页码 ${pageLabels[number - 1]}` : `PDF 第 ${number} 页`;
-  const hasText = content.items.some(item => /\p{L}/u.test(item.str || ''));
-  $('reading-status').textContent = !hasText ? '图片页或无可识别文字，保留原页'
+  $('reading-status').textContent = !displayedText.hasText ? '图片页或无可识别文字，保留原页'
     : snapshot.enabled ? bionic.stroked?'仿生模式 · 词首加粗':'此页没有可加粗文字，保留原页' : '原始模式';
   scroller.scrollTop = scrollTop;
   try { localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, String(number)); } catch {}
@@ -140,12 +159,8 @@ function scheduleRender(resetScroll = false) {
   $('page-frame').dataset.renderState='rendering';
   delete $('page-frame').dataset.renderedPage;
   delete $('page-frame').dataset.mode;
-  renderTask?.cancel();
-  textTask?.cancel();
-  renderQueue = renderQueue.catch(() => {}).then(() => {
-    if (myRevision !== revision) return;
-    return renderPage(myRevision, resetScroll);
-  }).catch(error => {
+  activeTask?.cancel();
+  renderQueue = renderQueue.then(() => renderPage(myRevision, resetScroll)).catch(error => {
     if (myRevision !== revision || error.name === 'RenderingCancelledException' || error.name === 'AbortException') return;
     $('reading-status').textContent = '此页暂时无法显示';
     notify(`无法显示此页：${error.message}`);
@@ -168,14 +183,15 @@ async function openFile(file) {
     return;
   }
   const currentLoad = ++loadRevision;
-  captures.clear();
-  ++revision;
-  renderTask?.cancel();
-  textTask?.cancel();
-  await renderQueue.catch(() => {});
-  await loadingTask?.destroy();
-  loadingTask = null;
   pdf = null;
+  ++revision;
+  activeTask?.cancel();
+  await renderQueue;
+  if (currentLoad !== loadRevision) return;
+  pageLayouts.clear();
+  await loadingTask?.destroy();
+  if (currentLoad !== loadRevision) return;
+  loadingTask = null;
   $('message').hidden = true;
   $('reading-status').textContent = '正在打开文件…';
   let data;
@@ -207,10 +223,12 @@ async function openFile(file) {
   try {
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) { await loadedPDF.destroy(); return; }
+    const labels = await loadedPDF.getPageLabels();
+    if (currentLoad !== loadRevision) return;
     pdf = loadedPDF;
+    pageLabels = labels;
     pageNumber = 1;
     try { pageNumber = Math.max(1, Math.min(pdf.numPages, Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)) || 1)); } catch {}
-    pageLabels = await pdf.getPageLabels();
     $('welcome').hidden = true;
     $('document').hidden = false;
     $('file-name').textContent = file.name;
@@ -220,7 +238,7 @@ async function openFile(file) {
     $('page-number').value = pageNumber;
     document.title = `${file.name} · 仿生 PDF 阅读`;
     await scheduleRender(true);
-    buildOutline(pdf, currentLoad);
+    if (currentLoad === loadRevision) buildOutline(loadedPDF, currentLoad);
   } catch (error) {
     if (currentLoad !== loadRevision) return;
     notify(`无法打开 PDF：${error.message}`);

@@ -20,7 +20,7 @@ def select_glyphs(records):
         # One ActualText scope is an indivisible shaped unit. Paragraph-sized
         # replacement spans cannot reliably map a prefix to their glyphs.
         atom['eligible']=all(r['eligible'] for _,r in members) and '\x00' not in atom['text'] and not regex.search(r'\s',atom['text'].strip())
-        groups[base['font']].append(atom)
+        groups[id(base['font'])].append(atom)
     selected=set()
     for atoms in groups.values():
         lines=[]

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 import pypdfium2 as pdfium
 from pypdf import PdfReader,PdfWriter
-from pypdf.generic import NameObject as N,ArrayObject as A
+from pypdf.generic import NameObject as N,ArrayObject as A,DecodedStreamObject
 from bionic_pdf import make_pdf
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -77,3 +77,31 @@ def test_progress_reports_completed_pages_without_console_output(converted,tmp_p
     assert result['pages']==2
     assert updates==[(1,2),(2,2)]
     assert capsys.readouterr().out==''
+
+
+def test_pages_keep_shared_original_content_streams(converted, tmp_path):
+    writer = PdfWriter()
+    first = writer.add_page(PdfReader(converted[0]).pages[0])
+    body = first.raw_get('/Contents')
+    comment = DecodedStreamObject()
+    comment.set_data(b'% last comment without a newline')
+    tail = writer._add_object(comment)
+    for contents in (A([body, tail]), writer._add_object(A([body, tail]))):
+        page = writer.add_blank_page(first.mediabox.width, first.mediabox.height)
+        page[N('/Resources')] = first.raw_get('/Resources')
+        page[N('/Contents')] = contents
+
+    source, target = tmp_path/'shared.pdf', tmp_path/'shared-static.pdf'
+    writer.write(source)
+    make_pdf(source, target, mode='static')
+    output = PdfReader(target)
+    streams = [page['/Contents'] for page in output.pages]
+    assert all(isinstance(parts, A) for parts in streams)
+    assert [len(parts) for parts in streams] == [3, 4, 4]
+    assert all(parts[1].get_object()._data == body.get_object()._data for parts in streams)
+    assert all(parts[2].get_object().get_data() == comment.get_data() for parts in streams[1:])
+    with pdfium.PdfDocument(source) as original, pdfium.PdfDocument(target) as updated:
+        original_pixels = original[0].render().to_pil().tobytes()
+        bold_pixels = updated[0].render().to_pil().tobytes()
+        assert bold_pixels != original_pixels
+        assert all(page.render().to_pil().tobytes() == bold_pixels for page in updated)

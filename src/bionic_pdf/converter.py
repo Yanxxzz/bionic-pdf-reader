@@ -20,7 +20,7 @@ from fontTools import agl
 from pypdf import PdfReader, PdfWriter
 from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject as N,
     NumberObject as I, FloatObject as F, TextStringObject as T,
-    DecodedStreamObject, ContentStream)
+    DecodedStreamObject)
 from .pdf_text import FontDecoder, State, raw_string
 from .layout import select_glyphs
 
@@ -138,7 +138,10 @@ class OverlayBuilder:
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
         self.widths = {}
-    def width(self,font,code):
+        save = DecodedStreamObject()
+        save.set_data(b'q\n')
+        self.save_graphics_state = writer._add_object(save)
+    def font_widths(self,font):
         key = font.indirect_reference.idnum if getattr(font,'indirect_reference',None) else id(font)
         if key not in self.widths:
             if font.get('/Subtype') == '/Type0':
@@ -156,22 +159,14 @@ class OverlayBuilder:
                 table = {first+i:float(w) for i,w in enumerate(font.get('/Widths',[]))}
                 default = 0
             self.widths[key] = table,default
-        table,default = self.widths[key]
-        return table.get(code,default)
-    def build_page(self, page):
-        page_content = page.get_contents()
-        if page_content is None:
-            return
-        resources = page.get('/Resources', D())
-        original = page_content.get_data()
-        content = ContentStream(page_content, self.writer)
+        return self.widths[key]
+    def read_glyphs(self, operations, resources):
         state, ctm, line_matrix = State(), (1,0,0,1,0,0), (1,0,0,1,0,0)
         tc, tw, tz, rise, leading = 0.0, 0.0, 1.0, 0.0, 0.0
-        stack, commands, used = [], [], {}
+        stack = []
         marked, records, actual_serial = [], [], 0
         position_known = True
-        page_count = 0
-        for args, op in content.operations:
+        for args, op in operations:
             if op in (b'BDC',b'BMC'):
                 properties=args[1] if op==b'BDC' else None
                 if isinstance(properties,N):properties=resources.get('/Properties',{}).get(properties)
@@ -231,6 +226,8 @@ class OverlayBuilder:
             actual=next((node['actual'] for node in marked if node['actual'] is not None),None)
             eligible=position_known and state.render_mode==0 and 6.8<=state.size<=24 and state.fill_alpha==state.stroke_alpha==1 and state.fill_cs!='/Pattern' and not styled and abs(float(state.matrix[1]))<1e-5 and abs(float(state.matrix[2]))<1e-5 and abs(ctm[1])<1e-5 and abs(ctm[2])<1e-5
             unit = 2 if cid else 1
+            widths, default_width = self.font_widths(font)
+            layers = tuple(node['oc'] for node in marked if node['oc'])
             for item in values:
                 if not isinstance(item,(T,bytes)):
                     state.matrix=translated(state.matrix,-float(item)*state.font_size*tz/1000,0);continue
@@ -238,20 +235,36 @@ class OverlayBuilder:
                 for offset in range(0,len(raw),unit):
                     code=int.from_bytes(raw[offset:offset+unit],'big')
                     text=cmap.get(code,'') if isinstance(cmap,dict) else cmap[code]
-                    width=self.width(font,code)
+                    width=widths.get(code,default_width)
                     advance=(width*state.font_size/1000+tc+(tw if code==32 else 0))*tz
                     matrix=matrix_multiply(ctm,translated(state.matrix,0,rise))
-                    records.append({'font':str(font.indirect_reference) if getattr(font,'indirect_reference',None) else id(font),'font_object':font,'code':code,'text':text,'x':min(matrix[4],matrix[4]+matrix[0]*advance),'y':matrix[5],'w':abs(matrix[0]*advance),'h':abs(state.font_size*matrix[3]),'matrix':matrix,'tz':tz,'size':state.font_size,'actual':actual,'eligible':bool(eligible),'oc':[node['oc'] for node in marked if node['oc']],'cs':state.fill_cs,'color':state.fill_values})
+                    records.append({
+                        'font': font, 'code': code, 'text': text,
+                        'x': min(matrix[4], matrix[4] + matrix[0] * advance),
+                        'y': matrix[5], 'w': abs(matrix[0] * advance), 'h': abs(state.font_size * matrix[3]),
+                        'matrix': matrix, 'tz': tz, 'size': state.font_size,
+                        'actual': actual, 'eligible': eligible, 'oc': layers,
+                        'cs': state.fill_cs, 'color': state.fill_values,
+                    })
                     state.matrix=translated(state.matrix,advance,0)
+        return records
+
+    def build_page(self, page):
+        content = page.get_contents()
+        if content is None:
+            return
+        resources = page.get('/Resources', D())
+        records = self.read_glyphs(content.operations, resources)
+        commands, used = [], {}
         for index in sorted(select_glyphs(records)):
             record=records[index]
-            glyph=self.glyphs.glyph(record['font_object'],record['code'],record['text'])
+            glyph=self.glyphs.glyph(record['font'],record['code'],record['text'])
             if glyph is None:continue
             key,reference,fm=glyph;used[key]=reference
             transform=matrix_multiply(record['matrix'],matrix_multiply((record['size']*record['tz'],0,0,record['size'],0,0),fm))
             oc=record['oc']
             draw='q '+' '.join(map(num,transform))+' cm '+record['cs']+' CS '+' '.join(map(str,record['color']))+' SCN '+str(key)+' Do Q'
-            commands.append(' '.join('/OC '+tag+' BDC' for tag in oc)+' '+draw+' EMC'*len(oc));page_count+=1
+            commands.append(' '.join('/OC '+tag+' BDC' for tag in oc)+' '+draw+' EMC'*len(oc))
         if commands:
             if self.layer is not None:
                 properties = resources.get('/Properties')
@@ -262,9 +275,13 @@ class OverlayBuilder:
             xobjects.update(used)
             stream = DecodedStreamObject()
             start, end = (b'/OC /BRBionic BDC\n', b'\nEMC\n') if self.layer is not None else (b'', b'\n')
-            stream.set_data(b'q\n' + original + b'\nQ\n' + start + '\n'.join(commands).encode('ascii') + end)
-            page.replace_contents(stream.flate_encode())
-        self.count += page_count
+            stream.set_data(b'\nQ\n' + start + '\n'.join(commands).encode('ascii') + end)
+            # A PDF can share content streams between pages. Wrap the references
+            # in a new page-local array so neither the streams nor a shared array is edited.
+            original = page['/Contents']
+            parts = original if isinstance(original, A) else [page.raw_get('/Contents')]
+            page[N('/Contents')] = A([self.save_graphics_state, *parts, self.writer._add_object(stream.flate_encode())])
+            self.count += len(commands)
 
 
 

@@ -28,7 +28,7 @@ test('glyph capture keeps styled text, rotated labels and formulae unchanged',()
   ['https://example.com',current,transform],
  ]){
   const capture=new GlyphCapture();
-  capture.capture([...text].map(unicode=>({unicode,width:500})),state,matrix);
+  capture.mask([...text].map(unicode=>({unicode,width:500})),state,matrix);
   assert.ok(planGlyphs(capture,{rule:'half'}).masks.flat().every(flag=>!flag),text);
  }
 });

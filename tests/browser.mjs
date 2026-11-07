@@ -48,18 +48,41 @@ try{
         const text=await page.locator('#text-layer').textContent();
         const pixels=await page.locator('#pdf-canvas').evaluate(c=>c.toDataURL());
         const geometry=await page.locator('#pdf-canvas').evaluate(c=>[c.width,c.height]);
+        let selection;
+        if(n===1){
+          selection=await page.locator('#text-layer').evaluate(layer=>{
+            const range=document.createRange(),selected=getSelection();
+            range.selectNodeContents([...layer.querySelectorAll('span')].find(span=>span.textContent.trim()));
+            selected.removeAllRanges();selected.addRange(range);
+            return selected.toString();
+          });
+          assert.ok(selection.trim());
+        }
         await page.locator('#bionic-mode').click();await wait(n,'bionic');
         assert.equal(await page.locator('#text-layer').textContent(),text);
         assert.deepEqual(await page.locator('#pdf-canvas').evaluate(c=>[c.width,c.height]),geometry);
         assert.ok(Number(await page.locator('#pdf-canvas').getAttribute('data-bold-glyphs'))>0,`${name} page ${n}`);
         assert.notEqual(await page.locator('#pdf-canvas').evaluate(c=>c.toDataURL()),pixels);
-        if(n===1)await page.screenshot({path:path.join(output,`${name}-reading.png`)});
+        if(n===1){
+          assert.equal(await page.evaluate(()=>getSelection().toString()),selection,'The toolbar preserves the selected text');
+          await page.screenshot({path:path.join(output,`${name}-reading.png`)});
+        }
         await page.keyboard.press('Alt+b');await wait(n,'original');
         assert.equal(await page.locator('#pdf-canvas').evaluate(c=>c.toDataURL()),pixels);
+        if(n===1){
+          assert.equal(await page.evaluate(()=>getSelection().toString()),selection,'Mode switches preserve the selected text');
+          await page.evaluate(()=>getSelection().removeAllRanges());
+        }
       }
       await page.locator('#zoom').selectOption('1.25');
       await page.locator('#page-number').fill('1');await page.locator('#page-number').press('Enter');await wait(1,'original');
       await page.locator('#language').selectOption('fr');await page.locator('#bionic-mode').click();await wait(1,'bionic');
+      const strokes=()=>page.locator('#pdf-canvas').getAttribute('data-bold-glyphs');
+      const half=await strokes();
+      await page.locator('#language').selectOption('en');await wait(1,'bionic');
+      assert.notEqual(await strokes(),half,'Changing language updates English reference prefixes');
+      await page.locator('#rule').selectOption('half');await wait(1,'bionic');
+      assert.equal(await strokes(),half,'Changing the rule restores half-word prefixes');
       const previous=await page.locator('#page-frame').getAttribute('data-render-revision');
       await page.locator('#file-input').setInputFiles(pdf);
       await page.waitForFunction(r=>document.querySelector('#page-frame').dataset.renderRevision!==r,previous);
