@@ -21,6 +21,22 @@ report=[]
 step='starting'
 def activate_control(control):
     driver.execute_script("const e=document.getElementById(arguments[0]),r=e.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);if(!r.width||!r.height||e.disabled||!(hit===e||e.contains(hit)))throw new Error('Control is covered: '+arguments[0]);e.click();",control)
+
+def page_pixels():
+    result = driver.execute_async_script("""
+        const done = arguments[arguments.length - 1];
+        (async () => {
+          const canvas = document.querySelector('#pdf-canvas'), {width, height} = canvas;
+          const {data} = canvas.getContext('2d').getImageData(0, 0, width, height);
+          let ink = false;
+          for (let i = 0; i < data.length && !ink; i += 4) ink = data[i + 3] > 0 && data[i] < 220;
+          const hash = await crypto.subtle.digest('SHA-256', data);
+          return {width, height, ink, hash: Array.from(new Uint8Array(hash))};
+        })().then(done, error => done({error: String(error)}));
+    """)
+    assert result.get('ink'), f'Safari could not read printed text pixels: {result}'
+    return result
+
 samples=json.loads((ROOT/'examples/shaping-cases.json').read_text(encoding='utf-8'))
 try:
     driver.get(f'http://127.0.0.1:{server.server_port}/reader.html')
@@ -72,22 +88,32 @@ try:
             spaced=lambda s:' '.join(unicodedata.normalize('NFC',s).split())
             assert spaced(sample['text']) in spaced(selected),(sample['code'],'copy/selection',selected)
             assert driver.execute_script('return window.scrollY')==0,'Selecting PDF text must not scroll the application toolbar out of view'
-            original=driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")
+            original=page_pixels()
             step=f'{variant} / {sample["code"]} / enabling bionic'
             activate_control('bionic-mode')
             wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.mode==='bionic'"))
             assert driver.execute_script("return document.querySelector('#text-layer').textContent")==text
-            assert driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")!=original
+            bold=page_pixels()
+            assert (bold['width'], bold['height']) == (original['width'], original['height'])
+            assert bold['hash'] != original['hash'], 'Enabling emphasis must change the PDF pixels'
             if variant=='tagged':driver.save_screenshot(str(OUT/f'safari-shaped-{sample["code"]}.png'))
             activate_control('original-mode')
             wait.until(lambda d:d.execute_script("return document.querySelector('#page-frame').dataset.mode==='original'"))
-            assert driver.execute_script("return document.querySelector('#pdf-canvas').toDataURL()")==original
+            assert page_pixels() == original, 'Disabling emphasis must restore the original PDF pixels'
             report.append({'browser':'Safari','version':driver.capabilities.get('browserVersion'),'language':sample['code'],'variant':variant,'text':True,'selection':True,'originalPixelsRestored':True,'transport':transport})
             print('Safari',variant,sample['code'],'passed',flush=True)
     print('Actual Safari: shaped text, selection and toggle checks passed')
 except Exception:
     debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")
     debug['step']=step;debug['capabilities']=driver.capabilities
+    debug['controlCanvas']=driver.execute_script("""
+        const c=document.createElement('canvas'); c.width=c.height=4;
+        const ctx=c.getContext('2d');
+        return ['red','blue'].map(color=>{
+          ctx.fillStyle=color; ctx.fillRect(0,0,4,4);
+          return Array.from(ctx.getImageData(1,1,1,1).data);
+        });
+    """)
     (OUT/'safari-failure.json').write_text(json.dumps(debug,ensure_ascii=False,indent=2),encoding='utf-8')
     driver.save_screenshot(str(OUT/'safari-failure.png'))
     print(json.dumps(debug,ensure_ascii=False,indent=2),flush=True)
