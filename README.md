@@ -1,90 +1,54 @@
-# Bionic PDF Reader · 仿生 PDF 阅读
+# 仿生阅读 PDF 阅读器 · Bionic PDF Reader
 
-[English](README.en.md) · [下载](https://github.com/Yanxxzz/bionic-pdf-reader/releases/latest) · [使用说明](docs/usage.md) · [阅读器兼容性](docs/compatibility.md) · [多语言](docs/languages.md)
+[下载最新版本](https://github.com/Yanxxzz/bionic-pdf-reader/releases/latest) · [安装与使用](docs/usage.md) · [阅读器兼容性](docs/compatibility.md) · [English](README.en.md)
 
-**保留 PDF 原页、原文与图表，随时切换词首加粗。文件在本机处理。**
+仿生阅读（Bionic Reading）把 reading 显示成 **read**ing。读英文教材、论文或长篇报告时，你可以在同一页开关词首加粗，图表、公式和页码都留在原位，正文仍可选择和复制。PDF 在本机处理。
 
-想寻找「加快英语阅读速度」或「更容易的英语阅读」的工具？这个项目让你尝试仿生阅读（Bionic Reading）：强调词语前部，保留后部字重。你可以根据自己的体验选择是否开启。
+如果你想加快英语阅读速度、寻找更有效的阅读方式，可以先用一段熟悉的文字试读。浏览器里按 `Alt+B`（Mac 上是 `Option+B`）来回对照，再调整加粗强度，看看哪种字重让你更容易跟上下一行。
 
+## 用你平时的阅读器
 
-![浏览器阅读预览](docs/assets/browser-preview.png)
+| 你在哪里读 PDF | 选择什么 | 怎样使用 |
+| --- | --- | --- |
+| Chrome、Edge | 浏览器扩展 | 点扩展图标，打开本地 PDF，在阅读页切换「原始」或「仿生」。 |
+| Safari、Firefox | 本地网页阅读器 | 点「打开 PDF」，从系统文件窗口选文件。Firefox 也提供临时开发扩展。 |
+| WPS PDF、Adobe Acrobat Reader、福昕 Foxit PDF Reader、PDF-XChange Editor | 可切换版 PDF | 用制作工具生成一次副本，以后在阅读器的「图层 / Layers」面板开关 `仿生阅读 · Bionic Reading`。 |
+| macOS 预览（Preview）、SumatraPDF、Apple Books、手机或平板阅读器 | 普通仿生 PDF | 生成后直接打开，词首始终加粗。要看原始排版，打开原文件。 |
 
-## 选择一种用法
+Acrobat Reader 已逐页核对 13 种语言，开关前后从同一选区复制的文字一致。Safari 26.6 和 27.2 各验证了 26 个页面案例，关闭后正文截图逐像素恢复。WPS、Foxit、PDF-XChange 已实际检查桌面图层开关。Preview 已验证打开文件，手机和其他应用采用通用 PDF 适配。[各阅读器的实测范围](docs/verification.md)
 
-- **Chrome / Edge 扩展**：打开本地 PDF，在同一页切换「原始／仿生」，支持强度、规则、语言、目录、缩放和复制。快捷键 `Alt+B`。
-- **Windows 制作工具**：下载 Windows 压缩包，解压后双击 `BionicPDF.exe`，无需安装 Python。选择 PDF，生成「可切换版」或「普通仿生版」。
-- **WPS / Acrobat / Foxit / PDF-XChange**：打开制作好的可切换副本，在阅读器的「图层」列表开关 `仿生阅读 · Bionic Reading`。
-- **Firefox / Safari 及其他浏览器**：Windows 工具里的「在浏览器中阅读」可打开本地阅读页；源码用户也可启动本地网页版本。
-- **Preview / SumatraPDF / 手机阅读器等**：选择「普通仿生版」，打开即可看到加粗，不依赖图层开关。
+![同一页英文 PDF 在浏览器中开启词首加粗后的效果](docs/assets/browser-preview.png)
 
-可切换副本需要制作一次，以后可在原页开关。它使用标准 PDF 图层；不是接管所有阅读器内部绘制的通用加载项。各阅读器的实测与文档依据分别列在[兼容性说明](docs/compatibility.md)中。
+## 安装并打开第一份 PDF
 
-## 快速开始
-
-### 浏览器扩展
-
-1. 在 [Releases](https://github.com/Yanxxzz/bionic-pdf-reader/releases) 下载 `bionic-pdf-chrome-edge-*.zip` 并完整解压。
-2. Chrome 打开 `chrome://extensions`；Edge 打开 `edge://extensions`。
-3. 开启开发者模式，选择「加载已解压的扩展程序」，选择含 `manifest.json` 的文件夹。
-4. 点击扩展图标，选择本地 PDF，再切换阅读模式。
-
-扩展通过自己的阅读页使用；当前不接管网页 PDF 或浏览器内置 PDF 工具栏。Firefox 的临时加载包另见[安装说明](docs/usage.md)，它尚未取得 Mozilla 签名。
-
-### Windows 程序
-
-1. 下载 `bionic-pdf-windows-x64-*.zip`，完整解压后双击 `BionicPDF.exe`。
-2. 选择原始 PDF 和阅读副本的保存位置。
-3. 选择「可切换版」或「普通仿生版」，按需要选择文档语言。
-4. 生成后打开副本；或点击「在浏览器中阅读」直接使用本地阅读页。使用网页期间保持程序开启。
-
-原始文件保持不变。扫描图片需要先做 OCR；字体与文字编码会影响可强调的范围。软件内「使用指南」和下载包内 `使用指南.html` 提供阅读器选择、安装和配置步骤。
-
-## 多语言
-
-正式支持 **13 种语言**：英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语和希腊语。语言选择在浏览器、Windows 工具和命令行中保持一致。
-
-组合重音保持完整；连字与分成多个绘制片段的单词会一起分析。中文、日文、韩文及其他文字不在本版支持范围，相关文字保留原样。详见[语言支持与限制](docs/languages.md)。
-
-## 开发与测试
-
-需要 Python 3.11+ 和 Node.js 22+。Windows GUI 需要 Python 自带的 tkinter；命令行可独立使用。
+- **Chrome / Edge** 下载文件名含 `chrome-edge` 的 ZIP 并解压。在 `chrome://extensions` 或 `edge://extensions` 打开开发者模式，点「加载已解压的扩展程序」，选择含 `manifest.json` 的目录。点扩展图标即可试读。
+- **Windows 制作工具** 下载并完整解压 `windows-x64` ZIP，双击 `BionicPDF.exe`。选原始 PDF 和新的保存位置，再按上表选「可切换版」或「普通仿生版」。也可以点「在浏览器中阅读」直接打开本地阅读页。此包自带运行环境。
+- **Mac 上用 Safari，或用其他浏览器** 下载并解压 `web-reader` ZIP。在含 `reader.html` 的目录运行下面的命令，再用浏览器打开 `http://127.0.0.1:8765/reader.html`。命令需要 Python 3。
 
 ```sh
-python -m venv .venv
-# 激活虚拟环境后：
-python -m pip install -e ".[dev]"
-npm ci
-npx playwright install chromium firefox
-python scripts/make_examples.py
-npm run fixtures:shaped
-python -m pytest
-npm test
-npm run test:browser
-npm run test:extension
-npm run test:shaped
+python3 -m http.server 8765 --bind 127.0.0.1
 ```
 
-命令行生成阅读副本：
+每个 ZIP 都有可离线打开的 `使用指南.html`。Firefox 临时扩展的加载方法和各桌面阅读器的图层入口见[使用说明](docs/usage.md)。
+
+## 哪些文档适合
+
+支持 **13 种文档语言**，包括英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语和希腊语。浏览器可选英语参考规则或词语前半部分规则。制作工具按完整字素确定词首，重音和原有连字随字形处理。[语言与排版规则](docs/languages.md)
+
+优先选择可以选中正文的 PDF。扫描图片需先做 OCR，竖排、部分特殊字体及嵌套表单里的文字会保留原样。原文件可继续使用。[字体及 PDF 支持范围](docs/compatibility.md)
+
+## 命令行与开发
+
+在源码目录用 Python 3.11 或更新版本安装后，可分别生成两种阅读副本。
 
 ```sh
-bionic-pdf input.pdf switchable.pdf --mode switchable --language auto
-bionic-pdf input.pdf readable.pdf --mode static --language fr
-bionic-pdf-gui
+python -m pip install .
+bionic-pdf source.pdf switchable.pdf --mode switchable --language en
+bionic-pdf source.pdf mobile.pdf --mode static --language en
 ```
 
-源码版网页阅读器：
+浏览器使用 PDF.js 在原字形上绘制加粗笔画。桌面工具使用 pypdf 和 fontTools 将笔画写入副本，复制时读取的仍是原来的文字。环境设置、模块职责、测试命令和打包步骤见[开发说明](docs/development.md)。
 
-```sh
-python -m http.server 8765 --bind 127.0.0.1 --directory extension
-# 浏览器打开 http://127.0.0.1:8765/reader.html
-```
+## 许可与致谢
 
-构建、测试证据与发布流程见 [开发说明](docs/development.md)。
-
-## 实现与许可
-
-浏览器基于带少量字形绘制修改的 PDF.js，直接强调原字形。PDF 制作器复用嵌入字体的矢量轮廓，正文仍只有一份；不会用另一份文字覆盖页面。支持常见单字节 Type1/CFF、TrueType，以及带有效 Unicode 映射的 Identity-H / CID TrueType。扫描页、竖排、部分特殊字体、嵌套表单里的文本目前保留原样。
-
-项目自有代码采用 [MIT](LICENSE)。词首参考规则致谢 [yitong2333/Bionic-Reading](https://github.com/yitong2333/Bionic-Reading)；PDF.js、pypdf、fontTools 和示例字体分别保留原许可，见 [第三方说明](THIRD_PARTY_NOTICES.md)。本项目与 Bionic Reading 商标持有人、WPS、Adobe、Foxit、Mozilla 无隶属关系。
-
-仓库与发布包只包含工具和原创示例，不附带教材、用户 PDF 或阅读记录。处理程序不上传 PDF；阅读器本身的云同步设置由该阅读器管理。
+项目代码采用 MIT 许可。英语词首参考规则来自 yitong2333 的 Bionic-Reading，PDF.js、字体和其他依赖保留各自的许可。[项目许可](LICENSE) · [参考项目](https://github.com/yitong2333/Bionic-Reading) · [第三方声明](THIRD_PARTY_NOTICES.md)
