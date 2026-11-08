@@ -48,7 +48,7 @@ jobs:
         with:
           api-level: 30
           arch: x86
-          target: default
+          target: google_apis
           script: |
             adb install -g "$RUNNER_TEMP/mupdf.apk"
             python tests/native_readers.py android test-results/native

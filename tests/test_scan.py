@@ -130,3 +130,14 @@ def test_ocr_does_not_expose_a_redacted_region(tmp_path):
     with pdfium.PdfDocument(target) as result:
         text = result[0].get_textpage().get_text_bounded().lower()
         assert 'reading together' in text and 'readers' not in text
+
+
+@with_tesseract
+def test_missing_ocr_language_preserves_the_destination(tmp_path, monkeypatch):
+    source = scan_sample(tmp_path)
+    target = tmp_path/'existing.pdf'
+    target.write_bytes(b'previous')
+    monkeypatch.setenv('TESSDATA_PREFIX', str(tmp_path))
+    with pytest.raises(ValueError, match='fra'):
+        make_pdf(source, target, ocr=True, locale='fr')
+    assert target.read_bytes() == b'previous'

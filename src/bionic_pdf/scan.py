@@ -60,7 +60,7 @@ def _recognize(image, model, dpi, need_text):
 
 
 def _ink_mask(image, hocr, rule, weight):
-    from PIL import Image, ImageChops, ImageFilter
+    from PIL import Image, ImageFilter
 
     mask = Image.new('1', image.size)
     count = 0
@@ -95,9 +95,9 @@ def _ink_mask(image, hocr, rule, weight):
                 if light - dark < 48:
                     continue
                 ink = pixels.point(lambda v: 255 if v < (dark+light)/2 else 0)
-                edge = ImageChops.subtract(ink.filter(ImageFilter.MaxFilter(2*radius+1)), ink)
-                if edge.getbbox():
-                    mask.paste(255, bounds, edge)
+                expanded = ink.filter(ImageFilter.MaxFilter(2*radius+1))
+                if expanded.getbbox():
+                    mask.paste(255, bounds, expanded)
                     count += 1
             offset += 1  # The word separator in the line passed to segment_flags.
     return mask, count
@@ -156,6 +156,7 @@ def _add_scan(writer, page, mask, matrix, text_pdf, layer):
     image.update({NameObject('/Type'): NameObject('/XObject'), NameObject('/Subtype'): NameObject('/Image'),
                   NameObject('/Width'): NumberObject(mask.width), NameObject('/Height'): NumberObject(mask.height),
                   NameObject('/BitsPerComponent'): NumberObject(1), NameObject('/ImageMask'): BooleanObject(True),
+                  NameObject('/Interpolate'): BooleanObject(True),
                   NameObject('/Decode'): ArrayObject([NumberObject(1), NumberObject(0)])})
     name = bind_resource(resources, '/XObject', NameObject('/BROcrInk'), writer._add_object(image.flate_encode()))
     commands.append('/Artifact BMC')
