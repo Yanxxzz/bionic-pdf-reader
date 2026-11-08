@@ -94,7 +94,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e ".[dev,windows]"
-      - run: python -m pytest tests/test_windows_payload.py -q
+      - run: python -m pytest tests/test_packages.py -q
       - run: python scripts/build_windows.py
       - run: python scripts/smoke_windows.py
       - run: python -m build

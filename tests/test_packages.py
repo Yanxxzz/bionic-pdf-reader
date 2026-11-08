@@ -1,9 +1,35 @@
-"""The same version number can label two different desktop or browser builds."""
+"""Release artifacts must identify the same build on every packaging run."""
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
 from zipfile import ZipFile
 
 import pytest
 
 from scripts.windows_payload import source_digest, verify_executable
+
+
+def test_browser_packages_ignore_build_and_checkout_times(tmp_path):
+    root = Path(__file__).resolve().parents[1]
+    for name in ('LICENSE', 'pyproject.toml', 'extension/manifest.json', 'extension/reader.html',
+                 'scripts/build_packages.py', 'scripts/windows_payload.py'):
+        dest = tmp_path/name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(root/name, dest)
+
+    def build():
+        subprocess.run([sys.executable, 'scripts/build_packages.py'], cwd=tmp_path, check=True, capture_output=True)
+        return {p.name: p.read_bytes() for p in (tmp_path/'dist').glob('*.zip')}
+
+    first = build()
+    os.utime(tmp_path/'LICENSE', (946684800, 946684800))
+    assert build() == first
+    assert len(first) == 3
+    for name in first:
+        with ZipFile(tmp_path/'dist'/name) as archive:
+            assert len({entry.date_time for entry in archive.infolist()}) == 1
 
 
 def test_stale_windows_payload_is_rejected(tmp_path):
