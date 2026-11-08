@@ -71,6 +71,7 @@ class FormTags:
         self.writer = writer
         self.bindings = defaultdict(list)
         self.painted = {}
+        self.repeated = set()
         self.original_keys = {}
         self.root = writer.root_object.get('/StructTreeRoot')
         if self.root is None:
@@ -111,10 +112,20 @@ class FormTags:
         edited.pop('/StructParent', None)
         previous = self.painted.get(key)
         if previous is not None:
+            self.repeated.add(key)
             if previous._data != edited._data or previous != edited:
                 raise ValueError('同一页多次绘制同一个带标签的 Form，绘图状态不同且标签无法区分各次绘制。')
             return previous.indirect_reference
         self.painted[key] = edited
+        return self.writer._add_object(edited)
+
+    def replace_painted(self, page, source, edited):
+        """Retain a painted Form's deferred tag binding when OCR supplements that invocation."""
+        key = next((key for key, painted in self.painted.items() if key[0] == page and painted is source), None)
+        if key is not None:
+            if key in self.repeated:
+                raise ValueError('同一页多次绘制同一个带标签的 Form，标签无法区分各次 OCR 补字。')
+            self.painted[key] = edited
         return self.writer._add_object(edited)
 
     def finish(self):

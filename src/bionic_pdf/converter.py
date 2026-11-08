@@ -253,7 +253,7 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
     if ocr:
         from .scan import open_scans
         language = reader.root_object.get('/Lang', 'en') if locale == 'auto' else locale
-        scans = open_scans(reader.stream, str(language), rule, weight)
+        scans = open_scans(reader.stream, str(language), rule, weight, form_tags)
     with scans as scan:
         for number, page in enumerate(writer.pages, 1):
             if not builder.build_page(page):
