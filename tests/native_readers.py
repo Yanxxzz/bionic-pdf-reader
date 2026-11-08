@@ -54,7 +54,8 @@ def books(folder):
     subprocess.run(["open", "-b", "com.apple.iBooksX"], check=True)
     # On first launch Books shows an introductory sheet. Locate its named button on screen.
     screen = folder / "books-screen.png"
-    for _ in range(12):
+    handled = set()
+    for _ in range(25):
         time.sleep(1)
         subprocess.run(["screencapture", "-x", str(screen)], check=True)
         request = Vision.VNRecognizeTextRequest.alloc().init()
@@ -62,15 +63,21 @@ def books(folder):
         ok, error = handler.performRequests_error_([request], None)
         assert ok, error
         labels = {line.topCandidates_(1)[0].string(): line.boundingBox() for line in request.results()}
+        button = None
         if "Get Started" in labels and any("Apple Books" in label for label in labels):
-            rect = labels["Get Started"]
+            button = "Get Started"
+        elif "Discover New Books" in labels and "Not Now" in labels:
+            button = "Not Now"
+        if button and button not in handled:
+            rect = labels[button]
             size = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size
             point = ((rect.origin.x + rect.size.width/2)*size.width,
                      (1 - rect.origin.y - rect.size.height/2)*size.height)
             for event in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
                 Quartz.CGEventPost(Quartz.kCGHIDEventTap,
                                    Quartz.CGEventCreateMouseEvent(None, event, point, Quartz.kCGMouseButtonLeft))
-            time.sleep(1)
+            handled.add(button)
+        elif handled == {"Get Started", "Not Now"} and button is None:
             break
     subprocess.run(["open", "-b", "com.apple.iBooksX", str(sample)], check=True)
     library = Path.home() / "Library/Containers/com.apple.iBooksX/Data/Documents/BKLibrary"
@@ -81,8 +88,8 @@ def books(folder):
             with sqlite3.connect(db.as_uri() + "?mode=ro", uri=True) as conn:
                 if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='ZBKLIBRARYASSET'").fetchone():
                     continue
-                rows = list(conn.execute("SELECT ZTITLE, ZPATH FROM ZBKLIBRARYASSET WHERE ZTITLE LIKE ? OR ZPATH LIKE ?",
-                                         (TITLE + "%", "%/sample.pdf")))
+                rows = list(conn.execute("SELECT ZTITLE, ZPATH FROM ZBKLIBRARYASSET WHERE ZTITLE LIKE ? OR ZPATH IS NOT NULL",
+                                         (TITLE + "%",)))
                 diagnostics[db.name] = rows
                 for title, path in rows:
                     if path and Path(path).is_file() and Path(path).read_bytes() == sample.read_bytes():
