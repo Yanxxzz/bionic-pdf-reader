@@ -47,6 +47,24 @@ def command(*args):
 
 def books(folder):
     sample = folder / "static/sample.pdf"
+    subprocess.run(["open", "-b", "com.apple.iBooksX"], check=True)
+    # A new macOS account shows a named first-launch button before handling document opens.
+    subprocess.run(["osascript", "-e", '''
+tell application "System Events" to tell process "Books"
+    repeat 12 times
+        if exists window 1 then
+            repeat with itemView in entire contents of window 1
+                try
+                    if role of itemView is "AXButton" and name of itemView is "Get Started" then
+                        perform action "AXPress" of itemView
+                        return
+                    end if
+                end try
+            end repeat
+        end if
+        delay 1
+    end repeat
+end tell'''], check=True, timeout=35)
     subprocess.run(["open", "-b", "com.apple.iBooksX", str(sample)], check=True)
     library = Path.home() / "Library/Containers/com.apple.iBooksX/Data/Documents/BKLibrary"
     deadline = time.monotonic() + 75
@@ -102,15 +120,17 @@ def iphone(folder):
 
     sim("bootstatus", udid, "-b")
     sim("ui", udid, "appearance", "light")
+    sim("launch", udid, "com.apple.mobilesafari")
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=folder))
     threading.Thread(target=server.serve_forever, daemon=True).start()
     shots = {}
     try:
         for mode in ("original", "static", "off"):
-            sim("terminate", udid, "com.apple.mobilesafari", check=False)
-            sim("openurl", udid, f"http://127.0.0.1:{server.server_port}/{mode}/sample.pdf")
+            url = f"http://127.0.0.1:{server.server_port}/{mode}/sample.pdf"
+            sim("openurl", udid, url)
             path = folder / f"iphone-{mode}.png"
-            deadline = time.monotonic() + 50
+            deadline = time.monotonic() + 120
+            retry = time.monotonic() + 45
             previous = None
             while time.monotonic() < deadline:
                 time.sleep(2)
@@ -122,6 +142,9 @@ def iphone(folder):
                         shots[mode] = crop
                         break
                 previous = crop
+                if crop is None and time.monotonic() > retry:
+                    sim("openurl", udid, url)
+                    retry = deadline
             assert mode in shots, f"Safari did not display stable PDF text in {mode}"
     finally:
         server.shutdown()
