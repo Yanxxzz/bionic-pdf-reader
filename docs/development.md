@@ -61,6 +61,8 @@ python scripts/build_packages.py
 
 GitHub 工作流只在测试代码或原创样例上运行。通过 `workflow_dispatch` 可重新测试；不会自动上传用户文档，也不自动改变仓库可见性。
 
+导出行为变更后，可在 Actions 中手动运行 **Native PDF readers**。它在 macOS Books 中导入普通仿生版，在 iPhone 模拟器的 Safari 和 Android 模拟器的 MuPDF mini 中打开原件、普通版及关层副本。每个平台将结果和截图保存到当次任务的附件中。[原生阅读器验收工作流](../.github/workflows/native-readers.yml)
+
 ## Firefox 签名
 
 Firefox 自分发签名使用项目固定的扩展 ID `bionic-pdf-reader@yanxxzz`。先运行 `python scripts/build_packages.py`，将生成的 Firefox ZIP 解压到 `firefox-build`。用 Mozilla 的 `web-ext` 校验这个目录，确保实际发送的包已包含完整的本地阅读器。

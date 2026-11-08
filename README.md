@@ -12,7 +12,7 @@
 | --- | --- | --- |
 | Chrome、Edge | 浏览器扩展 | 点扩展图标，打开本地 PDF，在阅读页切换「原始」或「仿生」。 |
 | Safari、Firefox | 本地网页阅读器 | 点「打开 PDF」，从系统文件窗口选文件。Firefox 也提供临时开发扩展。 |
-| WPS PDF、Adobe Acrobat Reader、福昕 Foxit PDF Reader、PDF-XChange Editor | 可切换版 PDF | 用制作工具生成一次副本，以后在阅读器的「图层 / Layers」面板开关 `仿生阅读 · Bionic Reading`。 |
+| WPS PDF、Adobe Acrobat Reader、福昕 Foxit、PDF-XChange Editor、Firefox 内置阅读器 | 可切换版 PDF | 用制作工具生成一次副本，以后在阅读器的「图层 / Layers」面板开关 `仿生阅读 · Bionic Reading`。 |
 | macOS 预览（Preview）、SumatraPDF、Apple Books、手机或平板阅读器 | 普通仿生 PDF | 生成后直接打开，词首始终加粗。要看原始排版，打开原文件。 |
 
 Acrobat Reader 的 13 种语言样例在开关前后复制的正文一致。WPS、Foxit、PDF-XChange 和 Firefox 内置阅读器也已验证原页图层开关。SumatraPDF 实测了 13 种语言的普通副本，Mac 版 Apple Books 实测了导入书库。Safari 26.6、27.2 已逐页核对关闭后的画面。[各阅读器与移动设备的实测范围](docs/compatibility.md)

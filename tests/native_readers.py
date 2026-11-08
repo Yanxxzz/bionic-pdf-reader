@@ -188,20 +188,25 @@ def choose_android_pdf(folder, package, name):
     for _ in range(12):
         command("adb", "shell", "uiautomator", "dump", "/sdcard/bionic-ui.xml")
         xml = command("adb", "shell", "cat", "/sdcard/bionic-ui.xml")
-        nodes = ElementTree.fromstring(xml).iter("node")
-        labels = {label: node.get("bounds") for node in nodes for label in
-                  [node.get("text"), node.get("content-desc")] if label}
-        for target in (name, name.removesuffix(".pdf"), "Downloads", "Show roots"):
+        nodes = ElementTree.fromstring(xml).findall(".//node")
+        if any(node.get("package") == package for node in nodes):
+            activity = command("adb", "shell", "dumpsys", "activity", "activities")
+            if any("ResumedActivity" in line and "DocumentActivity" in line for line in activity.splitlines()):
+                return
+        labels = {node.get("content-desc"): node.get("bounds") for node in nodes if node.get("content-desc")}
+        labels.update({node.get("text"): node.get("bounds") for node in nodes if node.get("text")})
+        for target in (name, name.removesuffix(".pdf"), "Open", "OPEN", "Downloads", "Show roots"):
             if target in labels and target not in visited:
                 x, y, right, bottom = map(int, re.findall(r"\d+", labels[target]))
+                print(f"Document picker: {target} at {labels[target]}", flush=True)
                 command("adb", "shell", "input", "tap", str((x + right) // 2), str((y + bottom) // 2))
-                if target in (name, name.removesuffix(".pdf")):
-                    return
-                visited.add(target)
+                if target in ("Downloads", "Show roots"):
+                    visited.add(target)
                 break
         time.sleep(.5)
     (folder / "android-picker.xml").write_text(xml, encoding="utf-8")
-    raise AssertionError(f"Android's document picker did not offer {name}: {list(labels)}")
+    (folder / "android-log.txt").write_text(command("adb", "logcat", "-d", "-s", "MuPDF", "AndroidRuntime", "ActivityTaskManager"), encoding="utf-8")
+    raise AssertionError(f"Android's document picker did not open {name}: {list(labels)}")
 
 
 def android(folder):

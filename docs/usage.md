@@ -64,7 +64,9 @@ python -m http.server 8765 --bind 127.0.0.1 --directory extension
 
 打开 `http://127.0.0.1:8765/reader.html`。在 Safari 点「打开 PDF」，从 macOS 文件窗口选中本地 PDF。在阅读页按 `Option+B` 或点「仿生」开启词首加粗，点「原始」即可在同一页恢复。[兼容性说明](compatibility.md)
 
-**Firefox 日常使用**可以把本地阅读页加入书签。解压 `bionic-pdf-web-reader-版本.zip` 到固定文件夹，在该文件夹运行 `python -m http.server 8765 --bind 127.0.0.1`，然后在 Firefox 打开 `http://127.0.0.1:8765/reader.html` 并按 Ctrl+D（macOS 用 ⌘D）。重启 Firefox 后，在本地服务运行时从书签进入，重新选择同一份 PDF 即可接续进度。Windows 制作工具打开的本地阅读页也可以收藏，使用时保持工具开启并使用同一端口。
+**Firefox 直接读 PDF**。用桌面制作工具导出「可切换版」，然后用 Firefox 打开该 PDF。在 Firefox 159 中，点左上方「管理页面 / Manage pages」，从「视图 / Views」选择「图层 / Layers」，勾选或取消 `仿生阅读 · Bionic Reading`。这条路径使用浏览器自带的阅读器，重启后仍可直接打开文件。
+
+**Firefox 阅读原件**。需要直接调节强度或语言时，可以把项目的本地阅读页加入书签。解压 `bionic-pdf-web-reader-版本.zip` 到固定文件夹，在该文件夹运行 `python -m http.server 8765 --bind 127.0.0.1`，然后在 Firefox 打开 `http://127.0.0.1:8765/reader.html` 并按 Ctrl+D（macOS 用 ⌘D）。重启 Firefox 后，在本地服务运行时从书签进入，重新选择同一份 PDF 即可接续进度。Windows 制作工具打开的本地阅读页也可以收藏，使用时保持工具开启并使用同一端口。
 
 **Firefox 临时扩展**适合测试。解压 `bionic-pdf-firefox-temporary-版本.zip`，进入 `about:debugging#/runtime/this-firefox`，选择「临时载入附加组件」，打开解压目录中的 `manifest.json`。Firefox 重启后会移除临时扩展。长期安装需要 Mozilla 签名的 XPI。[开发者签名步骤](development.md#firefox-签名)
 

@@ -12,7 +12,7 @@ Windows 便携版和 Python 安装包都内置同一份本地网页阅读器，�
 - **Adobe Acrobat / Reader** 打开可切换副本，在「图层 / Layers」中点 `仿生阅读 · Bionic Reading` 左边的方框。Windows 版 Acrobat Reader 26.3.22075.0 已逐页验证 13 种语言的正文加粗及开关前后的系统剪贴板文字。[实机记录](verification.md) · [Adobe 图层说明](https://helpx.adobe.com/acrobat/desktop/edit-documents/pdf-layers/manage-layers.html)
 - **Foxit PDF Reader**：制作可切换副本，在左侧导航栏空白处右键选择 Layers，再勾选该图层。2026.2.1.39815 已实机检查 13 种语言页面、图层开关、翻页、页码及缩放保留，开关前后原生复制的全文一致；检查范围见 [验证记录](verification.md)。其他版本的菜单仍可参照 [Foxit 官方手册](https://cdn01.foxitsoftware.com/pub/foxit/manual/reader/en_us/foxit-pdf-reader-user-manual-2026.1.1.pdf)。
 - **PDF-XChange Editor**：制作可切换副本，使用 Layers 面板。11.1.1.0 已在本机人工验证图层开关及页码、缩放保留。按 Ctrl+L 打开图层，点击灯泡开关。
-- **Firefox 内置 PDF 阅读器**：其 PDF.js 查看器有 Layers 视图，参见 [Mozilla 查看器源码](https://github.com/mozilla/pdf.js/blob/master/web/viewer.html)。可以尝试打开可切换副本；内置查看器和本项目阅读页的测试结果不混用。
+- **Firefox 内置 PDF 阅读器** 可直接在 PDF 原页切换。用 Firefox 159.0.1 打开可切换副本，在「管理页面 → 视图 → 图层」勾选 `仿生阅读 · Bionic Reading`。实测 13 种语言，开启后每一页的正文都更深，画面与普通仿生版相同。关闭后逐页恢复原件像素，文字选择层始终一致。[使用步骤](usage.md#safarifirefox-与其他浏览器)
 - **macOS Preview**：使用普通仿生版。Apple PDFKit 引擎已验证 13 页的文字、原始像素和普通仿生显示；Preview 完成了打开文件检查，未冒充逐页人工界面验收。
 - **SumatraPDF** 可直接打开普通仿生版。Windows 正式版 3.6.1 已用其原生引擎绘制 13 种语言的原文和副本。另用官方便携预览版 3.7.0.24556 逐页导出位图和文字，开层与普通版画面相同，关层恢复原件，四种文件提取的正文一致。[SumatraPDF 渲染命令](https://www.sumatrapdfreader.org/docs/Tool-convert)
 - **Apple Books（Mac）** 可导入普通仿生版。在 Books 8.5 中已核对导入的书库记录及其管理的文件，PDF 字节与导出副本一致。从 Mac 书库打开时，正文由 Preview 或默认 PDF 阅读器显示。[Books 实测](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42479896097/job/128729353138) · [Apple 使用说明](https://support.apple.com/guide/books/ibkseed72068/mac)
