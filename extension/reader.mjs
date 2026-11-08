@@ -249,7 +249,7 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target}
   lastProgress = null;
   const previous = pdf;
   pdf = loadedPDF;
-  findBar.reset(pdf);
+  findBar.reset(pdf, settings.locale);
   const pdfVersion = pdf.fingerprints[1] || pdf.fingerprints[0];
   const resumed = file.resume?.pdfVersion === pdfVersion ? file.resume : null;
   documentId = resumed?.documentId || crypto.randomUUID();
@@ -348,7 +348,11 @@ $('file-input').addEventListener('change', async e => {
 $('original-mode').addEventListener('click', () => setMode(false));
 $('bionic-mode').addEventListener('click', () => setMode(true));
 $('rule').addEventListener('change', e => { settings.rule = e.target.value; persistSettings(); updateModeUI(); scheduleRender(); });
-$('language').addEventListener('change', e => { settings.locale = e.target.value; persistSettings(); updateModeUI(); scheduleRender(); });
+$('language').addEventListener('change', e => {
+  settings.locale = e.target.value;
+  findBar.setLocale(settings.locale);
+  persistSettings(); updateModeUI(); scheduleRender();
+});
 let strengthTimer;
 $('strength').addEventListener('input', e => {
   settings.strength = Number(e.target.value) / 100;

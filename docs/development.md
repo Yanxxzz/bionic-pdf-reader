@@ -5,7 +5,8 @@
 浏览器用 PDF.js 在原页上切换显示。桌面工具用 pypdf 写入阅读副本，fontTools 和 FreeType 提供嵌入字体的字形轮廓。
 
 - 浏览器的 `reader.mjs` 负责打开文档、导航和阅读设置。`page-view.mjs` 在一个页面视图内安排绘制、取消过时的请求、复用词首结果并保留可选择的文字层。`layout.mjs` 根据字形位置计算词首，处理复制用的文字。
-- `tab-source.mjs` 识别来源 PDF 和链接里的书签。刷新时比对来源地址的摘要，阅读位置和文档标识保存在当前标签页的 `sessionStorage` 中。书内引用和来源书签共用目标页与坐标的解析。`navigation.mjs` 换算落点、解析进度并筛选网页与 DOI 链接。`search.mjs` 按需索引每页文字并映射命中范围，`find-bar.mjs` 处理查找控件与取消。查找高亮复用页面已有的文字层。
+- `tab-source.mjs` 识别来源 PDF 和链接里的书签。刷新时比对来源地址的摘要，阅读位置和文档标识保存在当前标签页的 `sessionStorage` 中。书内引用和来源书签共用目标页与坐标的解析。`navigation.mjs` 换算落点、解析进度并筛选网页与 DOI 链接。
+- `search.mjs` 中的 `BookSearch` 按需索引文档，管理当前命中、前后查找和取消，并把跨行或大小写转换后的命中映射回原文。`find-bar.mjs` 处理输入和状态显示。`page-view.mjs` 使用原文范围绘制高亮，可对齐的水平文字复用 PDF 实际绘制的字形坐标。
 - 桌面端的 `document.py` 识别数字签名并在选页时重建导航。`pdf_text.py` 读取文字和绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 解析嵌入字体的轮廓，`converter.py` 将轮廓写入阅读副本。命令行和图形界面共用 `make_pdf()`。
 - 修改阅读规则时，浏览器和桌面端分别改 `words.mjs` 和 `words.py`。两端的排版测试共用 `tests/layout-cases.json`，可以在同一个例子里指定字形位置和预期加粗范围。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。

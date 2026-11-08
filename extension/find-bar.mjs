@@ -1,16 +1,16 @@
-import {BookSearch, foldText, occurrences} from './search.mjs';
+import {BookSearch} from './search.mjs';
 import {markMatch} from './page-view.mjs';
 
 export function installFindBar(currentPage, showPage) {
   const byId = id => document.getElementById(id);
   const bar = byId('find-bar'), input = byId('find-query'), status = byId('find-status');
   const toggle = byId('find-toggle'), frame = byId('page-frame');
-  let book, match, timer, revision = 0, direction = 1, reveal = false;
+  let book, timer, reveal = false;
 
   function clear() {
-    ++revision;
     clearTimeout(timer);
-    match = null;
+    book?.clear();
+    reveal = false;
     markMatch(null);
     status.textContent = '';
   }
@@ -26,26 +26,20 @@ export function installFindBar(currentPage, showPage) {
     }
   }
   function paint() {
-    if (!match || frame.dataset.renderedPage !== String(match.page)) return;
+    const match = book.match;
+    if (!match || frame.dataset.renderedPage !== String(match.page)) { markMatch(null); return; }
     const visible = markMatch(match, reveal);
     reveal = false;
     status.textContent = `第 ${match.page} 页 · 本页第 ${match.index + 1}/${match.count} 处`
       + (visible ? '' : '（无可显示的位置）');
   }
-  async function find(step, restart = false) {
+  async function find(step) {
     clearTimeout(timer);
-    const query = foldText(input.value.trim());
-    if (!book || !query) { clear(); return; }
-    const request = ++revision;
-    direction = step;
-    const number = currentPage();
-    const previous = !restart && match?.query === query && match.page === number ? match : null;
-    const cancelled = () => request !== revision;
+    if (!book || !input.value.trim()) { clear(); return; }
     try {
-      const next = await book.find(query, number, step, previous, cancelled,
+      const match = await book.find(input.value, currentPage(), step,
         page => { status.textContent = `正在查找第 ${page} 页…`; });
-      if (cancelled()) return;
-      match = next;
+      if (match === undefined) return;
       reveal = true;
       if (!match) {
         markMatch(null);
@@ -56,10 +50,8 @@ export function installFindBar(currentPage, showPage) {
         await showPage(match.page);
       }
     } catch {
-      if (!cancelled()) {
-        clear();
-        status.textContent = '无法完成全文查找，请重试';
-      }
+      clear();
+      status.textContent = '无法完成全文查找，请重试';
     }
   }
   toggle.addEventListener('click', () => open(bar.hidden));
@@ -68,7 +60,7 @@ export function installFindBar(currentPage, showPage) {
   byId('find-next').addEventListener('click', () => find(1));
   input.addEventListener('input', () => {
     clear();
-    if (input.value.trim()) timer = setTimeout(() => find(1, true), 180);
+    if (input.value.trim()) timer = setTimeout(() => find(1), 180);
   });
   document.addEventListener('keydown', event => {
     if (!book || event.isComposing || document.querySelector('dialog[open]')) return;
@@ -85,24 +77,21 @@ export function installFindBar(currentPage, showPage) {
   });
   return {
     clear,
-    reset(pdf) {
+    reset(pdf, locale) {
       clear();
-      book = new BookSearch(pdf);
+      book = new BookSearch(pdf, locale);
       bar.hidden = true;
       toggle.setAttribute('aria-expanded', 'false');
       input.value = '';
     },
+    setLocale(locale) {
+      if (!book) return;
+      book.setLocale(locale);
+      if (!bar.hidden && input.value.trim()) find(1);
+    },
     rendered(number, items) {
-      book.remember(number, items);
-      if (number !== match?.page) { markMatch(null); return; }
-      // The visible layer may repair unusual embedded text. Use that same spelling on revisits.
-      match.count = occurrences(book.pages.get(number), match.query).length;
-      if (!match.count) {
-        find(direction, true);
-        return;
-      }
-      match.index = Math.min(match.index, match.count - 1);
-      paint();
+      if (book.remember(number, items)) find();
+      else paint();
     },
   };
 }

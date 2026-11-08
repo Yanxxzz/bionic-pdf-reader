@@ -211,6 +211,22 @@ try{
       assert.equal(await copyBlocked(), true);
       await query.press('Shift+Enter');
       await page.waitForFunction(() => document.querySelector('#find-status').textContent.startsWith('第 1 页'));
+      await query.fill('multiplicative');
+      await query.press('Enter');
+      await page.waitForFunction(() => document.querySelectorAll('#find-marks i').length === 2);
+      const leftEdges = await page.locator('#find-marks i').evaluateAll(marks => {
+        const frame = document.querySelector('#page-frame').getBoundingClientRect();
+        return marks.map(mark => (mark.getBoundingClientRect().left - frame.left) * 300 / frame.width);
+      });
+      assert.ok(Math.abs(leftEdges[0] - 170) < 2 && Math.abs(leftEdges[1] - 30) < 2);
+      await page.locator('#find-next').click();
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent === '第 2 页 · 本页第 1/1 处');
+      await query.fill('STRASSE');
+      await query.press('Enter');
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent === '第 2 页 · 本页第 1/1 处');
+      await page.locator('#find-prev').click();
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent === '第 1 页 · 本页第 1/1 处');
+      assert.equal(await page.locator('#find-marks i').count(), 1);
       await query.press('Escape');
       assert.equal(await page.locator('#find-marks i').count(), 0);
       await chooseSample('#open-file');

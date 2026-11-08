@@ -1,5 +1,15 @@
 import fs from 'node:fs';import test from 'node:test';import assert from 'node:assert/strict';
-import {GlyphCapture,planGlyphs,repairTextContent} from '../extension/layout.mjs';
+import {GlyphCapture,planGlyphs,repairTextContent,textGlyphBounds} from '../extension/layout.mjs';
+
+test('search aligns an inferred space and a ligature with the painted line', () => {
+  const viewport = {convertToViewportPoint: (x, y) => [x, 100 - y]};
+  const item = {str:'a fi', dir:'ltr', fontName:'roman', transform:[12,0,0,12,10,72], width:30};
+  const glyph = (text, x, w, y=28) => ({text, x, w, y, font:'roman'});
+  const records = [glyph('a',10,5), glyph('ﬁ',32,8), glyph('x',34,5,45), glyph('b',41,7)];
+  const bounds = textGlyphBounds(item, records, viewport);
+  assert.deepEqual([bounds[0],bounds[1],bounds[2],bounds[3]], [[10,15],undefined,[32,40],[32,40]]);
+  assert.equal(textGlyphBounds({...item,str:'a fig'}, records, viewport), undefined);
+});
 const cases=JSON.parse(fs.readFileSync(new URL('./layout-cases.json',import.meta.url),'utf8'));
 for(const item of cases)test(item.name,()=>{
  const records=item.text.map((text,i)=>({run:i,index:0,text,x:item.x?.[i]??i*10,y:item.y?.[i]??100,w:10,h:15,font:'normal',eligible:true,actual:item.actual?.[i]||null}));

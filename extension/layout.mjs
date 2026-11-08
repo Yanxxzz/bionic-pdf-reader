@@ -197,6 +197,31 @@ export function planGlyphs(capture, settings) {
   return {masks, repairs};
 }
 
+// Map a horizontal text-layer item to the glyphs actually painted on the page.
+// PDF.js can insert spaces between glyphs or expand a single ligature to letters.
+export function textGlyphBounds(item, records, viewport) {
+  const [a, b, , , tx, ty] = item.transform;
+  const [left, baseline] = viewport.convertToViewportPoint(tx, ty);
+  const [along, across] = viewport.convertToViewportPoint(tx + a, ty + b);
+  if (item.dir !== 'ltr' || along <= left || Math.abs(across - baseline) > 0.01) return;
+  const glyphs = records.filter(glyph => {
+    const mid = glyph.x + glyph.w / 2;
+    return glyph.font === item.fontName && Math.abs(glyph.y - baseline) < 0.5
+      && mid >= left - 0.1 && mid <= left + item.width + 0.1;
+  }).sort((a, b) => a.x - b.x);
+  const bounds = [];
+  let at = 0;
+  for (const glyph of glyphs) {
+    if (!glyph.text.trim()) continue;
+    while (at < item.str.length && /\s/u.test(item.str[at])) ++at;
+    const text = item.str.startsWith(glyph.text, at) ? glyph.text : glyph.text.normalize('NFKC');
+    if (!item.str.startsWith(text, at)) return;
+    const span = [glyph.x, glyph.x + glyph.w];
+    for (let i = 0; i < text.length; ++i) bounds[at++] = span;
+  }
+  if (!item.str.slice(at).trim()) return bounds;
+}
+
 export function repairTextContent(content, repairs, viewport) {
   if (!repairs.length) return content;
   const replaced = new Set(), insertions = new Map();

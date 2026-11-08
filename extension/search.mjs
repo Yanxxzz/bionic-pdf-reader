@@ -1,11 +1,28 @@
 // Keep only folded page text in the book index. Character offsets are needed
 // for the single visible match, where ligatures can expand to multiple letters.
-export function foldText(value, offsets) {
+export function foldText(value, offsets, locale = 'auto') {
   let text = '';
-  for (const match of value.matchAll(/\s+|\S\p{M}*/gu)) {
+  // In untagged mixed text, Turkish letters give an otherwise ambiguous I its
+  // dotless spelling. This substitution preserves every source offset.
+  if (locale === 'auto' && value.includes('I')) {
+    value = value.replace(/[\p{L}\p{M}]+/gu, word =>
+      /[İıĞğŞş]/u.test(word) ? word.replace(/I(?!\u0307)/gu, 'ı') : word);
+  }
+  // Reserve a newline in the index for a hyphen between letters at a line break.
+  // Ordinary line breaks remain searchable as spaces.
+  const parts = /(?<=[\p{L}\p{M}])[-\u2010\u00ad][^\S\r\n]*(?:\r\n?|\n)[^\S\r\n]*(?=\p{L})|\s+|\S\p{M}*/gu;
+  for (const match of value.matchAll(parts)) {
     const original = match[0];
-    const folded = /^\s/u.test(original) ? ' ' :
-      original.normalize('NFKC').toLowerCase().replaceAll('ς', 'σ').replaceAll('\u00ad', '');
+    let folded;
+    if (/^\s/u.test(original)) folded = ' ';
+    else if (/[\r\n]/u.test(original)) folded = '\n';
+    else {
+      const normalized = original.normalize('NFKC');
+      folded = locale === 'tr' && /[Iİ]/u.test(normalized)
+        ? normalized.toLocaleLowerCase('tr') : normalized.toLowerCase();
+      folded = folded.replaceAll('ß', 'ss').replaceAll('ς', 'σ').replaceAll('\u2010', '-').replaceAll('\u00ad', '');
+      if (locale === 'auto') folded = folded.replaceAll('i\u0307', 'i');
+    }
     text += folded;
     if (offsets) {
       for (let i = 0; i < folded.length; ++i) offsets.push([match.index, match.index + original.length]);
@@ -32,65 +49,127 @@ export function pageText(items) {
   return text;
 }
 
-export function occurrences(text, query) {
-  const matches = [];
-  if (!query) return matches;
-  for (let i = text.indexOf(query); i >= 0; i = text.indexOf(query, i + query.length)) matches.push(i);
-  return matches;
+function wrappedMatchEnd(text, start, query) {
+  let pos = start, typed = 0;
+  while (typed < query.length) {
+    if (text[pos] === '\n') {
+      // At a discretionary break the user may omit the hyphen or type "-"/"- ".
+      if (query[typed] === '-') typed += query[typed + 1] === ' ' ? 2 : 1;
+    } else if (text[pos] === query[typed]) {
+      ++typed;
+    } else {
+      return -1;
+    }
+    ++pos;
+  }
+  return pos;
 }
 
 export class BookSearch {
-  constructor(pdf) {
+  #pages = new Map();
+  #visible = null;
+  #selected = null;
+  #query = '';
+  #revision = 0;
+
+  constructor(pdf, locale = 'auto') {
     this.pdf = pdf;
-    this.pages = new Map();
+    this.locale = locale;
+    this.direction = 1;
   }
 
-  remember(number, items) {
-    this.pages.set(number, foldText(pageText(items)));
+  clear() {
+    ++this.#revision;
+    this.#selected = null;
   }
 
-  async find(query, number, direction, previous, cancelled, progress) {
+  setLocale(locale) {
+    this.clear();
+    this.locale = locale;
+    this.#pages.clear();
+    const visible = this.#visible;
+    this.#visible = null;
+    if (visible) this.remember(visible.page, visible.items);
+  }
+
+  get match() {
+    if (!this.#selected) return null;
+    const {page, index, hits} = this.#selected;
+    const [first, last] = hits[index];
+    const visible = this.#visible?.page === page ? this.#visible : null;
+    if (visible && !visible.offsets) {
+      visible.offsets = [];
+      foldText(pageText(visible.items), visible.offsets, this.locale);
+    }
+    const offsets = visible?.offsets;
+    return {page, index, count: hits.length, start: offsets?.[first][0], end: offsets?.[last - 1][1]};
+  }
+
+  #hits(text) {
+    const hits = [];
+    const wrapped = text.includes('\n');
+    const haystack = wrapped ? text.replaceAll('\n', '-') : text;
+    const needle = wrapped ? this.#query[0] : this.#query;
+    let start = haystack.indexOf(needle);
+    while (start >= 0) {
+      const end = wrapped ? wrappedMatchEnd(text, start, this.#query) : start + needle.length;
+      if (end > start) hits.push([start, end]);
+      start = haystack.indexOf(needle, end > start ? end : start + 1);
+    }
+    return hits;
+  }
+
+  remember(page, items) {
+    if (this.#visible?.items === items && this.#visible.page === page) return;
+    const offsets = this.#selected?.page === page ? [] : null;
+    const text = foldText(pageText(items), offsets, this.locale);
+    const old = this.#pages.get(page);
+    this.#visible = {page, items, offsets};
+    this.#pages.set(page, text);
+    // The rendered page can repair the worker's spelling. Reconcile before painting.
+    if (this.#selected?.page === page && old !== text) {
+      const hits = this.#hits(text);
+      const index = Math.min(this.#selected.index, hits.length - 1);
+      this.#selected = hits.length ? {page, hits, index} : null;
+      return !hits.length;
+    }
+  }
+
+  async find(value, number, direction = this.direction, progress = () => {}) {
+    const query = foldText(value.trim(), null, this.locale).replaceAll('\n', '-');
+    const revision = ++this.#revision;
+    if (!query) { this.#selected = null; return null; }
+    this.direction = direction;
+    if (query !== this.#query) {
+      this.#query = query;
+      this.#selected = null;
+    }
+    const previous = this.#selected?.page === number ? this.#selected : null;
     const total = this.pdf.numPages;
     for (let step = 0; step < total + (previous ? 1 : 0); ++step) {
       const page = 1 + ((number - 1 + direction * step + total) % total);
-      if (!this.pages.has(page)) {
+      if (!this.#pages.has(page)) {
         progress(page);
-        const proxy = await this.pdf.getPage(page);
-        if (cancelled()) return null;
-        const content = await proxy.getTextContent({includeMarkedContent: true});
-        if (cancelled()) return null;
-        if (!this.pages.has(page)) this.remember(page, content.items);
+        try {
+          const proxy = await this.pdf.getPage(page);
+          if (revision !== this.#revision) return;
+          const content = await proxy.getTextContent({includeMarkedContent: true});
+          if (revision !== this.#revision) return;
+          if (!this.#pages.has(page)) this.#pages.set(page, foldText(pageText(content.items), null, this.locale));
+        } catch (error) {
+          if (revision !== this.#revision) return;
+          throw error;
+        }
       }
-      const matches = occurrences(this.pages.get(page), query);
-      let index = direction === 1 ? 0 : matches.length - 1;
+      const hits = this.#selected?.page === page ? this.#selected.hits : this.#hits(this.#pages.get(page));
+      let index = direction === 1 ? 0 : hits.length - 1;
       if (step === 0 && previous) index = previous.index + direction;
-      if (index >= 0 && index < matches.length) return {page, index, count: matches.length, query};
+      if (index >= 0 && index < hits.length) {
+        this.#selected = {page, index, hits};
+        return this.match;
+      }
     }
+    this.#selected = null;
     return null;
   }
-}
-
-export function matchRanges(items, divs, {query, index}) {
-  const offsets = [];
-  const positions = occurrences(foldText(pageText(items), offsets), query);
-  if (index >= positions.length) return [];
-  const start = offsets[positions[index]][0], end = offsets[positions[index] + query.length - 1][1];
-  const ranges = [];
-  let cursor = 0;
-  for (const [i, item] of items.entries()) {
-    const next = cursor + item.str.length;
-    if (next > start && cursor < end && divs[i]?.firstChild && item.str.length) {
-      const range = document.createRange();
-      const first = Math.max(0, start - cursor), last = Math.min(item.str.length, end - cursor);
-      range.setStart(divs[i].firstChild, first);
-      range.setEnd(divs[i].firstChild, last);
-      // Tagged tab stops have physical glyph bounds. A browser's substitute font
-      // can measure their text differently at each zoom level.
-      const left = item.glyphBounds?.[first], right = item.glyphBounds?.[last - 1];
-      ranges.push({range, bounds: left && right ? [left[0], right[1]] : null});
-    }
-    cursor = next + (item.hasEOL ? 1 : 0);
-    if (cursor >= end) break;
-  }
-  return ranges;
 }

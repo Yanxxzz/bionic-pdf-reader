@@ -14,6 +14,59 @@ test('search expands ligatures and maps normalized accents back to the original 
   assert.equal(pageText(items), 'final\nline');
 });
 
+test('search finds a wrapped word and literal compounds without hiding the source spelling', async () => {
+  const book = new BookSearch({numPages:1});
+  const items = [{str:'multi-', hasEOL:true}, {str:'plicative source-', hasEOL:true}, {str:'target HTTP-date [a+b].'}];
+  const original = pageText(items);
+  book.remember(1, items);
+  const find = q => book.find(q, 1, 1);
+  for (const [query, spelling] of [
+    ['multiplicative source-target', 'multi-\nplicative source-\ntarget'],
+    ['multi- plicative', 'multi-\nplicative'], ['source-\ntarget', 'source-\ntarget'],
+    ['http-date', 'HTTP-date'], ['[a+b].', '[a+b].'],
+  ]) {
+    const {start, end, count} = await find(query);
+    assert.equal(original.slice(start, end), spelling);
+    assert.equal(count, 1);
+  }
+  assert.equal(await find('httpdate'), null);
+  assert.equal(await find('aaab'), null);
+});
+
+test('full case folding returns original offsets and Turkish preserves both dotted and dotless I', async () => {
+  const book = new BookSearch({numPages:1}, 'de');
+  const line = 'Eine Straße und STRASSE. IŞIK, İSTANBUL, sık, sik, Σς.';
+  book.remember(1, [{str:line}]);
+  async function spelling(query, direction = 1) {
+    const match = await book.find(query, 1, direction);
+    return match && line.slice(match.start, match.end);
+  }
+  assert.equal(await spelling('STRASSE'), 'Straße');
+  assert.equal(await spelling('Straße'), 'STRASSE');
+  assert.equal(await spelling('strasse', -1), 'Straße');
+  book.setLocale('tr');
+  assert.equal(await spelling('istanbul'), 'İSTANBUL');
+  assert.equal(await spelling('ışık'), 'IŞIK');
+  assert.equal(await spelling('sık'), 'sık');
+  assert.equal(book.match.count, 1);
+  assert.equal(await spelling('sik'), 'sik');
+  assert.equal(book.match.count, 1);
+  book.setLocale('auto');
+  assert.equal(await spelling('istanbul'), 'İSTANBUL');
+  assert.equal(await spelling('ışık'), 'IŞIK');
+  assert.equal(await spelling('sık'), 'sık');
+  assert.equal(book.match.count, 1);
+  assert.equal(await spelling('σσ'), 'Σς');
+});
+
+test('a long pasted passage is matched literally across a line break', async () => {
+  const book = new BookSearch({numPages:1});
+  const passage = 'independent evidence '.repeat(500);
+  book.remember(1, [{str:'con-',hasEOL:true},{str:'trol ' + passage + 'complete'}]);
+  const hit = await book.find('control ' + passage + 'complete', 1);
+  assert.deepEqual([hit.start, hit.end], [0, passage.length + 18]);
+});
+
 test('book search visits only the necessary pages, wraps in both directions, and cancels', async () => {
   const visited = [];
   const pdf = {numPages:4, async getPage(n) {
@@ -21,21 +74,40 @@ test('book search visits only the necessary pages, wraps in both directions, and
     return {getTextContent: async () => ({items:[{str:['', 'desk desk', '', 'DESK'][n - 1]}]})};
   }};
   const book = new BookSearch(pdf);
-  const find = (page, direction, previous) => book.find('desk', page, direction, previous, () => false, () => {});
-  let hit = await find(1, 1, null);
+  const find = (page, direction) => book.find('desk', page, direction);
+  let hit = await find(1, 1);
   assert.deepEqual([hit.page, hit.index, hit.count], [2, 0, 2]);
   assert.deepEqual(visited, [1, 2]);
-  hit = await find(2, 1, hit);
+  hit = await find(2, 1);
   assert.equal(hit.index, 1);
-  hit = await find(2, 1, hit);
+  hit = await find(2, 1);
   assert.equal(hit.page, 4);
-  hit = await find(4, 1, hit);
+  hit = await find(4, 1);
   assert.deepEqual([hit.page, hit.index], [2, 0]);
-  assert.equal((await find(2, -1, hit)).page, 4);
+  assert.equal((await find(2, -1)).page, 4);
   assert.deepEqual(visited, [1, 2, 3, 4]);
-  const fresh = new BookSearch(pdf);
-  assert.equal(await fresh.find('desk', 1, 1, null, () => true, () => {}), null);
-  assert.equal(fresh.pages.size, 0);
+  let release;
+  const pendingPage = new Promise(resolve => { release = resolve; });
+  const fresh = new BookSearch({numPages:1, getPage: () => pendingPage});
+  const stale = fresh.find('desk', 1);
+  fresh.clear();
+  fresh.remember(1, [{str:'new'}]);
+  await fresh.find('new', 1);
+  release({getTextContent() { assert.fail('A superseded search should stop'); }});
+  assert.equal(await stale, undefined);
+  assert.deepEqual(fresh.match, {page:1, index:0, count:1, start:0, end:3});
+});
+
+test('a repaired visible page supplies the range and count used on revisits', async () => {
+  const book = new BookSearch({numPages:1, async getPage() {
+    return {getTextContent: async () => ({items:[{str:'Straße Straße'}]})};
+  }});
+  await book.find('STRASSE', 1, -1);
+  assert.equal(book.match.index, 1);
+  book.remember(1, [{str:'Die Straße'}]);
+  assert.deepEqual(book.match, {page:1, index:0, count:1, start:4, end:10});
+  assert.equal(book.remember(1, [{str:'Different'}]), true);
+  assert.equal(await book.find('STRASSE', 1), null);
 });
 
 test('destinations respect explicit zoom, omitted coordinates and a rotated FitR rectangle', () => {

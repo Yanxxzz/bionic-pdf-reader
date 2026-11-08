@@ -295,7 +295,7 @@ class PageTextReader:
             for start in range(0, len(raw), metrics.code_size):
                 code = int.from_bytes(raw[start:start + metrics.code_size], 'big')
                 width = metrics.width_for(code)
-                word_spacing = state.word_spacing if code == 32 else 0
+                word_spacing = state.word_spacing if metrics.code_size == 1 and code == 32 else 0
                 advance = (width * size / 1000 + state.char_spacing + word_spacing) * scale
                 local = translated(state.text_matrix, 0, state.rise)
                 matrix = matrix_multiply(state.ctm, local)

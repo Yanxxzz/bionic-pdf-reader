@@ -1,7 +1,6 @@
 import {AnnotationMode, TextLayer} from './vendor/pdf.mjs';
-import {GlyphCapture, planGlyphs, repairTextContent} from './layout.mjs';
+import {GlyphCapture, planGlyphs, repairTextContent, textGlyphBounds} from './layout.mjs';
 import {destinationView, externalLink} from './navigation.mjs';
-import {matchRanges} from './search.mjs';
 
 const scroller = document.getElementById('page-scroller');
 const frame = document.getElementById('page-frame');
@@ -230,13 +229,34 @@ export function renderPage(pdf, number, settings) {
   return result;
 }
 
+function* matchRanges({start, end}) {
+  const {items, layer, page} = displayedText;
+  const records = layouts.get(page).capture.records;
+  const base = page.getViewport({scale: 1});
+  let cursor = 0;
+  for (const [i, item] of items.entries()) {
+    const next = cursor + item.str.length;
+    const node = layer.textDivs[i]?.firstChild;
+    if (next > start && cursor < end && node && item.str.length) {
+      const first = Math.max(0, start - cursor), last = Math.min(item.str.length, end - cursor);
+      const range = document.createRange();
+      range.setStart(node, first);
+      range.setEnd(node, last);
+      item.glyphBounds ??= textGlyphBounds(item, records, base) ?? [];
+      const left = item.glyphBounds[first], right = item.glyphBounds[last - 1];
+      yield {range, bounds: left && right ? [left[0], right[1]] : null};
+    }
+    cursor = next + (item.hasEOL ? 1 : 0);
+    if (cursor >= end) break;
+  }
+}
+
 export function markMatch(match, reveal = false) {
   findMarks.replaceChildren();
   if (!match || displayedText?.page.pageNumber !== match.page) return false;
-  const ranges = matchRanges(displayedText.items, displayedText.layer.textDivs, match);
   const origin = frame.getBoundingClientRect();
   const scale = displayedText.viewport.scale;
-  for (const {range, bounds} of ranges) {
+  for (const {range, bounds} of matchRanges(match)) {
     for (const rect of range.getClientRects()) {
       if (!rect.width || !rect.height) continue;
       const mark = document.createElement('i');
