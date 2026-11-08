@@ -15,7 +15,7 @@
 | WPS PDF、Adobe Acrobat Reader、福昕 Foxit、PDF-XChange Editor、Firefox 内置阅读器 | 可切换版 PDF | 用制作工具生成一次副本，以后在阅读器的「图层 / Layers」面板开关 `仿生阅读 · Bionic Reading`。 |
 | macOS 预览（Preview）、SumatraPDF、Apple Books、手机或平板阅读器 | 普通仿生 PDF | 生成后直接打开，词首始终加粗。要看原始排版，打开原文件。 |
 
-Acrobat Reader 的 13 种语言样例在开关前后复制的正文一致。WPS、Foxit、PDF-XChange 和 Firefox 内置阅读器也已验证原页图层开关。SumatraPDF 实测了 13 种语言的普通副本，Mac 版 Apple Books 实测了导入书库。Safari 26.6、27.2 已逐页核对关闭后的画面。[各阅读器与移动设备的实测范围](docs/compatibility.md)
+Acrobat Reader 的 13 种语言样例在开关前后复制的正文一致。WPS、Foxit、PDF-XChange 和 Firefox 内置阅读器也已验证原页图层开关。SumatraPDF 实测了 13 种语言的普通副本，Mac 版 Apple Books 实测了导入书库。桌面 Safari 已逐页核对关闭后的画面，iPhone Safari 和 Android MuPDF mini 在模拟器中验证了普通副本的显示。[各阅读器与移动设备的实测范围](docs/compatibility.md)
 
 ![同一页英文 PDF 在浏览器中开启词首加粗后的效果](docs/assets/browser-preview.png)
 

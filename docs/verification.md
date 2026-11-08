@@ -11,6 +11,7 @@
 - 用同一 Chrome 发布包复查 112 处搜索命中。教材的 `Treynor` 有 82 处，论文的 `sinusoid` 有 4 处，双页讲义的 `probability` 有 26 处。逐次查找上一处、下一处后，用原件字形坐标校验高亮。另在原始和仿生模式实点教材、论文和 RFC 中的五处引用，返回时页码、缩放和滚动位置都与出发处一致。
 - Windows 便携版和 wheel 导出的 3 张 PLOS 双页讲义左右两栏均有加粗，关闭图层后与原页逐像素一致。混合讲义的第 2、6 页保持原样，程序列出的未加粗页码也是 2、6。用横排双字节字体对照普通版与图层版，验证词间距、开关恢复和复制结果。
 - Windows 正式版 Firefox 的内置 PDF 查看器按 13 种语言逐页切换预制图层，关闭后画面恢复，复制层一致。SumatraPDF 3.6.1 在 13 种语言的普通副本中绘出词首。Mac 版 Apple Books 8.5 导入后的文件与原副本字节相同。iOS 26.5 的 iPhone 17 Pro 模拟器在 Safari 原生 PDF 视图中显示了普通版的词首，关闭图层的副本与原文截图相同。[Apple Books 记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42479896097/job/128729353138) · [iPhone 模拟器记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42478774120)
+- 在 Android 11 模拟器中以只读文件分享打开 MuPDF mini 1.28.5a。三份 PDF 的正文截图中，原件与关层副本逐像素一致，普通仿生版的深色笔画像素从 688 增至 831。[Android 阅读器记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42482301369/job/128736674308)
 
 ## 开发版 · 导出强度与自动模式的英文词首
 

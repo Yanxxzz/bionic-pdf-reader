@@ -15,7 +15,7 @@ If you want to read English faster or try a different way to read long papers, o
 | WPS PDF, Adobe Acrobat Reader, Foxit, PDF-XChange Editor or Firefox’s built-in PDF viewer | Switchable PDF | Generate a copy once. Use the eye or checkbox beside `仿生阅读 · Bionic Reading` in the reader’s Layers panel. |
 | macOS Preview, SumatraPDF, Apple Books or a phone or tablet reader | Static PDF | Open the copy like any other PDF. Emphasis is always visible. Open the source file for the original appearance. |
 
-Acrobat Reader preserved the copied text in all 13 languages with emphasis on and off. Native layer switching also passed in WPS, Foxit, PDF-XChange and Firefox’s built-in PDF viewer. SumatraPDF rendered all 13 languages, and Apple Books on Mac imported the static copy. Safari 26.6 and 27.2 restored the original page pixels after switching off. [Desktop and mobile verification](docs/compatibility.md)
+Acrobat Reader preserved the copied text in all 13 languages with emphasis on and off. Native layer switching also passed in WPS, Foxit, PDF-XChange and Firefox’s built-in PDF viewer. SumatraPDF rendered all 13 languages, and Apple Books on Mac imported the static copy. Desktop Safari restored the original page pixels after switching off. iPhone Safari and Android MuPDF mini displayed the static copy in a simulator and an emulator, respectively. [Desktop and mobile verification](docs/compatibility.md)
 
 ![English PDF with word-prefix emphasis in the browser reader](docs/assets/browser-preview.png)
 

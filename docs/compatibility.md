@@ -16,7 +16,8 @@ Windows 便携版和 Python 安装包都内置同一份本地网页阅读器，�
 - **macOS Preview**：使用普通仿生版。Apple PDFKit 引擎已验证 13 页的文字、原始像素和普通仿生显示；Preview 完成了打开文件检查，未冒充逐页人工界面验收。
 - **SumatraPDF** 可直接打开普通仿生版。Windows 正式版 3.6.1 已用其原生引擎绘制 13 种语言的原文和副本。另用官方便携预览版 3.7.0.24556 逐页导出位图和文字，开层与普通版画面相同，关层恢复原件，四种文件提取的正文一致。[SumatraPDF 渲染命令](https://www.sumatrapdfreader.org/docs/Tool-convert)
 - **Apple Books（Mac）** 可导入普通仿生版。在 Books 8.5 中已核对导入的书库记录及其管理的文件，PDF 字节与导出副本一致。从 Mac 书库打开时，正文由 Preview 或默认 PDF 阅读器显示。[Books 实测](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42479896097/job/128729353138) · [Apple 使用说明](https://support.apple.com/guide/books/ibkseed72068/mac)
-- **iPhone Safari** 可直接打开普通仿生版。iOS 26.5 的 iPhone 17 Pro 模拟器上已在 Safari 原生 PDF 视图核对截图，普通版正文更深，关闭图层的副本与原件正文像素一致。[iOS 验证记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42478774120)
+- **iPhone Safari** 可直接打开普通仿生版。iOS 26.5 的 iPhone 17 Pro 模拟器上已在 Safari 原生 PDF 视图核对截图，普通版正文更深，关闭图层的副本与原件正文像素一致。[iOS 验证记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42481026772/job/128732765051)
+- **Android MuPDF mini** 可直接打开普通仿生版。在 Android 11 模拟器上，MuPDF mini 1.28.5a 通过系统的文件分享功能打开三份 PDF。正文截图中的深色像素从原件的 688 个增加到普通版的 831 个，关层副本与原件正文逐像素一致。[Android 验证记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42482301369/job/128736674308)
 - **其他手机 PDF 阅读器** 可选普通仿生版。该副本始终显示词首笔画，应用内的书库、批注、同步方式取决于所用阅读器。
 - **Safari** 在本地网页阅读器里点「打开 PDF」，通过 macOS 文件窗口选文件。Safari 26.6 和 27.2 均已验证 13 种语言、带标签和无标签文件、原文选择、词首加粗，以及关闭后逐页恢复原始画面。[验证记录](verification.md)
 
