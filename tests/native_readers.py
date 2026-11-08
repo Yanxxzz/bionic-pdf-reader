@@ -46,35 +46,44 @@ def command(*args):
 
 
 def books(folder):
+    import Quartz
+    import Vision
+    from Foundation import NSURL
+
     sample = folder / "static/sample.pdf"
     subprocess.run(["open", "-b", "com.apple.iBooksX"], check=True)
-    # A new macOS account shows a named first-launch button before handling document opens.
-    subprocess.run(["osascript", "-e", '''
-tell application "System Events" to tell process "Books"
-    repeat 12 times
-        if exists window 1 then
-            repeat with itemView in entire contents of window 1
-                try
-                    if role of itemView is "AXButton" and name of itemView is "Get Started" then
-                        perform action "AXPress" of itemView
-                        return
-                    end if
-                end try
-            end repeat
-        end if
-        delay 1
-    end repeat
-end tell'''], check=True, timeout=35)
+    # On first launch Books shows an introductory sheet. Locate its named button on screen.
+    screen = folder / "books-screen.png"
+    for _ in range(12):
+        time.sleep(1)
+        subprocess.run(["screencapture", "-x", str(screen)], check=True)
+        request = Vision.VNRecognizeTextRequest.alloc().init()
+        handler = Vision.VNImageRequestHandler.alloc().initWithURL_options_(NSURL.fileURLWithPath_(str(screen)), {})
+        ok, error = handler.performRequests_error_([request], None)
+        assert ok, error
+        labels = {line.topCandidates_(1)[0].string(): line.boundingBox() for line in request.results()}
+        if "Get Started" in labels and any("Apple Books" in label for label in labels):
+            rect = labels["Get Started"]
+            size = Quartz.CGDisplayBounds(Quartz.CGMainDisplayID()).size
+            point = ((rect.origin.x + rect.size.width/2)*size.width,
+                     (1 - rect.origin.y - rect.size.height/2)*size.height)
+            for event in (Quartz.kCGEventLeftMouseDown, Quartz.kCGEventLeftMouseUp):
+                Quartz.CGEventPost(Quartz.kCGHIDEventTap,
+                                   Quartz.CGEventCreateMouseEvent(None, event, point, Quartz.kCGMouseButtonLeft))
+            time.sleep(1)
+            break
     subprocess.run(["open", "-b", "com.apple.iBooksX", str(sample)], check=True)
     library = Path.home() / "Library/Containers/com.apple.iBooksX/Data/Documents/BKLibrary"
     deadline = time.monotonic() + 75
+    diagnostics = {}
     while time.monotonic() < deadline:
         for db in library.glob("*.sqlite"):
             with sqlite3.connect(db.as_uri() + "?mode=ro", uri=True) as conn:
                 if not conn.execute("SELECT 1 FROM sqlite_master WHERE name='ZBKLIBRARYASSET'").fetchone():
                     continue
-                rows = conn.execute("SELECT ZTITLE, ZPATH FROM ZBKLIBRARYASSET WHERE ZTITLE LIKE ?",
-                                    (TITLE + "%",))
+                rows = list(conn.execute("SELECT ZTITLE, ZPATH FROM ZBKLIBRARYASSET WHERE ZTITLE LIKE ? OR ZPATH LIKE ?",
+                                         (TITLE + "%", "%/sample.pdf")))
+                diagnostics[db.name] = rows
                 for title, path in rows:
                     if path and Path(path).is_file() and Path(path).read_bytes() == sample.read_bytes():
                         version = command("defaults", "read", "/System/Applications/Books.app/Contents/Info",
@@ -82,7 +91,8 @@ end tell'''], check=True, timeout=35)
                         return {"app": "macOS Books", "version": version, "title": title,
                                 "cataloguedPdfBytesMatch": True}
         time.sleep(1)
-    subprocess.run(["screencapture", "-x", str(folder / "books-screen.png")], check=False)
+    (folder / "books-database.json").write_text(json.dumps(diagnostics, indent=2))
+    subprocess.run(["screencapture", "-x", str(screen)], check=False)
     raise AssertionError("Books did not catalogue the exported PDF with its original bytes")
 
 
