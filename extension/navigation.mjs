@@ -65,6 +65,18 @@ export function pageInRange(number, total, fallback) {
   return Number.isInteger(number) ? Math.min(total, Math.max(1, number)) : fallback;
 }
 
+// Explicit PDF destinations keep their coordinates. Named page actions keep the current zoom.
+export function linkDestination({dest, action}, page, total) {
+  if (dest) return dest;
+  switch (action) {
+    case 'FirstPage': return 1;
+    case 'LastPage': return total;
+    case 'PrevPage': return Math.max(1, page - 1);
+    case 'NextPage': return Math.min(total, page + 1);
+    default: return null;
+  }
+}
+
 export function savedPosition(saved, total, defaultZoom) {
   if (typeof saved === 'string') {
     try { saved = JSON.parse(saved); } catch { saved = null; }

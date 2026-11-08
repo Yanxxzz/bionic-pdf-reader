@@ -1,6 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {savedPosition, webLinkURL} from '../extension/navigation.mjs';
+import {linkDestination, savedPosition, webLinkURL} from '../extension/navigation.mjs';
+
+test('named page actions stay in bounds and preserve explicit destinations', () => {
+  const target = (action, page) => linkDestination({action}, page, 5);
+  assert.equal(target('PrevPage', 1), 1);
+  assert.equal(target('NextPage', 5), 5);
+  assert.equal(target('FirstPage', 4), 1);
+  assert.equal(target('LastPage', 2), 5);
+  assert.equal(target('Print', 3), null);
+  assert.equal(linkDestination({dest: 'Introduction', action: 'NextPage'}, 1, 5), 'Introduction');
+});
 
 test('paper links accept web addresses and DOI identifiers', () => {
   assert.equal(webLinkURL({url:'https://publisher.example/paper#results'}), 'https://publisher.example/paper#results');

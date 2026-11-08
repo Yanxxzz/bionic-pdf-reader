@@ -14,6 +14,10 @@ const app = path.join(root, 'extension');
 const sample = path.join(root, '.tmp/examples/multilingual.pdf');
 const bytes = fs.readFileSync(sample);
 const named = fs.readFileSync(path.join(path.dirname(sample), 'named.pdf'));
+// Valid trailing PDF comments make two distinct editions with the same name,
+// declared ID, file size, and first 1024 bytes.
+const editions = ['A', 'B'].map(tag => Buffer.concat([bytes, Buffer.from('\n% Edition ' + tag + '\n')]));
+let edition = 0;
 let expired = false;
 let htmlRequests = 0;
 const server = http.createServer((req, res) => {
@@ -21,6 +25,8 @@ const server = http.createServer((req, res) => {
   if (req.url === '/ordinary.pdf') {
     ++htmlRequests;
     res.writeHead(200, {'Content-Type':'text/html'}).end('<title>HTML article</title>');
+  } else if (req.url === '/edition.pdf') {
+    res.writeHead(200, {'Content-Type':'application/pdf', 'Content-Length':editions[edition].length}).end(editions[edition]);
   } else if (req.url === '/named') {
     res.writeHead(200, {'Content-Type':'application/pdf', 'Content-Length':named.length}).end(named);
   } else if (req.url === '/paper' && !expired && req.headers.cookie?.includes('session=reader-test')) {
@@ -94,6 +100,7 @@ try {
   assert.ok(top > 0);
   const other = await clickExtension();
   await waitForPage(other, 2);
+  await other.waitForFunction(() => document.querySelector('#zoom').value === '2');
   await reader.reload();
   await waitForPage(reader, 3);
   assert.equal(await reader.locator('#page-scroller').evaluate(el => el.scrollTop), top);
@@ -139,6 +146,29 @@ try {
   await reader.locator('#file-input').setInputFiles(sample);
   await waitForPage(reader, 3);
   assert.equal(await reader.locator('#file-name').textContent(), 'multilingual.pdf');
+  await reader.close();
+
+  await source.goto(base + '/edition.pdf');
+  async function openEdition() {
+    const tab = await clickExtension();
+    await tab.waitForFunction(() => JSON.parse(sessionStorage.getItem('bionic-tab-view'))?.contentKey);
+    return tab;
+  }
+  reader = await openEdition();
+  await reader.locator('#page-number').fill('4');
+  await reader.locator('#page-number').press('Enter');
+  await waitForPage(reader, 4);
+  await reader.close();
+  edition = 1;
+  reader = await openEdition();
+  await waitForPage(reader, 1);
+  await reader.locator('#page-number').fill('2');
+  await reader.locator('#page-number').press('Enter');
+  await waitForPage(reader, 2);
+  await reader.reload();
+  await waitForPage(reader, 2);
+  await reader.locator('#file-input').setInputFiles({name:'renamed.pdf', mimeType:'application/pdf', buffer:editions[0]});
+  await waitForPage(reader, 4);
   assert.deepEqual(errors, []);
   console.log('Extension toolbar, reload, named destination, expired session and file picker passed');
 } finally {

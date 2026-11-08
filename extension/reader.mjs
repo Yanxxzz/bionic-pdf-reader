@@ -3,8 +3,9 @@ import * as pdfjs from './vendor/pdf.mjs';
 import { prefixLength } from './words.mjs';
 import {embeddedReadingLayer, fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
 import {installFindBar} from './find-bar.mjs';
-import {externalLink, pageInRange, savedPosition} from './navigation.mjs';
-import {initialPdf, prepareFileHandoff, rememberSelectedFile, rememberTabView, savedTabView} from './tab-source.mjs';
+import {externalLink, linkDestination, pageInRange, savedPosition} from './navigation.mjs';
+import {initialPdf, prepareFileHandoff, rememberSelectedFile} from './tab-source.mjs';
+import {digestBytes, ReadingProgress, savedTabView} from './reading-progress.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -27,8 +28,8 @@ try {
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null, embeddedLayer = null;
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
-let documentId, tabSource, navigationRevision = 0, pendingPosition = null;
-let progressTimer, lastProgress;
+let readingProgress, navigationRevision = 0, pendingPosition = null;
+let progressTimer;
 const findBar = installFindBar(() => pageNumber, number => {
   ++navigationRevision;
   return showPosition({number, zoom: $('zoom').value});
@@ -91,7 +92,8 @@ async function scheduleRender() {
     const label = pageLabels?.[number - 1];
     $('page-label').textContent = label ? `书内页码 ${label}` : `PDF 第 ${number} 页`;
     let status = '原始模式';
-    if (!result.hasText) status = '本页没有可识别的正文。扫描页可在桌面工具中勾选「本地 OCR」。';
+    if (result.textKind === 'empty') status = '本页没有可识别的正文。扫描页可在桌面工具中勾选「本地 OCR」。';
+    else if (result.textKind === 'symbols') status = '本页文字可搜索，没有可加粗的词首。';
     else if (embeddedLayer) status = snapshot.enabled ? '仿生模式 · 副本内置图层已开启' : '原始模式 · 副本内置图层已关闭';
     else if (snapshot.enabled) status = result.stroked ? '仿生模式 · 词首加粗' : '此页没有可加粗文字，保留原页';
     $('reading-status').textContent = status;
@@ -108,11 +110,7 @@ function saveProgress() {
   clearTimeout(progressTimer);
   if (!pdf || $('page-frame').dataset.renderedPage !== String(pageNumber)) return;
   const position = {number: pageNumber, ...readingPosition($('zoom').value)};
-  const progress = JSON.stringify(position);
-  if (progress === lastProgress) return;
-  lastProgress = progress;
-  if (tabSource) rememberTabView(tabSource, position);
-  try { localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, progress); } catch {}
+  readingProgress.save(position);
 }
 $('page-scroller').addEventListener('scroll', () => {
   clearTimeout(progressTimer);
@@ -154,14 +152,16 @@ async function destinationPage(activePDF, destination) {
 }
 
 async function goToDestination(activePDF, dest) {
-  if (!dest || pdf !== activePDF) return;
+  if (!dest || dest === pageNumber || pdf !== activePDF) return;
   findBar.clear();
   const revision = ++navigationRevision;
   const origin = {number: pageNumber, ...readingPosition($('zoom').value)};
   try {
-    const target = await destinationPage(activePDF, dest);
+    const position = Number.isInteger(dest)
+      ? {number: dest, zoom: origin.zoom}
+      : resolvePosition(await destinationPage(activePDF, dest), origin);
     if (pdf !== activePDF || revision !== navigationRevision) return;
-    const position = resolvePosition(target, origin);
+    const documentId = readingProgress.documentId;
     const depth = history.state?.documentId === documentId ? history.state.depth : 0;
     history.replaceState({documentId, depth, position: origin}, '');
     history.pushState({documentId, depth: depth + 1, position}, '');
@@ -174,6 +174,7 @@ async function goToDestination(activePDF, dest) {
 
 $('return-position').addEventListener('click', () => history.back());
 addEventListener('popstate', ({state}) => {
+  const documentId = readingProgress?.documentId;
   $('return-position').disabled = state?.documentId !== documentId || !state?.depth;
   if (!pdf || state?.documentId !== documentId || !state.position) return;
   findBar.clear();
@@ -203,6 +204,8 @@ async function openFile(file, resume = null) {
       ? {url: file.url, withCredentials: true, docBaseUrl: /^https?:/.test(file.url) ? file.url : undefined}
       : {data: new Uint8Array(await file.arrayBuffer())};
     if (currentLoad !== loadRevision) return;
+    // Web Crypto accepts the same buffer before PDF.js transfers it to its worker.
+    const localKey = source.data ? digestBytes(source.data).catch(() => null) : null;
     task = pdfjs.getDocument({
       ...source, worker, isEvalSupported: false,
       cMapUrl: new URL('./vendor/cmaps/', import.meta.url).href,
@@ -228,15 +231,15 @@ async function openFile(file, resume = null) {
     };
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) return;
-    const [labels, permissions, metadata, target, layer] = await Promise.all([
+    const [labels, permissions, metadata, target, layer, contentKey] = await Promise.all([
       loadedPDF.getPageLabels(), loadedPDF.getPermissions(), file.url ? loadedPDF.getMetadata().catch(() => null) : null,
       file.named ? destinationPage(loadedPDF, file.named).catch(() => null) : null,
-      embeddedReadingLayer(loadedPDF),
+      embeddedReadingLayer(loadedPDF), localKey,
     ]);
     if (currentLoad !== loadRevision) return;
     loadingTask = null;
     $('message').hidden = true;
-    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer});
+    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer, contentKey});
   } catch (error) {
     if (currentLoad === loadRevision) {
       const reason = file.url ? '请在原标签页保存文件，再点「打开 PDF」。' : error.message;
@@ -250,27 +253,28 @@ async function openFile(file, resume = null) {
   }
 }
 
-async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer}) {
+async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer, contentKey}) {
   saveProgress();
-  lastProgress = null;
   const previous = pdf;
   pdf = loadedPDF;
   embeddedLayer = layer;
   updateModeUI();
   findBar.reset(pdf, settings.locale);
-  const pdfVersion = pdf.fingerprints[1] || pdf.fingerprints[0];
-  if (!previous && !resume && file instanceof File) resume = savedTabView();
-  const resumed = resume?.pdfVersion === pdfVersion ? resume : null;
-  documentId = resumed?.documentId || crypto.randomUUID();
-  tabSource = file.sourceKey ? {sourceKey: file.sourceKey, documentId, pdfVersion} : {local:true, documentId, pdfVersion};
-  rememberSelectedFile(file, documentId);
-  ++navigationRevision;
-  $('return-position').disabled = history.state?.documentId !== documentId || !history.state?.depth;
+  const candidate = resume ?? (!previous && file instanceof File ? savedTabView() : null);
+  readingProgress = new ReadingProgress(file, candidate, Boolean(resume && file instanceof File));
+  const stored = contentKey ? readingProgress.identify(contentKey) : null;
+  rememberSelectedFile(file, readingProgress.documentId);
+  const revision = ++navigationRevision;
+  $('return-position').disabled = history.state?.documentId !== readingProgress.documentId || !history.state?.depth;
   pageLabels = labels;
   copyAllowed = permissions === null || permissions.includes(pdfjs.PermissionFlag.COPY);
-  let raw = null;
-  try { raw = localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`); } catch {}
-  let position = savedPosition(resumed?.position ?? raw, pdf.numPages, $('zoom').value);
+  const defaultZoom = $('zoom').value;
+  function openingPosition(value) {
+    const saved = savedPosition(value, loadedPDF.numPages, defaultZoom);
+    if (target) return resolvePosition(target, {zoom:saved.zoom});
+    if (file.initialPage) return {number:pageInRange(file.initialPage, loadedPDF.numPages, 1), zoom:saved.zoom};
+    return saved;
+  }
   $('welcome').hidden = true;
   $('document').hidden = false;
   $('file-name').textContent = name;
@@ -280,16 +284,41 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target,
   $('page-label').textContent = '';
   $('outline').replaceChildren();
   document.title = `${name} · 仿生 PDF 阅读`;
-  if (target) position = resolvePosition(target, {zoom: position.zoom});
-  else if (file.initialPage) position = {number: pageInRange(file.initialPage, pdf.numPages, 1), zoom: position.zoom};
-  rememberTabView(tabSource, position);
+  const position = openingPosition(stored);
+  readingProgress.save(position);
   if (file.named && !target) notify('找不到链接指定的书签，已打开 PDF。');
   const reset = resetPageView();
   const rendering = showPosition(position);
+  if (file.url) {
+    finishUrlProgress(loadedPDF, readingProgress, revision, position.zoom, rendering, openingPosition);
+  }
   await reset;
   await previous?.destroy();
   await rendering;
   if (pdf === loadedPDF) await buildOutline(loadedPDF);
+}
+
+async function finishUrlProgress(doc, progress, revision, initialZoom, rendering, openingPosition) {
+  // An HTTP range document can display its first page before the remaining
+  // bytes arrive. Hash the original download without issuing another request.
+  try {
+    const scroller = $('page-scroller');
+    const firstPaint = rendering.then(() => [scroller.scrollLeft, scroller.scrollTop]);
+    await doc.getDownloadInfo();
+    if (readingProgress !== progress) return;
+    const key = await digestBytes(await doc.getData());
+    const [left, top] = await firstPaint;
+    if (readingProgress !== progress) return;
+    const untouched = revision === navigationRevision && $('zoom').value === initialZoom
+      && scroller.scrollTop === top && scroller.scrollLeft === left;
+    const stored = progress.identify(key, untouched);
+    $('return-position').disabled = history.state?.documentId !== progress.documentId || !history.state?.depth;
+    if (stored && untouched) {
+      await showPosition(openingPosition(stored));
+    } else {
+      saveProgress();
+    }
+  } catch { /* A PDF can be closed before its download completes. */ }
 }
 
 async function buildOutline(activePDF) {
@@ -316,11 +345,13 @@ async function buildOutline(activePDF) {
         summary.textContent = item.title; wrapper.append(summary);
         target = document.createElement('div'); wrapper.append(target);
       }
-      const entry = item.dest ? document.createElement('button') : externalLink(item) || document.createElement('span');
+      const destination = () => linkDestination(item, pageNumber, activePDF.numPages);
+      const internal = destination() !== null;
+      const entry = internal ? document.createElement('button') : externalLink(item) || document.createElement('span');
       entry.textContent = item.title;
-      if (item.dest) entry.addEventListener('click', () => {
+      if (internal) entry.addEventListener('click', () => {
         closeSidebar();
-        goToDestination(activePDF, item.dest);
+        goToDestination(activePDF, destination());
       });
       target.append(entry);
       if (item.items?.length) append(item.items, target);

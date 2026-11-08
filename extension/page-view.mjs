@@ -1,6 +1,6 @@
 import {AnnotationMode, TextLayer} from './vendor/pdf.mjs';
 import {GlyphCapture, planGlyphs, repairTextContent, textGlyphBounds} from './layout.mjs';
-import {destinationView, externalLink} from './navigation.mjs';
+import {destinationView, externalLink, linkDestination} from './navigation.mjs';
 
 const scroller = document.getElementById('page-scroller');
 const frame = document.getElementById('page-frame');
@@ -124,11 +124,12 @@ async function pagePlan(page, viewport, {rule, locale, embeddedLayer}, originalP
   return entry.plan;
 }
 
-function showPageLinks(annotations, viewport, followDestination) {
+function showPageLinks(annotations, viewport, number, total, followDestination) {
   const links = document.createDocumentFragment();
   for (const annotation of annotations) {
-    const {subtype, dest, rect, contentsObj} = annotation;
+    const {subtype, rect, contentsObj} = annotation;
     if (subtype !== 'Link') continue;
+    const dest = linkDestination(annotation, number, total);
     const link = dest ? document.createElement('a') : externalLink(annotation);
     if (!link) continue;
     const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(rect);
@@ -216,9 +217,11 @@ async function drawPage(request, pdf, number, settings) {
     try { await layer.render(); }
     finally { activeTask = null; }
     if (request !== revision) return;
-    showPageLinks(annotations, base, settings.followDestination);
+    showPageLinks(annotations, base, number, pdf.numPages, settings.followDestination);
     const items = content.items.filter(item => typeof item.str === 'string');
-    displayedText = {page, layer, items, hasText: items.some(item => /\p{L}/u.test(item.str))};
+    const hasLetters = items.some(item => /\p{L}/u.test(item.str));
+    const textKind = hasLetters ? 'letters' : items.some(item => item.str.trim()) ? 'symbols' : 'empty';
+    displayedText = {page, layer, items, textKind};
   }
   displayedText.viewport = viewport;
   canvas.dataset.boldGlyphs = String(emphasis.stroked);
@@ -227,7 +230,7 @@ async function drawPage(request, pdf, number, settings) {
   frame.dataset.mode = settings.enabled ? 'bionic' : 'original';
   frame.dataset.renderState = 'ready';
   restorePosition(viewport, position);
-  return {hasText: displayedText.hasText, stroked: emphasis.stroked, items: displayedText.items};
+  return {textKind: displayedText.textKind, stroked: emphasis.stroked, items: displayedText.items};
 }
 
 export function renderPage(pdf, number, settings) {

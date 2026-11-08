@@ -351,6 +351,42 @@ try{
       await blocked.locator('#file-input').setInputFiles(pdf);
       await blocked.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '3');
       await blocked.close();
+      await chooseSample('#open-file', path.join(root,'.tmp/examples/named.pdf'));
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'named.pdf');
+      for (const mode of ['original', 'bionic']) {
+        await page.locator('#' + mode + '-mode').click();
+        await wait(1, mode);
+        const zoom = await page.locator('#zoom').inputValue();
+        for (const [action, number] of [['NextPage', 2], ['LastPage', 4], ['PrevPage', 3], ['FirstPage', 1]]) {
+          await page.getByRole('link', {name:action, exact:true}).click();
+          await wait(number, mode);
+          assert.equal(await page.locator('#zoom').inputValue(), zoom);
+        }
+        await page.locator('#return-position').click();
+        await wait(3, mode);
+        await page.goForward();
+        await wait(1, mode);
+        const nextSlide = page.locator('#outline').getByRole('button', {name:'Next slide', exact:true});
+        for (const number of [2, 3]) {
+          await nextSlide.click();
+          await wait(number, mode);
+        }
+        for (const number of [2, 1]) {
+          await page.locator('#return-position').click();
+          await wait(number, mode);
+        }
+      }
+      await chooseSample('#open-file', path.join(root,'.tmp/examples/numbers.pdf'));
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'numbers.pdf');
+      for (const mode of ['original', 'bionic']) {
+        await page.locator('#' + mode + '-mode').click();
+        await wait(1, mode);
+        assert.match(await page.locator('#reading-status').textContent(), /可搜索/);
+      }
+      await page.keyboard.press('Control+f');
+      await query.fill('12345');
+      await query.press('Enter');
+      await page.locator('#find-marks i').first().waitFor();
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');

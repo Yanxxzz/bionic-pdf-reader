@@ -1,4 +1,5 @@
 import {getPdfFilenameFromUrl} from './vendor/pdf.mjs';
+import {clearTabView, digestBytes, savedTabView} from './reading-progress.mjs';
 
 // Runs in the clicked tab. Viewers can serve a PDF without a .pdf filename.
 function isPdfDocument() {
@@ -8,7 +9,6 @@ function isPdfDocument() {
 
 const fileAccessHelp = '在扩展详情中启用「允许访问文件网址」，即可直接打开本地 PDF。也可点「打开 PDF」选择文件。';
 const sourceChanged = '原标签页已关闭或已打开其他文档。请点「打开 PDF」重新选择文件。';
-const tabViewKey = 'bionic-tab-view';
 const reselectFile = '本标签页的临时文件已不可用。请点「打开 PDF」重新选择，可以继续上次的进度。';
 let fileRegistration, registering, selectedFile;
 const firefoxBackground = location.protocol === 'moz-extension:' ? globalThis.browser?.runtime : null;
@@ -59,20 +59,6 @@ async function takeSelectedFile(documentId) {
   });
 }
 
-export function savedTabView() {
-  try { return JSON.parse(sessionStorage.getItem(tabViewKey)); } catch { return null; }
-}
-
-export function rememberTabView(source, position) {
-  try {
-    if (source) sessionStorage.setItem(tabViewKey, JSON.stringify({...source, position}));
-    else sessionStorage.removeItem(tabViewKey);
-  } catch {
-    // An old source must not reopen if the replacement view exceeds the quota.
-    try { sessionStorage.removeItem(tabViewKey); } catch {}
-  }
-}
-
 function initialDestination(hash) {
   const fragment = hash.slice(1);
   const params = new URLSearchParams(fragment.replaceAll('#', '&').replaceAll('+', '%2B'));
@@ -106,7 +92,7 @@ export async function initialPdf() {
   if (!clicked && performance.getEntriesByType('navigation')[0]?.type === 'reload') {
     resume = savedTabView();
   } else {
-    rememberTabView(null);
+    clearTabView();
   }
   if (resume?.local && resume.documentId) {
     const file = await takeSelectedFile(resume.documentId);
@@ -136,8 +122,7 @@ export async function initialPdf() {
   const hash = url.hash;
   url.hash = '';
   // Bind reload to the original document without putting private paths or access tokens in history.
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(url.href));
-  const sourceKey = btoa(String.fromCharCode(...new Uint8Array(digest)));
+  const sourceKey = await digestBytes(new TextEncoder().encode(url.href));
   if (resume && resume.sourceKey !== sourceKey) throw new Error(sourceChanged);
   // Built-in viewers that block script injection may still expose a PDF filename.
   const isPDF = await api.scripting.executeScript({target: {tabId: tab.id}, func: isPdfDocument})

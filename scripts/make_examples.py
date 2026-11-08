@@ -42,7 +42,7 @@ def create_sample(target, samples=None):
 
 if __name__=='__main__':
     from pypdf import PdfWriter
-    from pypdf.generic import Destination, Fit
+    from pypdf.generic import Destination, DictionaryObject, Fit, NameObject, RectangleObject, TextStringObject
 
     sample = create_sample(ROOT/'.tmp/examples/multilingual.pdf')
     print(sample)
@@ -50,7 +50,18 @@ if __name__=='__main__':
         writer.append(sample, pages=(0, 4))
         writer.add_named_destination_object(Destination('Methods + data', writer.pages[3].indirect_reference,
                                                         Fit.xyz(60, 460, 2)))
+        for page_index, action in enumerate(('NextPage', 'LastPage', 'FirstPage', 'PrevPage')):
+            named_action = DictionaryObject({NameObject('/S'): NameObject('/Named'), NameObject('/N'): NameObject('/' + action)})
+            writer.add_annotation(page_index, DictionaryObject({
+                NameObject('/Subtype'): NameObject('/Link'), NameObject('/Rect'): RectangleObject((48, 700, 200, 730)),
+                NameObject('/Contents'): TextStringObject(action), NameObject('/A'): named_action,
+            }))
+            if action == 'NextPage':
+                writer.add_outline_item('Next slide', None).get_object()[NameObject('/A')] = named_action
         writer.write(sample.with_name('named.pdf'))
+    numbers = canvas.Canvas(str(sample.with_name('numbers.pdf')), invariant=1)
+    numbers.drawString(48, 700, '12345 67890')
+    numbers.save()
     locked = canvas.Canvas(str(ROOT/'.tmp/examples/locked.pdf'), invariant=1, encrypt='reader-test')
     locked.drawString(48, 740, 'Password protected example')
     locked.save()
