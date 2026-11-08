@@ -1,0 +1,30 @@
+name: Native PDF readers
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/native-readers.yml
+      - tests/native_readers.py
+permissions:
+  contents: read
+jobs:
+  apple:
+    strategy:
+      fail-fast: false
+      matrix:
+        reader: [books, iphone]
+    runs-on: macos-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[dev]"
+      - run: python tests/native_readers.py ${{ matrix.reader }} test-results/native
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-${{ matrix.reader }}
+          path: test-results/native/
+          retention-days: 7
