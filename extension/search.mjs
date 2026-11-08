@@ -81,9 +81,13 @@ export function matchRanges(items, divs, {query, index}) {
     const next = cursor + item.str.length;
     if (next > start && cursor < end && divs[i]?.firstChild && item.str.length) {
       const range = document.createRange();
-      range.setStart(divs[i].firstChild, Math.max(0, start - cursor));
-      range.setEnd(divs[i].firstChild, Math.min(item.str.length, end - cursor));
-      ranges.push(range);
+      const first = Math.max(0, start - cursor), last = Math.min(item.str.length, end - cursor);
+      range.setStart(divs[i].firstChild, first);
+      range.setEnd(divs[i].firstChild, last);
+      // Tagged tab stops have physical glyph bounds. A browser's substitute font
+      // can measure their text differently at each zoom level.
+      const left = item.glyphBounds?.[first], right = item.glyphBounds?.[last - 1];
+      ranges.push({range, bounds: left && right ? [left[0], right[1]] : null});
     }
     cursor = next + (item.hasEOL ? 1 : 0);
     if (cursor >= end) break;

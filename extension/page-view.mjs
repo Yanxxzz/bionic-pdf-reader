@@ -222,12 +222,15 @@ export function markMatch(match, reveal = false) {
   if (!match || displayedText?.page.pageNumber !== match.page) return false;
   const ranges = matchRanges(displayedText.items, displayedText.layer.textDivs, match);
   const origin = frame.getBoundingClientRect();
-  for (const range of ranges) {
+  const scale = displayedText.viewport.scale;
+  for (const {range, bounds} of ranges) {
     for (const rect of range.getClientRects()) {
       if (!rect.width || !rect.height) continue;
       const mark = document.createElement('i');
-      Object.assign(mark.style, {left: `${rect.left - origin.left}px`, top: `${rect.top - origin.top}px`,
-        width: `${rect.width}px`, height: `${rect.height}px`});
+      const left = bounds ? bounds[0] * scale : rect.left - origin.left;
+      const width = bounds ? (bounds[1] - bounds[0]) * scale : rect.width;
+      Object.assign(mark.style, {left: `${left}px`, top: `${rect.top - origin.top}px`,
+        width: `${width}px`, height: `${rect.height}px`});
       findMarks.append(mark);
     }
   }

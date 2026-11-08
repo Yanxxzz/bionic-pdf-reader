@@ -81,5 +81,6 @@ test('a tagged tab retains its spelling and the PDF position of the following wo
   const result = repairTextContent(content,repairs,viewport).items;
   assert.equal(result.map(item=>item.str).join(''), '4.2\tMethods');
   assert.deepEqual(result.map(item=>item.transform[4]), [10,30,53]);
+  assert.deepEqual(result[2].glyphBounds[0], [53,108]);
   assert.deepEqual(result.map(item=>item.hasEOL), [false,false,true]);
 });

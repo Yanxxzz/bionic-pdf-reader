@@ -143,11 +143,18 @@ function tabFragments(atoms) {
   const parts = [];
   let afterTab = true;
   for (const atom of atoms) {
-    if (atom.x === undefined) { parts.at(-1).str += atom.text; continue; }
+    if (atom.x === undefined) {
+      const part = parts.at(-1);
+      part.str += atom.text;
+      part.glyphBounds.push(null); // A space inferred from the gap between two glyphs.
+      continue;
+    }
     const tab = atom.text.includes('\t');
-    if (afterTab || tab) parts.push({x: atom.x, width: 0, str: ''});
+    if (afterTab || tab) parts.push({x: atom.x, width: 0, str: '', glyphBounds: []});
     const part = parts.at(-1);
     part.str += atom.text;
+    const bounds = [atom.x, atom.x + atom.w];
+    for (let i = 0; i < atom.text.length; ++i) part.glyphBounds.push(bounds);
     part.width = Math.max(part.width, atom.x + atom.w - part.x);
     afterTab = tab;
   }
@@ -216,7 +223,7 @@ export function repairTextContent(content, repairs, viewport) {
     const parts = repair.parts ?? [repair];
     insertions.set(first, parts.map((part, index) => {
       const [x, y] = viewport.convertToPdfPoint(part.x, repair.y);
-      return {str: part.str, dir: repair.dir, width: part.width, height: repair.height,
+      return {str: part.str, dir: repair.dir, width: part.width, height: repair.height, glyphBounds: part.glyphBounds,
         transform: [repair.height, 0, 0, repair.height, x, y], fontName, hasEOL: index === parts.length - 1};
     }));
   }
