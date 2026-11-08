@@ -33,7 +33,7 @@ class GraphicsState:
     text_matrix: tuple = IDENTITY
     line_matrix: tuple = IDENTITY
     position_known: bool = True
-    font: str = ''
+    font: object = None
     font_size: float = 0
     char_spacing: float = 0
     word_spacing: float = 0
@@ -58,7 +58,8 @@ class GraphicsState:
             case b'BT':
                 self.start_line(IDENTITY)
             case b'Tf':
-                self.font, self.font_size = str(args[0]), float(args[1])
+                self.font = resources.get('/Font', {}).get(args[0])
+                self.font_size = float(args[1])
             case b'Tm':
                 self.start_line(tuple(map(float, args)))
             case b'Td' | b'TD':
@@ -194,33 +195,37 @@ def marked_content(args, index, resources):
 
 
 class _TextOperations(list):
-    """Record actual BT byte positions while pypdf tokenizes the original content."""
+    """Keep source offsets for the two operations that the exporter can edit."""
 
     def __init__(self, data, pdf):
         super().__init__()
-        self.starts = {}
+        self.offsets = {}
+        self.end = 0
         with BytesIO(data) as self._cursor:
             parser = ContentStream(None, pdf)
             parser._operations = self
             parser._parse_content_stream(self._cursor)
 
     def append(self, operation):
-        if operation[1] == b'BT':
-            self.starts[len(self)] = self._cursor.tell() - len(b'BT')
+        end = self._cursor.tell()
+        if operation[1] in (b'BT', b'Do'):
+            start = end - 2 if operation[1] == b'BT' else self.end
+            self.offsets[len(self)] = (start, end)
+        self.end = end
         super().append(operation)
 
 
 class PageTextReader:
     """Share decoded fonts across pages and keep drawing state local to each page."""
-    def __init__(self):
+    def __init__(self, pdf):
+        self.pdf = pdf
         self.fonts = {}
         self.skipped_fonts = set()
 
-    def read(self, content, resources):
+    def read(self, content, resources, state):
         data = content.get_data()
-        operations = _TextOperations(data, content.pdf)
-        state = GraphicsState()
-        saved, marked, records = [], [], []
+        operations = _TextOperations(data, self.pdf)
+        saved, marked, records, forms = [], [], [], []
         anchor = None
         for index, (args, op) in enumerate(operations):
             if op == b'q':
@@ -237,7 +242,15 @@ class PageTextReader:
             else:
                 state.update(op, args, resources)
                 if op == b'BT':
-                    anchor = (operations.starts[index], state.ctm, state.paint_scope, index)
+                    anchor = (operations.offsets[index][0], state.ctm, state.paint_scope, index)
+                elif op == b'Do':
+                    ref = resources.get('/XObject', {}).get(args[0])
+                    form = ref.get_object() if ref is not None else None
+                    if form is not None and form.get('/Subtype') == '/Form':
+                        child = copy(state)
+                        # The original Do and /Matrix place the edited stream. Lay out its text locally.
+                        child.ctm = IDENTITY
+                        forms.append((operations.offsets[index], form, child))
                 elif op == b'ET':
                     anchor = None
                 elif op in (b'gs', b'W', b'W*'):
@@ -245,10 +258,10 @@ class PageTextReader:
                 elif anchor is not None and op in (b'Tj', b'TJ', b"'", b'"'):
                     values = args[0] if op == b'TJ' else args[-1:]
                     records.extend(self._show_text(values, state, resources, marked, anchor))
-        return data, records
+        return data, records, forms
 
     def _show_text(self, values, state, resources, marked, anchor):
-        reference = resources.get('/Font', {}).get(state.font)
+        reference = state.font
         if reference is None:
             state.position_known = False
             return

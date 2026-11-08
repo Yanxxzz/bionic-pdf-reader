@@ -2,10 +2,11 @@
 
 ## 结构
 
-浏览器用 PDF.js 在原页上切换显示。桌面工具用 pypdf 和 fontTools 生成可切换或始终加粗的 PDF 副本。
+浏览器用 PDF.js 在原页上切换显示。桌面工具用 pypdf 写入阅读副本，fontTools 和 FreeType 提供嵌入字体的字形轮廓。
 
 - 浏览器的 `reader.mjs` 负责打开文档、导航和阅读设置。`page-view.mjs` 在一个页面视图内安排绘制、取消过时的请求、复用词首结果并保留可选择的文字层。`layout.mjs` 根据字形位置计算词首，处理复制用的文字。
-- 桌面端的 `pdf_text.py` 读取文字与绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 根据 PDF 编码找到嵌入字体中的轮廓，包括字码与复制文字指向不同字形的情形。`converter.py` 复用这些轮廓、写入图层并保存副本。CLI 和 GUI 共用 `make_pdf()`。
+- `navigation.mjs` 换算引用的落点和缩放。`search.mjs` 按需索引每页文字并映射命中范围，`find-bar.mjs` 处理查找控件与取消。查找高亮独立于正文，复用页面已有的文字层。
+- 桌面端的 `document.py` 识别数字签名并在选页时重建导航。`pdf_text.py` 读取文字和绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 解析嵌入字体的轮廓，`converter.py` 将轮廓写入阅读副本。命令行和图形界面共用 `make_pdf()`。
 - 修改阅读规则时，浏览器和桌面端分别改 `words.mjs` 和 `words.py`。两端的排版测试共用 `tests/layout-cases.json`，可以在同一个例子里指定字形位置和预期加粗范围。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。
 - `scripts/`：原创示例、开放字体子集、Windows 程序和发布包构建。

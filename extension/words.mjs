@@ -3,6 +3,9 @@ const commonWords = new Set('the and in on at by with about against between into
 const segmenters = new Map();
 const supportedLetter = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}]/u;
 const unsupportedCharacter = /[^\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{M}’'\d]/u;
+// Keep addresses and identifiers whole. Other punctuation separates adjacent prose.
+const inlineTokens = /(?:https?:\/\/|www\.)[^\s<>()]+|[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{M}\p{N}.-]+|[\p{L}\p{M}\p{N}_]+|\S/giu;
+const operator = /^[=+<>∑∫√±×÷≤≥∞]$/u;
 function segmenter(locale, granularity) {
   const key = `${locale}:${granularity}`;
   if (!segmenters.has(key)) segmenters.set(key, new Intl.Segmenter(locale === 'auto' ? undefined : locale, { granularity }));
@@ -25,12 +28,21 @@ export function prefixLength(word, rule = 'reference', locale = 'auto') {
 
 export function segmentFlags(text, {rule = 'reference', locale = 'auto'} = {}) {
   const flags = new Uint8Array(text.length);
-  if (/[\0=+<>∑∫√±×÷≤≥∞@_]|https?:\/\/|www\./iu.test(text) || /^[A-Za-z]{1,4}$/.test(text)) return flags;
+  if (text.includes('\0') || /^[A-Za-z]{1,4}$/.test(text)) return flags;
   for (const {segment, index} of wordSpans(text, locale)) {
     const shortUppercase = [...segment].length <= 5
       && segment === segment.toUpperCase() && segment !== segment.toLowerCase();
     if (shortUppercase) continue;
     flags.fill(1, index, index + prefixLength(segment, rule, locale));
+  }
+  if (!/[=+<>∑∫√±×÷≤≥∞@_]|https?:\/\/|www\./iu.test(text)) return flags;
+  const tokens = [...text.matchAll(inlineTokens)];
+  for (const [i, match] of tokens.entries()) {
+    const token = match[0];
+    if (/[@_]|^(?:https?:\/\/|www\.)/iu.test(token) ||
+        operator.test(tokens[i - 1]?.[0]) || operator.test(tokens[i + 1]?.[0])) {
+      flags.fill(0, match.index, match.index + token.length);
+    }
   }
   return flags;
 }

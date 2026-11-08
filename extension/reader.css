@@ -6,6 +6,16 @@ html,body{height:100%;overflow:hidden}.app-shell,.main,.document,.page-scroller{
 .textLayer :is(span,br){color:transparent;position:absolute;white-space:pre;cursor:text;transform-origin:0 0}
 .textLayer>:not(.markedContent),.textLayer .markedContent span:not(.markedContent){z-index:1;--font-height:0;font-size:calc(var(--text-scale-factor) * var(--font-height));--scale-x:1;--rotate:0deg;transform:rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv))}
 .textLayer .markedContent{display:contents}.textLayer ::selection{background:#88b8ec77}.textLayer br::selection{background:transparent}
+/* PDF text already has positioned spans. Logical tabs must not add browser tab stops. */
+.textLayer{tab-size:0}
+#page-links{position:absolute;inset:0;z-index:2;pointer-events:none;overflow:hidden}
+#page-links a{position:absolute;pointer-events:auto}
+.document-controls .text-control{font-size:12px;padding:5px}
+#find-bar{display:flex;align-items:center;gap:5px;flex-wrap:wrap;padding:6px 10px;border-bottom:1px solid var(--line);font-size:12px;background:#fafbf7}
+#find-bar input{min-width:8em;width:12em;padding:5px;border:1px solid var(--line);border-radius:5px}
+#find-bar button{padding:4px 7px}#find-status{color:var(--muted)}#find-close{margin-left:auto}
+#find-marks{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+#find-marks i{position:absolute;background:#88b8ec77}
 #help-button{font-size:12px;white-space:nowrap}#help-dialog{width:min(650px,calc(100vw - 32px));max-height:85dvh;overflow:auto;line-height:1.85;font-size:13px}#help-dialog details{border-top:1px solid var(--line);padding:12px 0}#help-dialog summary{font-weight:600;cursor:pointer}#help-dialog p{color:#52665e}#help-dialog ol{padding-left:23px}#help-dialog .dialog-actions{position:sticky;bottom:-28px;background:white;padding:12px 0}
 @media(max-width:560px){.brand>span:last-child{display:none}#help-button{font-size:11px;padding:8px}.topbar{gap:5px}}
 @media(max-width:1050px){.sidebar{width:225px;padding:25px 18px}.file-info #file-name{max-width:220px}.topbar{padding:0 20px}.mode-control button{padding:9px 16px}.welcome{padding-left:35px;padding-right:35px}.welcome-example p{font-size:19px}}

@@ -34,7 +34,7 @@ def audit(folder,version):
             assert archive.testzip() is None,name
             names=archive.namelist();check_paths(names)
             if name.endswith('.whl'):
-                assert {'bionic_pdf/layout.py','bionic_pdf/embedded_font.py'}<=set(names)
+                assert {'bionic_pdf/layout.py','bionic_pdf/embedded_font.py','bionic_pdf/document.py'}<=set(names)
                 assert version in archive.read('bionic_pdf/__init__.py').decode()
                 with zipfile.ZipFile(folder/f'bionic-pdf-web-reader-{version}.zip') as web:
                     for asset in set(web.namelist()) - {'LICENSE', '使用指南.html'}:
@@ -43,12 +43,14 @@ def audit(folder,version):
             guide=archive.read('使用指南.html').decode('utf-8')
             assert version in guide and '乌克兰语' in guide and '希腊语' in guide
             if 'windows-x64' not in name:
-                assert {'reader.mjs','page-view.mjs','layout.mjs','compat.mjs','pdf-worker.mjs'}<=set(names)
+                assert {'reader.mjs','page-view.mjs','layout.mjs','compat.mjs','pdf-worker.mjs',
+                        'navigation.mjs','search.mjs','find-bar.mjs'}<=set(names)
                 assert f'LOCAL READER · {version}' in archive.read('reader.html').decode('utf-8')
             if 'windows-x64' in name:
                 assert 'BionicPDF.exe' in names and 'LICENSE' in names
                 assert any(n.startswith('third-party-licenses/pypdf/') for n in names)
                 assert any(n.startswith('third-party-licenses/fonttools/') for n in names)
+                assert 'third-party-licenses/freetype-py/FTL.TXT' in names
             elif 'web-reader' in name:
                 assert 'manifest.json' not in names and 'layout.mjs' in names
             else:

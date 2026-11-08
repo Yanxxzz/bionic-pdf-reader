@@ -5,7 +5,10 @@ from io import BytesIO
 
 from fontTools import agl
 from fontTools.cffLib import CFFFontSet
+from fontTools.pens.pointPen import PointToSegmentPen
 from fontTools.ttLib import TTFont
+from freetype import Face, FT_Exception, FT_LOAD_NO_SCALE
+from pypdf._codecs import charset_encoding
 from pypdf.generic import DictionaryObject
 
 
@@ -27,6 +30,33 @@ def _encoding_differences(font):
 
 
 @dataclass
+class _Type1Glyph:
+    face: Face
+    index: int
+
+    def draw(self, pen):
+        try:
+            self.face.load_glyph(self.index, FT_LOAD_NO_SCALE)
+        except FT_Exception:
+            return
+        outline = self.face.glyph.outline
+        points, tags = outline.points, outline.tags
+        contours = PointToSegmentPen(pen)
+        start = 0
+        for end in outline.contours:
+            contours.beginPath()
+            for i in range(start, end + 1):
+                # PostScript outlines use on-curve points and cubic control points.
+                segment = None
+                if tags[i] & 1:
+                    previous = end if i == start else i - 1
+                    segment = 'line' if tags[previous] & 1 else 'curve'
+                contours.addPoint(points[i], segmentType=segment)
+            contours.endPath()
+            start = end + 1
+
+
+@dataclass
 class EmbeddedFont:
     glyphs: Mapping
     matrix: tuple
@@ -37,6 +67,29 @@ class EmbeddedFont:
     cid_map: bytes | None = None
 
     @classmethod
+    def _type1(cls, font, stream):
+        data = stream.get_data()
+        if not data.startswith(b'%!'):
+            return None
+        face = Face.from_bytes(data)
+        names = [face.get_glyph_name(i).decode('ascii') for i in range(face.num_glyphs)]
+        glyphs = {name: _Type1Glyph(face, i) for i, name in enumerate(names) if i}
+        encoding = font.get('/Encoding', DictionaryObject()).get_object()
+        base = encoding.get('/BaseEncoding') if isinstance(encoding, DictionaryObject) else encoding
+        encoded = {}
+        if base in charset_encoding:
+            encoded = {i: agl.UV2AGL.get(ord(char)) for i, char in enumerate(charset_encoding[base]) if len(char) == 1}
+        else:
+            for charmap in face.charmaps:
+                if charmap.platform_id == 7:  # The original Adobe character encoding.
+                    face.set_charmap(charmap)
+                    encoded = {code: names[gid] for code, gid in face.get_chars() if gid}
+                    break
+        encoded.update(_encoding_differences(font))
+        unit, box = 1 / face.units_per_EM, face.bbox
+        return cls(glyphs, (unit, 0, 0, unit, 0, 0), (box.xMin, box.yMin, box.xMax, box.yMax), encoded)
+
+    @classmethod
     def from_pdf(cls, font):
         cid = font.get('/Subtype') == '/Type0'
         descendant = font['/DescendantFonts'][0].get_object() if cid else font
@@ -44,6 +97,8 @@ class EmbeddedFont:
             return None
         descriptor = descendant['/FontDescriptor']
         try:
+            if not cid and font.get('/Subtype') == '/Type1' and '/FontFile' in descriptor:
+                return cls._type1(font, descriptor['/FontFile'])
             if '/FontFile3' in descriptor and descriptor['/FontFile3'].get('/Subtype') == '/Type1C':
                 cff = CFFFontSet()
                 cff.decompile(BytesIO(descriptor['/FontFile3'].get_data()), None)
@@ -66,7 +121,7 @@ class EmbeddedFont:
                             if table.platformID == 1 and table.platEncID == 0), {})
                 embedded.encoded_names = {**mac, **_encoding_differences(font)}
             return embedded
-        except (KeyError, ValueError, AssertionError):
+        except (KeyError, ValueError, AssertionError, FT_Exception):
             return None
 
     def glyph_name(self, code, text):

@@ -45,3 +45,15 @@ if __name__=='__main__':
     locked = canvas.Canvas(str(ROOT/'.tmp/examples/locked.pdf'), invariant=1, encrypt='reader-test')
     locked.drawString(48, 740, 'Password protected example')
     locked.save()
+
+    from reportlab.lib.pdfencrypt import StandardEncryption
+    restricted = canvas.Canvas(str(ROOT/'.tmp/examples/restricted.pdf'), pagesize=(300, 400), invariant=1,
+                               encrypt=StandardEncryption('', 'example-owner', canCopy=0))
+    restricted.setFont('DemoLatin', 14)
+    restricted.drawString(30, 300, 'Read the next chapter')
+    restricted.linkRect('Next chapter', 'chapter-two', (30, 295, 190, 318), relative=0)
+    restricted.showPage()
+    restricted.bookmarkPage('chapter-two')
+    restricted.setFont('DemoLatin', 14)
+    restricted.drawString(30, 300, 'Second chapter')
+    restricted.save()

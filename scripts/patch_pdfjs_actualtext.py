@@ -1,7 +1,6 @@
 """Apply a version-checked PDF.js 5.6.205 operator metadata patch.
 
-The extra argument carries decoded ActualText to the main-thread renderer.
-It changes neither PDF bytes nor the upstream text-extraction implementation.
+Forward decoded ActualText to the renderer and to opt-in marked-content text items.
 """
 from pathlib import Path
 
@@ -16,3 +15,9 @@ if new not in source:
     source='/* Bionic PDF Reader modification: forward decoded ActualText as an additional marked-content operator argument. */\n'+source
     path.write_text(source,encoding='utf-8',newline='\n')
 print('PDF.js ActualText operator metadata patch present')
+marker = 'type:"beginMarkedContentProps",id:Number.isInteger(e)?'
+with_text = ('type:"beginMarkedContentProps",actualText:j[1]instanceof Dict&&typeof j[1].get("ActualText")'
+             '==="string"?stringToPDFString(j[1].get("ActualText")):null,id:Number.isInteger(e)?')
+if with_text not in source:
+    assert source.count(marker) == 1, 'Unexpected PDF.js marked-content text handling'
+    path.write_text(source.replace(marker, with_text), encoding='utf-8', newline='\n')

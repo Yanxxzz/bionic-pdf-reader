@@ -180,6 +180,43 @@ try{
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'multilingual.pdf');
       await wait(1, 'bionic');
       assert.ok(await page.locator('#password-dialog').isHidden());
+      const copyBlocked = () => page.locator('#text-layer').evaluate(layer => {
+        const selection = getSelection(), range = document.createRange();
+        range.selectNodeContents(layer); selection.removeAllRanges(); selection.addRange(range);
+        return !layer.dispatchEvent(new Event('copy', {bubbles:true, cancelable:true}));
+      });
+      assert.equal(await copyBlocked(), false);
+      await chooseSample('#open-file', path.join(root,'.tmp/examples/restricted.pdf'));
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'restricted.pdf');
+      for (const mode of ['original', 'bionic']) {
+        await page.locator('#'+mode+'-mode').click();
+        await wait(1, mode);
+        assert.equal(await copyBlocked(), true);
+        await page.evaluate(() => getSelection().removeAllRanges());
+        await page.getByRole('link', {name:'Next chapter'}).click();
+        await wait(2, mode);
+        assert.match(await page.locator('#text-layer').textContent(), /Second chapter/);
+        await page.locator('#return-position').click();
+        await wait(1, mode);
+        assert.ok(await page.locator('#return-position').isDisabled());
+      }
+      await page.keyboard.press('Control+f');
+      const query = page.locator('#find-query');
+      await query.fill('chapter');
+      await query.press('Enter');
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent.startsWith('第 1 页'));
+      await query.press('Enter');
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent.startsWith('第 2 页'));
+      assert.ok(await page.locator('#find-marks i').count());
+      assert.equal(await copyBlocked(), true);
+      await query.press('Shift+Enter');
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent.startsWith('第 1 页'));
+      await query.press('Escape');
+      assert.equal(await page.locator('#find-marks i').count(), 0);
+      await chooseSample('#open-file');
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'multilingual.pdf');
+      await wait(1,'bionic');
+      assert.equal(await copyBlocked(), false);
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');

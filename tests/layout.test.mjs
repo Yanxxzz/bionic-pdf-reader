@@ -32,6 +32,18 @@ test('glyph capture keeps styled text, rotated labels and formulae unchanged',()
   assert.ok(planGlyphs(capture,{rule:'half'}).masks.flat().every(flag=>!flag),text);
  }
 });
+
+test('an implicit identity text matrix gives the same glyph positions at high DPI', () => {
+  const state = {font:{name:'regular'}, fontMatrix:[.001,0,0,.001], fontSize:12, fontSizeScale:1,
+    fontDirection:1, charSpacing:0, wordSpacing:0, textMatrix:null, textRenderingMode:0};
+  const captures = [1, 2.5].map(scale => {
+    const capture = new GlyphCapture(scale);
+    capture.mask([{unicode:'a',width:500}], state, {a:scale,b:0,c:0,d:scale,e:10*scale,f:80*scale});
+    return capture.records;
+  });
+  assert.equal(captures[0][0].eligible, true);
+  assert.deepEqual(captures[1], captures[0]);
+});
 test('ActualText repairs retain source order across columns',()=>{
  const viewport={convertToViewportPoint:(x,y)=>[x,y],convertToPdfPoint:(x,y)=>[x,y]};
  const item=(str,x,y,width=20)=>({str,width,height:15,fontName:'regular',transform:[15,0,0,15,x,y]});
@@ -55,4 +67,19 @@ test('a single ActualText tag spanning lines or columns preserves each original 
     assert.deepEqual(masks, [[false, false]]);
     assert.deepEqual(repairTextContent(content, repairs, viewport).items.map(i => i.str), ['First','Second']);
   }
+});
+
+test('a tagged tab retains its spelling and the PDF position of the following word', () => {
+  const atoms = [{text:'4.2',x:10,w:18}, {text:' ',x:30,w:3,actual:{id:0,text:'\t'}},
+    {text:'Methods',x:53,w:55}];
+  const records = atoms.map((r,index) => ({...r,index,run:0,y:90,h:15,font:'text',eligible:true}));
+  const content = {styles:{text:{}},items:records.map(r => ({
+    str:r.text,width:r.w,height:r.h,fontName:'text',transform:[15,0,0,15,r.x,r.y],
+  }))};
+  const viewport = {convertToViewportPoint:(x,y)=>[x,y],convertToPdfPoint:(x,y)=>[x,y]};
+  const {repairs} = planGlyphs({runs:[3],records},{rule:'half'});
+  const result = repairTextContent(content,repairs,viewport).items;
+  assert.equal(result.map(item=>item.str).join(''), '4.2\tMethods');
+  assert.deepEqual(result.map(item=>item.transform[4]), [10,30,53]);
+  assert.deepEqual(result.map(item=>item.hasEOL), [false,false,true]);
 });

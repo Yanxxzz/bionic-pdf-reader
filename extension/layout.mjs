@@ -5,7 +5,8 @@ const letter = /[\p{L}\p{N}]/u;
 const styledFont = /bold|italic|oblique|black|heavy|demi|symbol|dingbat/i;
 
 export class GlyphCapture {
-  constructor() {
+  constructor(displayScale = 1) {
+    this.displayScale = displayScale;
     this.enabled = true;
     this.runs = [];
     this.records = [];
@@ -29,7 +30,10 @@ export class GlyphCapture {
     const actual = this.scopes.find(scope => scope !== null) ?? null;
     const {font, fontSize, fontSizeScale} = current;
     const advance = fontSize * current.fontMatrix[0];
-    const size = fontSize * Math.hypot(current.textMatrix[2], current.textMatrix[3]);
+    const size = current.textMatrix ? fontSize * Math.hypot(current.textMatrix[2], current.textMatrix[3]) : fontSize;
+    // Store coordinates in the scale-1 viewport, independent of zoom and pixel density.
+    const a = matrix.a / this.displayScale, b = matrix.b / this.displayScale;
+    const d = matrix.d / this.displayScale, e = matrix.e / this.displayScale, f = matrix.f / this.displayScale;
     const eligible = !font.bold && !font.black && !font.italic && !font.vertical && !styledFont.test(font.name || '')
       && current.textRenderingMode === 0 && !current.patternFill && size >= 6.8 && size <= 25
       && Math.abs(matrix.b) < 1e-5 && Math.abs(matrix.c) < 1e-5;
@@ -42,12 +46,12 @@ export class GlyphCapture {
       }
       const spacing = current.charSpacing + (glyph.isSpace ? current.wordSpacing : 0);
       const width = glyph.width * advance + spacing * current.fontDirection;
-      const left = matrix.a * x / fontSizeScale + matrix.e;
-      const right = matrix.a * (x + width) / fontSizeScale + matrix.e;
+      const left = a * x / fontSizeScale + e;
+      const right = a * (x + width) / fontSizeScale + e;
       this.records.push({
         run, index, text: glyph.unicode || '', font: font.loadedName || font.name, actual, eligible,
         x: Math.min(left, right), w: Math.abs(right - left),
-        y: matrix.b * x / fontSizeScale + matrix.f, h: Math.abs(matrix.d * fontSize / fontSizeScale),
+        y: b * x / fontSizeScale + f, h: Math.abs(d * fontSize / fontSizeScale),
       });
       x += width;
     }
@@ -133,6 +137,23 @@ function logicalText(atoms){
   return {text:output,dir:direction};
 }
 
+// In tagged headings a tab can represent any distance. Keep the PDF positions
+// on both sides, while retaining the literal tab in the selectable text.
+function tabFragments(atoms) {
+  const parts = [];
+  let afterTab = true;
+  for (const atom of atoms) {
+    if (atom.x === undefined) { parts.at(-1).str += atom.text; continue; }
+    const tab = atom.text.includes('\t');
+    if (afterTab || tab) parts.push({x: atom.x, width: 0, str: ''});
+    const part = parts.at(-1);
+    part.str += atom.text;
+    part.width = Math.max(part.width, atom.x + atom.w - part.x);
+    afterTab = tab;
+  }
+  return parts;
+}
+
 export function planGlyphs(capture, settings) {
   const masks = capture.runs.map(length => Array(length).fill(false));
   const repairs = [];
@@ -161,7 +182,8 @@ export function planGlyphs(capture, settings) {
     if (segment.some(a => a.actual) && segment.every(a => a.records.every(r => r.h > 0))) {
       const logical = rtl.test(text) ? logicalText(ordered) : {text, dir: 'ltr'};
       const first = segment[0];
-      repairs.push({str: logical.text, dir: logical.dir, x: first.x, y: first.y,
+      const parts = text.includes('\t') && !rtl.test(text) ? tabFragments(ordered) : null;
+      repairs.push({str: logical.text, dir: logical.dir, parts, x: first.x, y: first.y,
         width: edge - first.x, height: first.h, fontName: first.font});
     }
   }
@@ -190,19 +212,20 @@ export function repairTextContent(content, repairs, viewport) {
 
     const first = indices[0];
     const fontName = content.styles[repair.fontName] ? repair.fontName : content.items[first].fontName;
-    const [x, y] = viewport.convertToPdfPoint(repair.x, repair.y);
     for (const index of indices) replaced.add(index);
-    insertions.set(first, {
-      str: repair.str, dir: repair.dir, width: repair.width, height: repair.height,
-      transform: [repair.height, 0, 0, repair.height, x, y], fontName, hasEOL: true,
-    });
+    const parts = repair.parts ?? [repair];
+    insertions.set(first, parts.map((part, index) => {
+      const [x, y] = viewport.convertToPdfPoint(part.x, repair.y);
+      return {str: part.str, dir: repair.dir, width: part.width, height: repair.height,
+        transform: [repair.height, 0, 0, repair.height, x, y], fontName, hasEOL: index === parts.length - 1};
+    }));
   }
   if (!insertions.size) return content;
 
   // Place repairs in the original item order, including across columns.
   const items = [];
   for (const [index, item] of content.items.entries()) {
-    if (insertions.has(index)) items.push(insertions.get(index));
+    if (insertions.has(index)) items.push(...insertions.get(index));
     else if (!replaced.has(index)) items.push(item);
   }
   return {...content, items};

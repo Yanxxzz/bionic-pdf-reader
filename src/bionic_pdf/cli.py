@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from pypdf.errors import PyPdfError
 from . import __version__, make_pdf
+from .document import SignatureLossError
+from .converter import page_summary
 from .words import LANGUAGES
 
 def main(argv=None):
@@ -14,15 +16,21 @@ def main(argv=None):
     parser.add_argument('--language', choices=['auto',*LANGUAGES], default='auto',
                         help='Set the PDF language. en uses English reference prefixes. Other choices use half words. auto keeps the source language tag.')
     parser.add_argument('--weight', type=float, default=0.026)
+    parser.add_argument('--allow-signature-loss', action='store_true',
+                        help='Export a reading copy even though its original digital signature will be invalid.')
     args = parser.parse_args(argv)
     if not 0.005 <= args.weight <= 0.08: parser.error('--weight must be between 0.005 and 0.08')
     def progress(current,total):
         if current % 50 == 0 or current == total:
             print(f'PROGRESS {current}/{total}',flush=True)
     try:
-        result = make_pdf(args.source, args.target, weight=args.weight, mode=args.mode, locale=args.language, progress=progress)
+        result = make_pdf(args.source, args.target, weight=args.weight, mode=args.mode, locale=args.language,
+                          progress=progress, allow_signature_loss=args.allow_signature_loss)
+    except SignatureLossError as error:
+        parser.exit(1, f'{error}\n可在浏览器中直接阅读原件。若接受签名失效，请添加 --allow-signature-loss 后重试。\n')
     except (OSError, ValueError, PyPdfError) as error:
         parser.exit(1, f'无法生成阅读副本：{error}\n')
     print(f'DONE {args.target}',flush=True)
+    print(page_summary(result['unemphasized_pages']))
     print(json.dumps(result, ensure_ascii=False))
     return 0

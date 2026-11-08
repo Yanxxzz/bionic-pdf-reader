@@ -1,4 +1,7 @@
 [
+{"name":"prose before and after an email","text":["R","e","a","d"," ","r","e","a","d","e","r","@","e","x","a","m","p","l","e",".","o","r","g"," ","t","o","d","a","y"],"selected":[0,1,24,25,26],"locale":"en"},
+{"name":"URL inside a sentence","text":["R","e","a","d"," ","h","t","t","p","s",":","/","/","p","d","f",".","t","e","s","t","/","a"," ","n","o","w"],"selected":[0,1,24,25],"locale":"en"},
+{"name":"inline equation beside normal words","text":["R","e","a","d"," ","g","a","i","n"," ","="," ","c","o","s","t"," ","+"," ","t","a","x"," ","t","o","d","a","y"],"selected":[0,1,23,24,25],"locale":"en"},
   {
     "name": "fragmented English",
     "locale": "en",

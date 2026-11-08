@@ -8,7 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 
 def main():
     target=ROOT/'dist/third-party-licenses';target.mkdir(parents=True,exist_ok=True)
-    for name in ('pypdf','fonttools','regex','pyinstaller','setuptools','packaging'):
+    for name in ('pypdf','fonttools','regex','freetype-py','pyinstaller','setuptools','packaging'):
         dist=metadata.distribution(name)
         for file in dist.files or []:
             if any(part.lower().startswith(('license','copying','notice')) for part in file.parts):
@@ -20,6 +20,7 @@ def main():
     for label,path in [('Python',base/'LICENSE.txt'),('Python',base/'LICENSE'),('Tcl',base/'tcl/tcl8.6/license.terms'),('Tk',base/'tcl/tk8.6/license.terms')]:
         if path.is_file():shutil.copy2(path,target/(label+'-'+path.name))
     shutil.copy2(ROOT/'THIRD_PARTY_NOTICES.md',target/'THIRD_PARTY_NOTICES.md')
+    shutil.copy2(ROOT/'licenses/freetype/FTL.TXT',target/'freetype-py/FTL.TXT')
     print('Collected',len(list(target.rglob('*'))),'license paths')
 
 if __name__=='__main__':main()

@@ -6,6 +6,7 @@ Original project code: MIT, Copyright (c) 2026 Yanxxzz.
 - **Mozilla PDF.js 5.6.205**: Apache-2.0. License: `extension/vendor/LICENSE_PDFJS`; font, CMap, ICC and WASM resources retain notices in their directories. Changes to `pdf.mjs` and `pdf.worker.min.mjs` are labeled `Bionic PDF Reader modification`. They expose positioned glyph masks and ActualText marked-content metadata, and add display-only strokes. The worker metadata patch is reproducible with `scripts/patch_pdfjs_actualtext.py`. Text-layer geometry CSS is adapted from PDF.js.
 - **pypdf 6.21.4**: BSD-3-Clause, see `licenses/pypdf/`.
 - **fontTools 4.63.0**: MIT and component notices, see `licenses/fonttools/`.
+- **FreeType / freetype-py**. Embedded PostScript Type 1 outlines use the FreeType Project (www.freetype.org) under the FreeType License. The Python binding uses the BSD 3-Clause license. Both license texts accompany the Windows package.
 - **regex**: Apache-2.0 and CNRI-Python notices, retained from its installed distribution when bundling.
 - **Noto demo fonts**: SIL Open Font License 1.1, sources under https://github.com/google/fonts/tree/main/ofl . Renamed, subset font files and the corresponding OFL texts are in `tests/assets/fonts/`. Rebuild with `scripts/prepare_demo_fonts.py`. These fonts are used for original demonstration content and tests, not to replace user fonts.
 - **PyInstaller**: used only to build the Windows application; its license includes the exception for distributing bundled applications. See the build distribution's license bundle.

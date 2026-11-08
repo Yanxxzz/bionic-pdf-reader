@@ -7,7 +7,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
-from .converter import make_pdf
+from .converter import make_pdf, page_summary
+from .document import SignatureLossError
 from .words import LANGUAGES
 
 class Maker:
@@ -38,7 +39,10 @@ class Maker:
         ttk.Combobox(language,textvariable=self.locale,state='readonly',width=24,values=list(self.language_options)).pack(side='left')
         ttk.Label(language,text='英语用参考规则，自动及其他语言加粗前半词。').pack(side='left',padx=12)
         self.progress = ttk.Progressbar(frame,maximum=100); self.progress.pack(fill='x',pady=(18,10))
-        ttk.Label(frame,textvariable=self.status,wraplength=650).pack(anchor='w')
+        self.status_line = ttk.Label(frame,textvariable=self.status,wraplength=650)
+        self.status_line.pack(anchor='w')
+        self.page_details = tk.StringVar()
+        self.page_list = ttk.Entry(frame,textvariable=self.page_details,state='readonly')
         controls = ttk.Frame(frame);controls.pack(fill='x',pady=(22,0))
         self.generate = ttk.Button(controls,text='生成阅读副本',command=self.start);self.generate.pack(side='left')
         self.open_button = ttk.Button(controls,text='打开阅读副本',command=self.open_result,state='disabled');self.open_button.pack(side='left',padx=12)
@@ -73,13 +77,19 @@ class Maker:
         locale = self.language_options[self.locale.get()]
         self.busy=True;self.generate.config(state='disabled');self.open_button.config(state='disabled');self.progress['value']=0
         self.status.set('正在准备字体和页面…')
-        def work():
+        self.page_list.pack_forget()
+        def work(allow_signature_loss):
             try:
                 report=make_pdf(source,target,mode=mode,locale=locale,
+                    allow_signature_loss=allow_signature_loss,
                     progress=lambda current,total:self.events.put(('progress',(current,total))))
                 self.events.put(('done',(report,target)))
+            except SignatureLossError:
+                self.events.put(('signature', launch))
             except Exception as error:self.events.put(('error',str(error)))
-        threading.Thread(target=work,daemon=True).start()
+        def launch(allow_signature_loss=False):
+            threading.Thread(target=work,args=(allow_signature_loss,),daemon=True).start()
+        launch()
     def poll(self):
         try:
             while True:
@@ -87,10 +97,23 @@ class Maker:
                 if kind=='progress':
                     current,total=payload
                     self.progress['value']=100*current/total;self.status.set(f'已处理 {current} / {total} 页…')
+                elif kind=='signature':
+                    if messagebox.askyesno('导出会使数字签名失效',
+                            SignatureLossError.message + '\n\n仍要生成仅供阅读的副本吗？选择“否”后可在浏览器中阅读原件。',
+                            default=messagebox.NO, parent=self.root):
+                        payload(True)
+                    else:
+                        self.busy=False;self.generate.config(state='normal')
+                        self.status.set('已取消导出。可点击「在浏览器中阅读」打开已签名的原件。')
                 elif kind=='done':
                     payload,self.result=payload
                     self.busy=False;self.generate.config(state='normal');self.open_button.config(state='normal');self.progress['value']=100
-                    self.status.set(f'完成，共 {payload["pages"]} 页。' + ('可在阅读器“图层”列表开关。' if payload['mode']=='switchable' else '打开即显示加粗，可用于没有图层开关的阅读器。'))
+                    summary = page_summary(payload['unemphasized_pages'])
+                    if len(summary) > 80:
+                        self.page_details.set(summary)
+                        self.page_list.pack(fill='x', after=self.status_line)
+                        summary = f'其中 {len(payload["unemphasized_pages"])} 页未加粗，可在下方选中并复制页码。'
+                    self.status.set(f'完成，共 {payload["pages"]} 页。' + summary)
                 elif kind=='error':
                     self.busy=False;self.generate.config(state='normal');self.status.set('未生成副本，原始文件保留。');messagebox.showerror('无法生成阅读副本',payload)
         except queue.Empty:pass
@@ -135,7 +158,8 @@ HELP_TEXT='''选择你的阅读方式
 1. 选择原始 PDF。
 2. 选择新的保存文件名。
 3. 选择阅读方式与文档语言，然后生成。
-4. 点击「打开阅读副本」。原始文件保持不变。
+4. 查看未加粗的副本页码，点击「打开阅读副本」。双页讲义的左右两半合计一页。
+已有数字签名时，工具会在导出前提示。选择「否」可在浏览器中阅读原件，选择「是」生成的副本会失去原签名的效力。
 
 语言与配置
 支持英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。

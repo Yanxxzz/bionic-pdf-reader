@@ -1,12 +1,18 @@
 import {AnnotationMode, TextLayer} from './vendor/pdf.mjs';
 import {GlyphCapture, planGlyphs, repairTextContent} from './layout.mjs';
+import {destinationView} from './navigation.mjs';
+import {matchRanges} from './search.mjs';
 
 const scroller = document.getElementById('page-scroller');
 const frame = document.getElementById('page-frame');
-const canvas = document.getElementById('pdf-canvas');
+const originalCanvas = document.getElementById('pdf-canvas');
+const bionicCanvas = document.createElement('canvas');
 const textContainer = document.getElementById('text-layer');
+const linkContainer = document.getElementById('page-links');
+const findMarks = document.getElementById('find-marks');
 const layouts = new Map();
 let displayedText = null;
+let originalView = null;
 let activeTask = null;
 let revision = 0;
 let pending = Promise.resolve();
@@ -16,7 +22,34 @@ function fitWidth() {
 }
 
 export function fitWidthChanged() {
-  return Math.abs(fitWidth() - parseFloat(canvas.style.width || '0')) > 0.5;
+  return Math.abs(fitWidth() - parseFloat(frame.style.width || '0')) > 0.5;
+}
+
+function frameOrigin() {
+  const view = scroller.getBoundingClientRect(), page = frame.getBoundingClientRect();
+  return [page.left - view.left - scroller.clientLeft, page.top - view.top - scroller.clientTop];
+}
+
+export function readingPosition(zoom) {
+  const [x, y] = frameOrigin();
+  return {zoom, left: scroller.scrollLeft, top: scroller.scrollTop,
+    point: displayedText?.viewport.convertToPdfPoint(Math.max(0, -x), Math.max(0, -y))};
+}
+
+export function resolvePosition(page, dest, origin) {
+  const inset = parseFloat(getComputedStyle(scroller).paddingTop);
+  return destinationView(page, dest, origin, fitWidth(), Math.max(1, scroller.clientHeight - 2 * inset));
+}
+
+function restorePosition(viewport, position) {
+  if (position?.point && position.top === undefined) {
+    const [x, y] = viewport.convertToViewportPoint(...position.point);
+    const [left, top] = frameOrigin();
+    const margin = parseFloat(getComputedStyle(scroller).paddingTop);
+    scroller.scrollBy(left + x - margin, top + y - margin);
+  } else {
+    scroller.scrollTo(position?.left ?? 0, position?.top ?? 0);
+  }
 }
 
 function invalidate() {
@@ -30,28 +63,35 @@ export function resetPageView() {
   pending = pending.then(() => {
     layouts.clear();
     displayedText = null;
+    originalView = null;
     textContainer.replaceChildren();
-    canvas.width = canvas.height = 0;
+    linkContainer.replaceChildren();
+    findMarks.replaceChildren();
+    originalCanvas.width = originalCanvas.height = bionicCanvas.width = bionicCanvas.height = 0;
   });
   return pending;
 }
 
-async function drawCanvas(page, target, viewport, transform) {
+async function drawCanvas(page, target, viewport, transform, reader) {
+  target.bionicReader = reader;
   activeTask = page.render({canvas: target, viewport, transform, annotationMode: AnnotationMode.ENABLE});
   try { await activeTask.promise; }
-  finally { activeTask = null; }
+  finally { target.bionicReader = null; activeTask = null; }
 }
 
-async function pagePlan(page, viewport, {rule, locale}) {
+async function pagePlan(page, viewport, {rule, locale}, originalPaint) {
   let entry = layouts.get(page);
   if (!entry) {
-    const capture = new GlyphCapture();
-    const scratch = document.createElement('canvas');
-    scratch.width = Math.ceil(viewport.width);
-    scratch.height = Math.ceil(viewport.height);
-    scratch.bionicReader = capture;
-    try { await drawCanvas(page, scratch, viewport); }
-    finally { scratch.width = scratch.height = 0; }
+    const capture = new GlyphCapture(originalPaint?.scale);
+    if (originalPaint) {
+      await drawCanvas(page, originalCanvas, originalPaint.viewport, originalPaint.transform, capture);
+    } else {
+      const scratch = document.createElement('canvas');
+      scratch.width = Math.ceil(viewport.width);
+      scratch.height = Math.ceil(viewport.height);
+      try { await drawCanvas(page, scratch, viewport, null, capture); }
+      finally { scratch.width = scratch.height = 0; }
+    }
     entry = {capture};
   }
   if (entry.rule !== rule || entry.locale !== locale) {
@@ -65,18 +105,51 @@ async function pagePlan(page, viewport, {rule, locale}) {
   return entry.plan;
 }
 
-async function drawPage(request, pdf, number, zoom, settings, resetScroll) {
+function showPageLinks(annotations, viewport, followDestination) {
+  const links = document.createDocumentFragment();
+  for (const {subtype, dest, rect, contentsObj} of annotations) {
+    if (subtype !== 'Link' || !dest) continue;
+    const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(rect);
+    const link = document.createElement('a');
+    link.href = '#page-frame';
+    link.setAttribute('aria-label', contentsObj?.str || '跳转到书内链接目标');
+    Object.assign(link.style, {
+      left: `${100 * Math.min(x1, x2) / viewport.width}%`, top: `${100 * Math.min(y1, y2) / viewport.height}%`,
+      width: `${100 * Math.abs(x2 - x1) / viewport.width}%`, height: `${100 * Math.abs(y2 - y1) / viewport.height}%`,
+    });
+    link.addEventListener('click', event => { event.preventDefault(); followDestination(dest); });
+    links.append(link);
+  }
+  linkContainer.replaceChildren(links);
+}
+
+async function drawPage(request, pdf, number, settings) {
   if (request !== revision) return;
   const page = await pdf.getPage(number);
   if (request !== revision) return;
   const base = page.getViewport({scale: 1});
-  const scale = zoom === 'fit' ? fitWidth() / base.width : Number(zoom);
+  const scale = settings.zoom === 'fit' ? fitWidth() / base.width : Number(settings.zoom);
   const viewport = page.getViewport({scale});
   const outputScale = Math.min(devicePixelRatio || 1, 2);
   const samePage = displayedText?.page === page;
-  const top = resetScroll || !samePage ? 0 : scroller.scrollTop;
-  canvas.width = Math.round(viewport.width * outputScale);
-  canvas.height = Math.round(viewport.height * outputScale);
+  const position = settings.position ?? (samePage ? {left: scroller.scrollLeft, top: scroller.scrollTop} : {});
+  const canvas = settings.enabled ? bionicCanvas : originalCanvas;
+  const previous = frame.querySelector('canvas');
+  if (previous !== canvas) {
+    previous.removeAttribute('id');
+    canvas.id = 'pdf-canvas';
+    previous.replaceWith(canvas);
+  }
+  // Keep the actual original pixels for this viewport, including embedded fonts and images.
+  if (originalView && (originalView.page !== page || originalView.scale !== scale || originalView.outputScale !== outputScale)) {
+    originalView = null;
+    originalCanvas.width = originalCanvas.height = 0;
+  }
+  const reuseOriginal = !settings.enabled && originalView !== null;
+  if (!reuseOriginal) {
+    canvas.width = Math.round(viewport.width * outputScale);
+    canvas.height = Math.round(viewport.height * outputScale);
+  }
   canvas.style.width = frame.style.width = `${viewport.width}px`;
   canvas.style.height = frame.style.height = `${viewport.height}px`;
   frame.style.setProperty('--total-scale-factor', String(scale));
@@ -84,9 +157,12 @@ async function drawPage(request, pdf, number, zoom, settings, resetScroll) {
   if (!samePage) {
     displayedText = null;
     textContainer.replaceChildren();
+    linkContainer.replaceChildren();
   }
 
-  const {masks, repairs} = await pagePlan(page, base, settings);
+  const transform = outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0];
+  const originalPaint = !settings.enabled && !layouts.has(page) ? {viewport, transform, scale: scale * outputScale} : null;
+  const {masks, repairs} = await pagePlan(page, base, settings, originalPaint);
   if (request !== revision) return;
   let run = 0;
   const emphasis = {
@@ -97,38 +173,41 @@ async function drawPage(request, pdf, number, zoom, settings, resetScroll) {
       return mask;
     },
   };
-  canvas.bionicReader = emphasis;
-  const transform = outputScale === 1 ? null : [outputScale, 0, 0, outputScale, 0, 0];
-  await drawCanvas(page, canvas, viewport, transform);
+  if (!originalPaint && !reuseOriginal) await drawCanvas(page, canvas, viewport, transform, settings.enabled ? emphasis : null);
   if (request !== revision) return;
+  if (!settings.enabled) originalView = {page, scale, outputScale};
   if (displayedText) {
     displayedText.layer.update({viewport});
   } else {
-    const content = repairTextContent(await page.getTextContent(), repairs, base);
+    const [text, annotations] = await Promise.all([page.getTextContent(), page.getAnnotations()]);
     if (request !== revision) return;
+    const content = repairTextContent(text, repairs, base);
     const layer = new TextLayer({textContentSource: content, container: textContainer, viewport});
     activeTask = layer;
     try { await layer.render(); }
     finally { activeTask = null; }
     if (request !== revision) return;
-    displayedText = {page, layer, hasText: content.items.some(item => /\p{L}/u.test(item.str || ''))};
+    showPageLinks(annotations, base, settings.followDestination);
+    const items = content.items.filter(item => typeof item.str === 'string');
+    displayedText = {page, layer, items, hasText: items.some(item => /\p{L}/u.test(item.str))};
   }
+  displayedText.viewport = viewport;
   canvas.dataset.boldGlyphs = String(emphasis.stroked);
   frame.dataset.renderedPage = String(number);
   frame.dataset.renderRevision = String(request);
   frame.dataset.mode = settings.enabled ? 'bionic' : 'original';
   frame.dataset.renderState = 'ready';
-  scroller.scrollTop = top;
-  return {hasText: displayedText.hasText, stroked: emphasis.stroked};
+  restorePosition(viewport, position);
+  return {hasText: displayedText.hasText, stroked: emphasis.stroked, items: displayedText.items};
 }
 
-export function renderPage(pdf, number, zoom, settings, resetScroll) {
+export function renderPage(pdf, number, settings) {
   const request = invalidate();
   frame.dataset.renderState = 'rendering';
   delete frame.dataset.renderedPage;
   delete frame.dataset.mode;
 
-  const result = pending.then(() => drawPage(request, pdf, number, zoom, settings, resetScroll)).catch(error => {
+  const result = pending.then(() => drawPage(request, pdf, number, settings)).catch(error => {
     if (request !== revision || error.name === 'RenderingCancelledException' || error.name === 'AbortException') return;
     frame.dataset.renderState = 'error';
     throw error;
@@ -136,4 +215,22 @@ export function renderPage(pdf, number, zoom, settings, resetScroll) {
   // The caller receives its error. The next request can still use the same canvas.
   pending = result.catch(() => {});
   return result;
+}
+
+export function markMatch(match, reveal = false) {
+  findMarks.replaceChildren();
+  if (!match || displayedText?.page.pageNumber !== match.page) return false;
+  const ranges = matchRanges(displayedText.items, displayedText.layer.textDivs, match);
+  const origin = frame.getBoundingClientRect();
+  for (const range of ranges) {
+    for (const rect of range.getClientRects()) {
+      if (!rect.width || !rect.height) continue;
+      const mark = document.createElement('i');
+      Object.assign(mark.style, {left: `${rect.left - origin.left}px`, top: `${rect.top - origin.top}px`,
+        width: `${rect.width}px`, height: `${rect.height}px`});
+      findMarks.append(mark);
+    }
+  }
+  if (reveal) findMarks.firstChild?.scrollIntoView({block: 'center', inline: 'nearest'});
+  return !!findMarks.firstChild;
 }

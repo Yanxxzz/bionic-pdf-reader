@@ -252,4 +252,52 @@ def test_pages_keep_shared_original_content_streams(converted, tmp_path):
         bold_pixels = updated[0].render().to_pil().tobytes()
         assert bold_pixels != original_pixels
         assert all(updated[i].render().to_pil().tobytes() == bold_pixels for i in (1, 2))
-        assert updated[3].render().to_pil().tobytes() == original_pixels
+        assert updated[3].render().to_pil().tobytes() == bold_pixels
+
+
+def test_repeated_nested_forms_use_caller_colour_and_report_physical_output_pages(converted, tmp_path):
+    from PIL import ImageChops
+    writer = PdfWriter()
+    first = writer.add_page(PdfReader(converted[0]).pages[0])
+    fonts = first['/Resources']['/Font']
+    font = next(name for name in fonts if fonts[name]['/Subtype'] == '/TrueType')
+
+    def form(data, resources):
+        stream = DecodedStreamObject()
+        stream.set_data(data.encode('ascii'))
+        stream.update({N('/Subtype'): N('/Form'), N('/BBox'): A(map(NumberObject, [0, 0, 250, 60])),
+                       N('/Resources'): resources})
+        return writer._add_object(stream)
+
+    body = form(f'BT {font} 18 Tf 15 16 Td (Reading together) Tj ET', DictionaryObject({N('/Font'): fonts}))
+    nested = form('/Text Do', DictionaryObject({N('/XObject'): DictionaryObject({N('/Text'): body})}))
+    transparent = DictionaryObject({N('/ca'): NumberObject(0), N('/CA'): NumberObject(0)})
+    resources = DictionaryObject({N('/XObject'): DictionaryObject({N('/Panel'): nested}),
+                                  N('/ExtGState'): DictionaryObject({N('/Hidden'): transparent})})
+    drawings = ['q 1 0 0 rg /Panel Do Q q 0 0 1 rg 1 0 0 1 300 0 cm /Pa#6Eel % placed again\n Do Q',
+                '/Hidden gs /Panel Do', 'q Q', 'q 0 1 -1 0 100 35 cm /Panel Do Q']
+    for index, drawing in enumerate(drawings):
+        page = first if index == 0 else writer.add_blank_page(595, 842)
+        page[N('/Resources')] = resources
+        stream = DecodedStreamObject()
+        stream.set_data(drawing.encode('ascii'))
+        page[N('/Contents')] = writer._add_object(stream)
+    source, target = tmp_path/'panels.pdf', tmp_path/'selected-panels.pdf'
+    writer.write(source)
+    order = [3, 4, 2, 1]
+    report = make_pdf(source, target, pages=order, mode='static')
+    assert report['unemphasized_pages'] == [1, 3]
+    with pdfium.PdfDocument(source) as before, pdfium.PdfDocument(target) as after:
+        for i, source_number in enumerate(order):
+            old, new = before[source_number - 1], after[i]
+            assert old.get_textpage().get_text_bounded() == new.get_textpage().get_text_bounded()
+            original, emphasized = [page.render(scale=1.5).to_pil().convert('RGB') for page in (old, new)]
+            delta = ImageChops.difference(original, emphasized)
+            assert bool(delta.getbbox()) == (i + 1 not in report['unemphasized_pages'])
+            if source_number == 1:
+                left, right = [delta.crop(box) for box in ((0,0,400,delta.height),(400,0,delta.width,delta.height))]
+                # Red text leaves the red channel unchanged on white, blue leaves blue unchanged.
+                assert left.getbbox() and left.getchannel('R').getbbox() is None
+                assert right.getbbox() and right.getchannel('B').getbbox() is None
+    with pytest.raises(ValueError, match='1–2'):
+        make_pdf(source, target, pages=[2, 3])

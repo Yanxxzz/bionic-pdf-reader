@@ -1,7 +1,8 @@
 import './compat.mjs';
 import * as pdfjs from './vendor/pdf.mjs';
 import { prefixLength } from './words.mjs';
-import {fitWidthChanged, renderPage, resetPageView} from './page-view.mjs';
+import {fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
+import {installFindBar} from './find-bar.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -22,7 +23,13 @@ try {
   }
 } catch {}
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
+let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
+let documentId, navigationRevision = 0, pendingPosition = null;
+const findBar = installFindBar(() => pageNumber, number => {
+  ++navigationRevision;
+  return showPosition({number, zoom: $('zoom').value});
+});
 
 function notify(text) {
   clearTimeout(messageTimer);
@@ -59,7 +66,7 @@ function setMode(enabled) {
   scheduleRender();
 }
 
-async function scheduleRender(resetScroll = false) {
+async function scheduleRender() {
   const activePDF = pdf;
   if (!activePDF) return;
   const number = pageNumber;
@@ -68,8 +75,13 @@ async function scheduleRender(resetScroll = false) {
   $('next-page').disabled = number === activePDF.numPages;
   $('reading-status').textContent = '正在显示页面…';
   try {
-    const result = await renderPage(activePDF, number, $('zoom').value, snapshot, resetScroll);
+    const result = await renderPage(activePDF, number, {
+      ...snapshot, zoom: $('zoom').value, position: pendingPosition,
+      followDestination: dest => goToDestination(activePDF, dest),
+    });
     if (!result || pdf !== activePDF) return;
+    pendingPosition = null;
+    findBar.rendered(number, result.items);
     const label = pageLabels?.[number - 1];
     $('page-label').textContent = label ? `书内页码 ${label}` : `PDF 第 ${number} 页`;
     let status = '原始模式';
@@ -93,9 +105,56 @@ function goToPage(number) {
   const next = pageInRange(number, pdf.numPages, pageNumber);
   $('page-number').value = next;
   if (next === pageNumber) return;
-  pageNumber = next;
-  scheduleRender(true);
+  findBar.clear();
+  ++navigationRevision;
+  return showPosition({number: next, zoom: $('zoom').value});
 }
+
+function showPosition(position) {
+  pageNumber = position.number;
+  $('page-number').value = pageNumber;
+  const zoom = $('zoom');
+  if (![...zoom.options].some(option => option.value === position.zoom)) {
+    zoom.querySelector('[data-custom]')?.remove();
+    const option = new Option(`${Math.round(Number(position.zoom) * 100)}%`, position.zoom);
+    option.dataset.custom = '';
+    zoom.add(option);
+  }
+  zoom.value = position.zoom;
+  pendingPosition = position;
+  return scheduleRender();
+}
+
+async function goToDestination(activePDF, dest) {
+  if (!dest || pdf !== activePDF) return;
+  findBar.clear();
+  const revision = ++navigationRevision;
+  const origin = {number: pageNumber, ...readingPosition($('zoom').value)};
+  try {
+    const target = typeof dest === 'string' ? await activePDF.getDestination(dest) : dest;
+    const ref = target?.[0];
+    const index = Number.isInteger(ref) ? ref : await activePDF.getPageIndex(ref);
+    const page = await activePDF.getPage(index + 1);
+    if (pdf !== activePDF || revision !== navigationRevision) return;
+    const position = {number: index + 1, ...resolvePosition(page, target, origin)};
+    const depth = history.state?.documentId === documentId ? history.state.depth : 0;
+    history.replaceState({documentId, depth, position: origin}, '');
+    history.pushState({documentId, depth: depth + 1, position}, '');
+    $('return-position').disabled = false;
+    await showPosition(position);
+  } catch {
+    if (pdf === activePDF && revision === navigationRevision) notify('找不到这个链接指向的页面。');
+  }
+}
+
+$('return-position').addEventListener('click', () => history.back());
+addEventListener('popstate', ({state}) => {
+  $('return-position').disabled = state?.documentId !== documentId || !state?.depth;
+  if (!pdf || state?.documentId !== documentId || !state.position) return;
+  findBar.clear();
+  ++navigationRevision;
+  showPosition(state.position);
+});
 
 async function openFile(file) {
   if (!file) return;
@@ -141,11 +200,11 @@ async function openFile(file) {
     };
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) return;
-    const labels = await loadedPDF.getPageLabels();
+    const [labels, permissions] = await Promise.all([loadedPDF.getPageLabels(), loadedPDF.getPermissions()]);
     if (currentLoad !== loadRevision) return;
     loadingTask = null;
     $('message').hidden = true;
-    await showDocument(loadedPDF, file.name, labels);
+    await showDocument(loadedPDF, file.name, labels, permissions);
   } catch (error) {
     if (currentLoad === loadRevision) {
       notify(passwordCancelled ? `已取消打开「${file.name}」。` : `无法打开 PDF「${file.name}」：${error.message}`);
@@ -158,10 +217,16 @@ async function openFile(file) {
   }
 }
 
-async function showDocument(loadedPDF, name, labels) {
+async function showDocument(loadedPDF, name, labels, permissions) {
   const previous = pdf;
   pdf = loadedPDF;
+  findBar.reset(pdf);
+  documentId = crypto.randomUUID();
+  ++navigationRevision;
+  pendingPosition = {};
+  $('return-position').disabled = true;
   pageLabels = labels;
+  copyAllowed = permissions === null || permissions.includes(pdfjs.PermissionFlag.COPY);
   pageNumber = 1;
   try { pageNumber = pageInRange(Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)), pdf.numPages, 1); } catch {}
   $('welcome').hidden = true;
@@ -175,7 +240,7 @@ async function showDocument(loadedPDF, name, labels) {
   $('outline').replaceChildren();
   document.title = `${name} · 仿生 PDF 阅读`;
   const reset = resetPageView();
-  const rendering = scheduleRender(true);
+  const rendering = scheduleRender();
   await reset;
   await previous?.destroy();
   await rendering;
@@ -208,14 +273,7 @@ async function buildOutline(activePDF) {
       }
       const button = document.createElement('button');
       button.textContent = item.title;
-      button.addEventListener('click', async () => {
-        if (!item.dest || pdf !== activePDF) return;
-        const destination = typeof item.dest === 'string' ? await activePDF.getDestination(item.dest) : item.dest;
-        if (!destination || pdf !== activePDF) return;
-        const ref = destination[0];
-        const index = typeof ref === 'number' ? ref : await activePDF.getPageIndex(ref);
-        if (pdf === activePDF) goToPage(index + 1);
-      });
+      button.addEventListener('click', () => goToDestination(activePDF, item.dest));
       target.append(button);
       if (item.items?.length) append(item.items, target);
       container.append(wrapper);
@@ -232,6 +290,20 @@ function chooseFile() {
 for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', chooseFile);
 $('cancel-password').addEventListener('click', () => $('password-dialog').close('cancel'));
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
+document.addEventListener('copy', event => {
+  if (copyAllowed || event.target.closest?.('input, textarea')) return;
+  const selection = getSelection();
+  for (let i = 0; i < selection.rangeCount; ++i) {
+    if (selection.getRangeAt(i).intersectsNode($('text-layer'))) {
+      event.preventDefault();
+      notify('这份 PDF 限制复制正文。');
+      return;
+    }
+  }
+});
+$('text-layer').addEventListener('dragstart', event => {
+  if (!copyAllowed) event.preventDefault();
+});
 $('file-input').addEventListener('change', async e => {
   const input=e.target,file=input.files[0];
   // Keep the selection while asynchronous reading and rendering finish.
@@ -261,6 +333,7 @@ document.addEventListener('keydown', e => {
   if(document.querySelector('dialog[open]'))return;
   if (e.altKey && e.code === 'KeyB') { e.preventDefault(); setMode(!settings.enabled); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); chooseFile(); return; }
+  if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
   if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName) || getSelection()?.toString()) return;
   if (e.code === 'ArrowLeft') { e.preventDefault(); goToPage(pageNumber - 1); }
   if (e.code === 'ArrowRight') { e.preventDefault(); goToPage(pageNumber + 1); }
