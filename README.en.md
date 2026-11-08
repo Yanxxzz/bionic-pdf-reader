@@ -37,7 +37,7 @@ Click the extension icon to start reading directly from an open PDF tab in Chrom
 
 The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. Auto in both readers applies the English reference rule to words made up of plain English letters, as in **t**he **read**ers. Other eligible words use the first half, counted in whole grapheme clusters. You can also choose the half-word rule in the browser. [Language support](docs/languages.md)
 
-Start with a PDF whose text you can select. Find the next or previous match across the document, or follow a citation and return to your reading position. The desktop tool exports two-up handouts and lists output pages that received no emphasis. For image-only scans, choose local OCR in the desktop tool. The switchable copy emphasizes the original ink and adds searchable text. Install Tesseract 5 and the matching language data on your computer. Vertical text and certain fonts can retain their original appearance. [PDF and font compatibility](docs/compatibility.md)
+Find the next or previous match across the document, or follow a citation and return to your reading position. The desktop tool exports two-up handouts and lists output pages that received no emphasis. For scans, install Tesseract 5 and the matching language data, then choose local OCR. The switchable copy uses the original ink color and adds searchable words where the scan has gaps in its hidden text. Vertical text and certain fonts can retain their original appearance. [PDF and font compatibility](docs/compatibility.md)
 
 ## Command line and development
 
