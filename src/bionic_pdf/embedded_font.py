@@ -6,7 +6,7 @@ from io import BytesIO
 from fontTools import agl
 from fontTools.cffLib import CFFFontSet
 from fontTools.pens.pointPen import PointToSegmentPen
-from fontTools.ttLib import TTFont
+from fontTools.ttLib import TTFont, TTLibError
 from freetype import Face, FT_Exception, FT_LOAD_NO_SCALE
 from pypdf._codecs import charset_encoding
 from pypdf.generic import DictionaryObject
@@ -63,7 +63,7 @@ class EmbeddedFont:
     bbox: tuple
     encoded_names: dict[int, str] = field(default_factory=dict)
     unicode_names: dict[int, str] = field(default_factory=dict)
-    glyph_order: list[str] | None = None
+    indexed_names: list[str] | dict[int, str] | None = None
     cid_map: bytes | None = None
 
     @classmethod
@@ -90,6 +90,40 @@ class EmbeddedFont:
         return cls(glyphs, (unit, 0, 0, unit, 0, 0), (box.xMin, box.yMin, box.xMax, box.yMax), encoded)
 
     @classmethod
+    def _cff(cls, font, stream, cid):
+        data = BytesIO(stream.get_data())
+        if stream.get('/Subtype') == '/OpenType':
+            opentype = TTFont(data)
+            if 'CFF ' not in opentype:
+                return None
+            cff = opentype['CFF '].cff
+        else:
+            cff = CFFFontSet()
+            cff.decompile(data, None)
+        if cff.major != 1 or len(cff.fontNames) != 1:
+            return None
+        top = cff[cff.fontNames[0]]
+        if any(tuple(getattr(fd, 'FontMatrix', (1, 0, 0, 1, 0, 0))) != (1, 0, 0, 1, 0, 0)
+               for fd in getattr(top, 'FDArray', ())):
+            return None  # These outlines need an additional per-FD transform.
+        embedded = cls(top.CharStrings, tuple(top.FontMatrix), tuple(top.FontBBox))
+        if cid:
+            # ISO 32000-1 §9.7.4.2. fontTools exposes a CID charset as cidNNNNN names.
+            if hasattr(top, 'ROS'):
+                names = {}
+                for gid, name in enumerate(top.charset[1:], 1):
+                    cid_number = int(name[3:])
+                    # PDFium and Poppler render the OpenType wrapper by GID for these sparse CIDs.
+                    if stream.get('/Subtype') != '/OpenType' or cid_number == gid:
+                        names[cid_number] = name
+                embedded.indexed_names = names
+            else:
+                embedded.indexed_names = top.charset
+        else:
+            embedded.encoded_names = _encoding_differences(font)
+        return embedded
+
+    @classmethod
     def from_pdf(cls, font):
         cid = font.get('/Subtype') == '/Type0'
         descendant = font['/DescendantFonts'][0].get_object() if cid else font
@@ -99,11 +133,13 @@ class EmbeddedFont:
         try:
             if not cid and font.get('/Subtype') == '/Type1' and '/FontFile' in descriptor:
                 return cls._type1(font, descriptor['/FontFile'])
-            if '/FontFile3' in descriptor and descriptor['/FontFile3'].get('/Subtype') == '/Type1C':
-                cff = CFFFontSet()
-                cff.decompile(BytesIO(descriptor['/FontFile3'].get_data()), None)
-                top = cff[cff.fontNames[0]]
-                return cls(top.CharStrings, tuple(top.FontMatrix), tuple(top.FontBBox), _encoding_differences(font))
+            if '/FontFile3' in descriptor:
+                stream = descriptor['/FontFile3']
+                if not cid and stream.get('/Subtype') == '/Type1C':
+                    return cls._cff(font, stream, False)
+                if (cid and str(font.get('/Encoding')) == '/Identity-H' and descendant.get('/Subtype') == '/CIDFontType0'
+                        and stream.get('/Subtype') in ('/CIDFontType0C', '/OpenType')):
+                    return cls._cff(font, stream, True)
             if '/FontFile2' not in descriptor:
                 return None
             tt = TTFont(BytesIO(descriptor['/FontFile2'].get_data()))
@@ -112,7 +148,7 @@ class EmbeddedFont:
             embedded = cls(tt.getGlyphSet(), (unit, 0, 0, unit, 0, 0),
                            (head.xMin, head.yMin, head.xMax, head.yMax), unicode_names=tt.getBestCmap() or {})
             if cid:
-                embedded.glyph_order = tt.getGlyphOrder()
+                embedded.indexed_names = tt.getGlyphOrder()
                 cid_map = descendant['/CIDToGIDMap'] if '/CIDToGIDMap' in descendant else None
                 if hasattr(cid_map, 'get_data'):
                     embedded.cid_map = cid_map.get_data()
@@ -121,16 +157,23 @@ class EmbeddedFont:
                             if table.platformID == 1 and table.platEncID == 0), {})
                 embedded.encoded_names = {**mac, **_encoding_differences(font)}
             return embedded
-        except (KeyError, ValueError, AssertionError, FT_Exception):
+        except (KeyError, ValueError, AssertionError, TTLibError, FT_Exception):
             return None
 
     def glyph_name(self, code, text):
-        if self.glyph_order is None:
-            name = self.encoded_names.get(code)
-        else:
-            offset = 2 * code
-            gid = code if self.cid_map is None else int.from_bytes(self.cid_map[offset:offset + 2], 'big')
-            name = self.glyph_order[gid] if gid < len(self.glyph_order) else None
+        if self.indexed_names is not None:
+            index = code
+            if self.cid_map is not None:
+                offset = 2 * code
+                if offset + 2 > len(self.cid_map):
+                    return None
+                index = int.from_bytes(self.cid_map[offset:offset + 2], 'big')
+            try:
+                name = self.indexed_names[index]
+            except (KeyError, IndexError):
+                return None
+            return name if name != '.notdef' and name in self.glyphs else None
+        name = self.encoded_names.get(code)
         if not name and len(text) == 1:
             name = self.unicode_names.get(ord(text)) or agl.UV2AGL.get(ord(text))
         elif not name and text in ('fi', 'fl', 'ff', 'ffi', 'ffl'):

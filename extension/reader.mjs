@@ -1,10 +1,10 @@
 import './compat.mjs';
 import * as pdfjs from './vendor/pdf.mjs';
 import { prefixLength } from './words.mjs';
-import {fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
+import {embeddedReadingLayer, fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
 import {installFindBar} from './find-bar.mjs';
 import {externalLink, pageInRange, savedPosition} from './navigation.mjs';
-import {initialPdf, rememberTabView} from './tab-source.mjs';
+import {initialPdf, prepareFileHandoff, rememberSelectedFile, rememberTabView, savedTabView} from './tab-source.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -24,7 +24,7 @@ try {
     settings.strength = slider.valueAsNumber / 100;
   }
 } catch {}
-let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
+let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null, embeddedLayer = null;
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
 let documentId, tabSource, navigationRevision = 0, pendingPosition = null;
@@ -51,8 +51,11 @@ function updateModeUI() {
   $('rule').value = settings.rule;
   $('language').value = settings.locale;
   $('strength').value = Math.round(settings.strength * 100);
-  $('strength-value').textContent = `${Math.round(settings.strength * 100)}%`;
-  $('rule-note').textContent = settings.rule === 'half' || !['auto', 'en'].includes(settings.locale)
+  $('rule').disabled = $('strength').disabled = Boolean(embeddedLayer);
+  $('sample-word').parentElement.hidden = Boolean(embeddedLayer);
+  $('strength-value').textContent = embeddedLayer ? '随副本设定' : `${Math.round(settings.strength * 100)}%`;
+  $('rule-note').textContent = embeddedLayer ? '这份副本已设定词首和强度。原始和仿生按钮切换内置图层，文档语言仍用于查找。'
+    : settings.rule === 'half' || !['auto', 'en'].includes(settings.locale)
     ? '强调每个单词前半部分的字母，保留原来的字符间距。'
     : '英文使用参考项目规则，其他语言按词语前半部分加粗。';
   const sample = $('sample-word').textContent;
@@ -79,7 +82,7 @@ async function scheduleRender() {
   $('reading-status').textContent = '正在显示页面…';
   try {
     const result = await renderPage(activePDF, number, {
-      ...snapshot, zoom: $('zoom').value, position: pendingPosition,
+      ...snapshot, zoom: $('zoom').value, position: pendingPosition, embeddedLayer,
       followDestination: dest => goToDestination(activePDF, dest),
     });
     if (!result || pdf !== activePDF) return;
@@ -88,7 +91,8 @@ async function scheduleRender() {
     const label = pageLabels?.[number - 1];
     $('page-label').textContent = label ? `书内页码 ${label}` : `PDF 第 ${number} 页`;
     let status = '原始模式';
-    if (!result.hasText) status = '图片页或无可识别文字，保留原页';
+    if (!result.hasText) status = '本页没有可识别的正文。扫描页可在桌面工具中勾选「本地 OCR」。';
+    else if (embeddedLayer) status = snapshot.enabled ? '仿生模式 · 副本内置图层已开启' : '原始模式 · 副本内置图层已关闭';
     else if (snapshot.enabled) status = result.stroked ? '仿生模式 · 词首加粗' : '此页没有可加粗文字，保留原页';
     $('reading-status').textContent = status;
     saveProgress();
@@ -177,13 +181,14 @@ addEventListener('popstate', ({state}) => {
   showPosition(state.position);
 });
 
-async function openFile(file) {
+async function openFile(file, resume = null) {
   if (!file) return;
   if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
     notify('请选择 PDF 文件。');
     return;
   }
   const currentLoad = ++loadRevision;
+  if (file instanceof File) prepareFileHandoff();
   const superseded = loadingTask;
   loadingTask = null;
   const dialog = $('password-dialog');
@@ -223,14 +228,15 @@ async function openFile(file) {
     };
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) return;
-    const [labels, permissions, metadata, target] = await Promise.all([
+    const [labels, permissions, metadata, target, layer] = await Promise.all([
       loadedPDF.getPageLabels(), loadedPDF.getPermissions(), file.url ? loadedPDF.getMetadata().catch(() => null) : null,
       file.named ? destinationPage(loadedPDF, file.named).catch(() => null) : null,
+      embeddedReadingLayer(loadedPDF),
     ]);
     if (currentLoad !== loadRevision) return;
     loadingTask = null;
     $('message').hidden = true;
-    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target});
+    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer});
   } catch (error) {
     if (currentLoad === loadRevision) {
       const reason = file.url ? '请在原标签页保存文件，再点「打开 PDF」。' : error.message;
@@ -244,17 +250,20 @@ async function openFile(file) {
   }
 }
 
-async function showDocument(loadedPDF, {name, labels, permissions, file, target}) {
+async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer}) {
   saveProgress();
   lastProgress = null;
   const previous = pdf;
   pdf = loadedPDF;
+  embeddedLayer = layer;
+  updateModeUI();
   findBar.reset(pdf, settings.locale);
   const pdfVersion = pdf.fingerprints[1] || pdf.fingerprints[0];
-  const resumed = file.resume?.pdfVersion === pdfVersion ? file.resume : null;
+  if (!previous && !resume && file instanceof File) resume = savedTabView();
+  const resumed = resume?.pdfVersion === pdfVersion ? resume : null;
   documentId = resumed?.documentId || crypto.randomUUID();
-  tabSource = file.sourceKey ? {sourceKey: file.sourceKey, documentId, pdfVersion} : null;
-  if (!tabSource) rememberTabView(null);
+  tabSource = file.sourceKey ? {sourceKey: file.sourceKey, documentId, pdfVersion} : {local:true, documentId, pdfVersion};
+  rememberSelectedFile(file, documentId);
   ++navigationRevision;
   $('return-position').disabled = history.state?.documentId !== documentId || !history.state?.depth;
   pageLabels = labels;
@@ -273,6 +282,7 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target}
   document.title = `${name} · 仿生 PDF 阅读`;
   if (target) position = resolvePosition(target, {zoom: position.zoom});
   else if (file.initialPage) position = {number: pageInRange(file.initialPage, pdf.numPages, 1), zoom: position.zoom};
+  rememberTabView(tabSource, position);
   if (file.named && !target) notify('找不到链接指定的书签，已打开 PDF。');
   const reset = resetPageView();
   const rendering = showPosition(position);
@@ -410,8 +420,8 @@ addEventListener('resize', () => {
 updateModeUI();
 document.documentElement.dataset.readerReady='true';
 const initialLoad = loadRevision;
-initialPdf().then(file => {
-  if (file && initialLoad === loadRevision) openFile(file);
+initialPdf().then(initial => {
+  if (initial && initialLoad === loadRevision) openFile(initial.file, initial.resume);
 }).catch(error => {
   if (initialLoad === loadRevision) notify(error.message);
 });

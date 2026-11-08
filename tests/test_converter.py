@@ -111,6 +111,31 @@ def test_invalid_page_selection_preserves_output(converted, tmp_path, pages):
     assert target.read_bytes() == b'previous output'
 
 
+def test_page_range_in_cli_and_python_preserves_order_and_labels(converted, tmp_path):
+    from bionic_pdf.cli import main
+
+    source = converted[0]
+    by_cli, by_api = tmp_path/'cli.pdf', tmp_path/'api.pdf'
+    assert main([str(source), str(by_cli), '--pages', '3-2， 1, 1–2']) == 0
+    make_pdf(source, by_api, pages='3-2， 1, 1–2')
+    original = PdfReader(source)
+    expected = [original.pages[i].extract_text() for i in (2, 1, 0, 0, 1)]
+    for path in (by_cli, by_api):
+        assert [page.extract_text() for page in PdfReader(path).pages] == expected
+
+
+@pytest.mark.parametrize('spec', ['0,1', '2,,1', '1.5', '2-', '1-999999999', '  '])
+def test_invalid_cli_page_range_preserves_output(converted, tmp_path, spec, capsys):
+    from bionic_pdf.cli import main
+
+    target = tmp_path/'existing.pdf'
+    target.write_bytes(b'previous output')
+    with pytest.raises(SystemExit) as error:
+        main([str(converted[0]), str(target), '--pages', spec])
+    assert error.value.code == 2 and '页码' in capsys.readouterr().err
+    assert target.read_bytes() == b'previous output'
+
+
 def test_selected_pages_keep_requested_order_and_repetitions(converted, tmp_path):
     target = tmp_path/'selected.pdf'
     make_pdf(converted[0], target, pages=iter([2, 1, 2]))

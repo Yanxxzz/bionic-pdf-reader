@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 from pypdf.errors import PyPdfError
 from . import __version__, make_pdf
-from .document import SignatureLossError
+from .document import PageSelectionError, SignatureLossError
 from .converter import DEFAULT_WEIGHT, InvalidWeightError, page_summary
 from .words import LANGUAGES
 
@@ -16,6 +16,10 @@ def main(argv=None):
     parser.add_argument('--language', choices=['auto',*LANGUAGES], default='auto',
                         help='Auto and en use reference prefixes for plain English letters. Other languages use half words. Auto keeps the source language tag.')
     parser.add_argument('--weight', type=float, default=DEFAULT_WEIGHT)
+    parser.add_argument('--pages', metavar='RANGES',
+                        help='Physical pages in output order, e.g. 1-3,7,5-4. Defaults to the whole document.')
+    parser.add_argument('--ocr', action='store_true',
+                        help='Recognize scanned pages with local Tesseract and emphasize words on the original image.')
     parser.add_argument('--allow-signature-loss', action='store_true',
                         help='Export a reading copy even though its original digital signature will be invalid.')
     args = parser.parse_args(argv)
@@ -23,9 +27,9 @@ def main(argv=None):
         if current % 50 == 0 or current == total:
             print(f'PROGRESS {current}/{total}',flush=True)
     try:
-        result = make_pdf(args.source, args.target, weight=args.weight, mode=args.mode, locale=args.language,
-                          progress=progress, allow_signature_loss=args.allow_signature_loss)
-    except InvalidWeightError as error:
+        result = make_pdf(args.source, args.target, pages=args.pages, weight=args.weight, mode=args.mode, locale=args.language,
+                          progress=progress, allow_signature_loss=args.allow_signature_loss, ocr=args.ocr)
+    except (InvalidWeightError, PageSelectionError) as error:
         parser.error(str(error))
     except SignatureLossError as error:
         parser.exit(1, f'{error}\n可在浏览器中直接阅读原件。若接受签名失效，请添加 --allow-signature-loss 后重试。\n')

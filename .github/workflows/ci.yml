@@ -41,6 +41,8 @@ jobs:
       - run: npm run fixtures:shaped
       - run: python scripts/prepare_shaped_outputs.py
       - run: python -m pytest tests/test_shaped_pdf.py -q
+      - run: sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
+      - run: python -m pytest tests/test_scan.py -q
       - run: npm test
       - run: npm run test:browser
       - run: npm run test:extension

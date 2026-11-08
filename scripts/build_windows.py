@@ -9,7 +9,8 @@ stamp.parent.mkdir(exist_ok=True)
 stamp.write_bytes(source_digest(ROOT/'src/bionic_pdf'))
 command=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--windowed',
          '--name','BionicPDF','--paths',str(ROOT/'src'),
-         '--collect-all','regex','--collect-binaries','freetype','--add-data',str(ROOT/'extension')+':bionic_pdf/reader',
+         '--collect-all','regex','--collect-binaries','freetype','--collect-data','pypdfium2','--collect-all','pypdfium2_raw',
+         '--add-data',str(ROOT/'extension')+':bionic_pdf/reader',
          '--add-data',str(stamp)+':bionic_pdf',
          '--distpath',str(ROOT/'dist'),'--workpath',str(ROOT/'build/windows'),
          '--specpath',str(ROOT/'build'),str(ROOT/'scripts/app_entry.py')]

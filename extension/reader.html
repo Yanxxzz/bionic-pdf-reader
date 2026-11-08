@@ -9,7 +9,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="reader.html" aria-label="仿生 PDF 阅读首页"><span class="brand-mark"><b>B</b>r</span><span>仿生 PDF 阅读<small>LOCAL READER · 0.4.3</small></span></a>
+    <a class="brand" href="reader.html" aria-label="仿生 PDF 阅读首页"><span class="brand-mark"><b>B</b>r</span><span>仿生 PDF 阅读<small>LOCAL READER · 0.5.0</small></span></a>
     <div class="mode-control" role="group" aria-label="阅读模式">
       <button id="original-mode" class="selected" aria-pressed="true">原始</button>
       <button id="bionic-mode" aria-pressed="false">仿生<span class="shortcut">Alt B</span></button>
@@ -83,7 +83,7 @@
     <details><summary>在 WPS / Acrobat / Foxit / PDF-XChange 原页开关</summary><ol><li>在 Windows 制作工具中选择原始 PDF，选择「可切换版」。</li><li>保存成不同文件名，再用你的 PDF 阅读器打开副本。</li><li>在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。图层默认关闭。</li></ol><p>WPS：左侧「图层」图标 → 眼睛开关。PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。</p><p>Acrobat：菜单 → 视图 → 显示/隐藏 → 侧面板 → 图层。Foxit：在左侧导航栏空白处右键 → 图层，再勾选该图层。不同版本菜单名称可能不同。找不到图层入口时可改用普通仿生版。</p></details>
     <details><summary>Preview / SumatraPDF / 手机等阅读器</summary><p>在 Windows 工具选择「普通仿生版」，生成后直接打开。该副本的加粗始终显示；切回原始效果请打开原文件。</p></details>
     <details><summary>支持哪些语言？如何配置？</summary><p>英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。</p><p>浏览器阅读混合语言文档时可选「词语前半部分」。在 Windows 工具制作副本时，自动和英语对纯英文字母词应用参考规则。选择其他语言时，按完整字素加粗前半词。手动选择还会设置副本的文档语言，自动模式沿用原文件的语言标记。重音和连字按完整字素或原始字形处理。</p></details>
-    <details><summary>双页讲义、扫描页或乱码怎么办？</summary><p>双页讲义可以用 Windows 工具导出。完成后可查看整页未加粗的副本页码，左右两半合计一页。扫描图片需要先做 OCR 才能搜索正文或加粗。未嵌入字体、特殊编码及竖排文字可能保持原样。若出现乱码，先切换「原始」对照源 PDF。</p></details>
+    <details><summary>双页讲义、扫描页或乱码怎么办？</summary><p>双页讲义左右两半合计一页。制作工具的「导出页码」可填 1-3,7,5-4，留空导出整本。完成后可查看未加粗的副本页码。</p><p>纯图片扫描件可在制作工具中勾选「扫描页本地 OCR」，选择识别语言并生成「可切换版」。先装好本机 Tesseract 5 和相应语言包。打开副本后，在此阅读页用「原始／仿生」开关扫描图上的笔画，并可查找识别出的文字。未嵌入字体、特殊编码及竖排文字可能保持原样。若出现乱码，先对照源 PDF。</p></details>
     <form method="dialog" class="dialog-actions"><button value="close" class="primary">知道了，开始阅读</button></form>
   </dialog>
 </body>

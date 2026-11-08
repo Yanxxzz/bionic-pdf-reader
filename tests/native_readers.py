@@ -1,4 +1,4 @@
-"""Verify a static PDF with the macOS Books library or the iPhone simulator's Safari."""
+"""Read a sample in macOS Books, iOS Safari, or Android MuPDF mini."""
 import argparse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -104,7 +104,7 @@ def books(folder):
 
 
 def text_crop(image):
-    """Find the colored bars in the Safari screenshot, then return the enclosed text area."""
+    """Find the two colored bars in a reader screenshot and return the enclosed text area."""
     red, green, blue = image.convert("RGB").split()
     mask = ImageChops.multiply(green.point(lambda x: 255 if x > 140 else 0),
                                red.point(lambda x: 255 if x < 85 else 0))
@@ -122,6 +122,15 @@ def text_crop(image):
     if sum(crop.histogram()[:110]) < 100:
         return None
     return crop
+
+
+def compare_pages(shots):
+    original, static, off = (shots[name] for name in ("original", "static", "off"))
+    assert original.size == static.size == off.size
+    assert original.tobytes() == off.tobytes()
+    dark_pixels = [sum(img.histogram()[:110]) for img in (original, static)]
+    assert dark_pixels[1] > dark_pixels[0]
+    return {"originalAndOffMatch": True, "originalAndStaticInkPixels": dark_pixels}
 
 
 def iphone(folder):
@@ -166,22 +175,45 @@ def iphone(folder):
     finally:
         server.shutdown()
         server.server_close()
-    original, static, off = (shots[name] for name in ("original", "static", "off"))
-    assert original.size == static.size == off.size
-    assert original.tobytes() == off.tobytes()
-    dark_pixels = [sum(img.histogram()[:110]) for img in (original, static)]
-    assert dark_pixels[1] > dark_pixels[0]
-    return {"app": "Safari PDF viewer", "simulator": device["name"], "iOS": version,
-            "originalAndOffMatch": True, "originalAndStaticInkPixels": dark_pixels}
+    return {"app": "Safari PDF viewer", "simulator": device["name"], "iOS": version, **compare_pages(shots)}
+
+
+def android(folder):
+    package = "com.artifex.mupdf.mini.app"
+    directory = f"/sdcard/Android/data/{package}/files"
+    command("adb", "shell", "mkdir", "-p", directory)
+    shots = {}
+    for mode in ("original", "static", "off"):
+        dest = f"{directory}/{mode}.pdf"
+        command("adb", "push", str(folder / mode / "sample.pdf"), dest)
+        command("adb", "shell", "am", "force-stop", package)
+        launch = command("adb", "shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
+                         "-t", "application/pdf", "-d", "file://" + dest, "-p", package)
+        assert package in launch and "Error" not in launch, launch
+        path = folder / f"android-{mode}.png"
+        for _ in range(25):
+            time.sleep(1)
+            path.write_bytes(subprocess.check_output(["adb", "exec-out", "screencap", "-p"]))
+            with Image.open(path) as img:
+                crop = text_crop(img)
+            if crop is not None:
+                shots[mode] = crop
+                break
+        assert mode in shots, f"MuPDF mini did not display the PDF text in {mode}"
+    info = command("adb", "shell", "dumpsys", "package", package)
+    version = next(line.partition("=")[2] for line in info.splitlines() if "versionName=" in line)
+    return {"app": "MuPDF mini", "version": version, "emulatorAndroid": command("adb", "shell", "getprop",
+            "ro.build.version.release"), **compare_pages(shots)}
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("reader", choices=("books", "iphone"))
+    readers = {"books": books, "iphone": iphone, "android": android}
+    parser.add_argument("reader", choices=readers)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     folder = args.output.resolve()
     make_sample(folder)
-    result = (books if args.reader == "books" else iphone)(folder)
+    result = readers[args.reader](folder)
     (folder / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     print(result)

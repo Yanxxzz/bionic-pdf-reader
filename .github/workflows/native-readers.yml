@@ -30,3 +30,31 @@ jobs:
           name: native-${{ matrix.reader }}
           path: test-results/native/
           retention-days: 7
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[dev]"
+      - name: Prepare the disposable emulator and the F-Droid build of MuPDF mini
+        run: |
+          sudo setfacl -m u:"$USER":rw /dev/kvm
+          curl --fail --location --retry 3 https://f-droid.org/repo/com.artifex.mupdf.mini.app_270.apk -o "$RUNNER_TEMP/mupdf.apk"
+          echo "1a8a97cc9c8e8647b60d8c0f22eb3693d2d494a8982cc881e6fbef5b45830d6a  $RUNNER_TEMP/mupdf.apk" | sha256sum --check
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 30
+          arch: x86
+          target: default
+          script: |
+            adb install -g "$RUNNER_TEMP/mupdf.apk"
+            python tests/native_readers.py android test-results/native
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-android
+          path: test-results/native/
+          retention-days: 7

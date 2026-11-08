@@ -1,12 +1,9 @@
-"""Create a WPS-switchable reading copy with one optional vector stroke layer.
-
-Original PDF text remains the only text. Embedded glyph outlines are reused as
-vector Form XObjects; no duplicate text or rasterized pages are introduced.
-"""
+"""Create a reading copy using original glyphs or optional local OCR on scans."""
 from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from contextlib import nullcontext
 from numbers import Real
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -17,7 +14,8 @@ from pypdf.generic import (ArrayObject as A, DictionaryObject as D, NameObject a
     FloatObject as F, TextStringObject as T,
     DecodedStreamObject)
 from .embedded_font import EmbeddedFont
-from .document import SignatureLossError, copy_pages, has_signature
+from .document import SignatureLossError, bind_resource, copy_pages, has_signature, page_indices
+from .tagged import FormTags
 from .pdf_text import GraphicsState, PageTextReader, matrix_multiply
 from .layout import select_glyphs
 from .words import LANGUAGES
@@ -62,6 +60,7 @@ class GlyphLibrary:
             return None
         name = embedded.glyph_name(code, text)
         if name is None:
+            self.skipped_fonts.add(str(font.get('/BaseFont')))
             return None
         key = (font_key, name)
         if key not in self.forms:
@@ -83,18 +82,6 @@ class GlyphLibrary:
         return name, reference, embedded.matrix
 
 
-def _bind_resource(resources, group, preferred, reference):
-    """Bind the object without displacing a resource used by the original page."""
-    entries = resources.setdefault(N(group), D()).get_object()
-    name = preferred
-    suffix = 1
-    while name in entries and entries.raw_get(name) != reference:
-        name = N(f'{preferred}_{suffix}')
-        suffix += 1
-    entries[name] = reference
-    return name
-
-
 def _edited_stream(data, edits):
     parts = []
     cursor = 0
@@ -108,27 +95,27 @@ def _edited_stream(data, edits):
 
 
 class OverlayBuilder:
-    def __init__(self, writer, layer, weight, rule):
+    def __init__(self, writer, layer, weight, rule, form_tags):
         self.writer, self.layer = writer, layer
         self.rule = rule
         self.text_reader = PageTextReader(writer)
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
         self.has_text = False
-        self.skipped_tagged_form = False
+        self.form_tags = form_tags
 
     def build_page(self, page):
+        before = self.count
         content = page.get_contents()
         if content is not None:
-            result = self._build_stream(content, page.get('/Resources', D()), GraphicsState(), set())
+            result = self._build_stream(content, page.get('/Resources', D()), GraphicsState(), set(), page.indirect_reference)
             if result:
                 stream, resources = result
                 page[N('/Contents')] = self.writer._add_object(stream)
                 page[N('/Resources')] = resources
-                return True
-        return False
+        return self.count > before
 
-    def _build_stream(self, content, original_resources, state, ancestors):
+    def _build_stream(self, content, original_resources, state, ancestors, page):
         # Each invocation can inherit a different colour, font or opacity. Edit only its copy.
         resources = D(original_resources.get_object())
         for group in ('/XObject', '/Properties'):
@@ -138,10 +125,6 @@ class OverlayBuilder:
         self.has_text |= bool(records)
         edits = []
         for (start, end), form, child in forms:
-            # Tagged content can point to this exact Form through /Stm or /Obj.
-            if '/StructParents' in form or '/StructParent' in form:
-                self.skipped_tagged_form = True
-                continue
             key = id(form)
             if key in ancestors:
                 continue
@@ -151,21 +134,25 @@ class OverlayBuilder:
                 parent_cs = resources.get('/ColorSpace', {}).get(child.fill_cs)
                 if child_resources.get('/ColorSpace', {}).get(child.fill_cs) != parent_cs:
                     child.fill_cs = '/Pattern'
-            result = self._build_stream(form, child_resources, child, ancestors | {key})
-            if result is None:
+            result = self._build_stream(form, child_resources, child, ancestors | {key}, page)
+            edited = None
+            if result is not None:
+                edited, local_resources = result
+                for field, value in form.items():
+                    if field not in ('/Length', '/DL', '/Filter', '/DecodeParms', '/F', '/FFilter', '/FDecodeParms',
+                                     '/Resources', '/StructParents', '/StructParent'):
+                        edited[field] = value
+                edited[N('/Resources')] = local_resources
+            reference = self.form_tags.paint(page, form, edited)
+            if reference is None:
                 continue
-            edited, local_resources = result
-            for field, value in form.items():
-                if field not in ('/Length', '/DL', '/Filter', '/DecodeParms', '/F', '/FFilter', '/FDecodeParms', '/Resources'):
-                    edited[field] = value
-            edited[N('/Resources')] = local_resources
-            name = _bind_resource(resources, '/XObject', N(f'/BRForm{start}'), self.writer._add_object(edited))
+            name = bind_resource(resources, '/XObject', N(f'/BRForm{start}'), reference)
             edits.append((start, end, f'\n{name} Do'.encode('ascii')))
         strokes = self._strokes(records, resources)
         if strokes:
             begin, end = '\n', '\n'
             if self.layer is not None:
-                tag = _bind_resource(resources, '/Properties', N('/BRBionic'), self.layer)
+                tag = bind_resource(resources, '/Properties', N('/BRBionic'), self.layer)
                 begin, end = f'\n/OC {tag} BDC\n', '\nEMC\n'
             for offset, commands in strokes.items():
                 edits.append((offset, offset, (begin + '\n'.join(commands) + end).encode('ascii')))
@@ -182,7 +169,7 @@ class OverlayBuilder:
                 continue
             preferred, reference, font_matrix = glyph
             if preferred not in glyph_names:
-                glyph_names[preferred] = _bind_resource(resources, '/XObject', preferred, reference)
+                glyph_names[preferred] = bind_resource(resources, '/XObject', preferred, reference)
             name = glyph_names[preferred]
             size = record['size']
             scale = (size * record['tz'], 0, 0, size, 0, 0)
@@ -212,9 +199,11 @@ def _add_reading_layer(writer):
 
 
 def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='switchable', locale='auto', *,
-             progress: Callable[[int, int], None] | None = None, allow_signature_loss=False):
+             progress: Callable[[int, int], None] | None = None, allow_signature_loss=False, ocr=False):
     """Create a reading copy with a stroke weight from 0.005 through 0.08.
 
+    Pages can be a one-based sequence or a range such as '1-3,7,5-4'.
+    Enable ocr to recognize image-only pages with local Tesseract.
     If supplied, progress receives (current, total) after each processed page.
     """
     started = time.monotonic()
@@ -238,7 +227,10 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
         if any(group.get_object().get('/Name') == LAYER_NAME for group in groups):
             raise ValueError('这份 PDF 已包含仿生开关，请直接在 WPS 中切换，或选择原始 PDF。')
 
-    writer = copy_pages(reader, pages)
+    projected_forms = set()
+    indices = page_indices(pages, len(reader.pages))
+    writer = copy_pages(reader, indices, projected_forms=projected_forms)
+    form_tags = FormTags(writer, projected_forms)
     writer.pdf_header = max(reader.pdf_header, '%PDF-1.6')
     if locale != 'auto':
         writer.root_object[N('/Lang')] = T(locale)
@@ -253,23 +245,37 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
         suffix = ' - Bionic Reading'
         subject = 'Original PDF text plus always-visible vector word-prefix emphasis.'
     rule = 'reference' if locale in ('auto', 'en') else 'half'
-    builder = OverlayBuilder(writer, layer, weight, rule)
+    builder = OverlayBuilder(writer, layer, weight, rule, form_tags)
     total = len(writer.pages)
     unemphasized = []
-    for number, page in enumerate(writer.pages, 1):
-        if not builder.build_page(page):
-            unemphasized.append(number)
-        if progress is not None:
-            progress(number, total)
+    ocr_pages = []
+    scans = nullcontext(None)
+    if ocr:
+        from .scan import open_scans
+        language = reader.root_object.get('/Lang', 'en') if locale == 'auto' else locale
+        scans = open_scans(reader.stream, str(language), rule, weight)
+    with scans as scan:
+        for number, page in enumerate(writer.pages, 1):
+            if not builder.build_page(page):
+                count = 0
+                if scan is not None:
+                    count = scan(indices[number - 1], writer, page, layer)
+                if count:
+                    builder.count += count
+                    ocr_pages.append(number)
+                else:
+                    unemphasized.append(number)
+            if progress is not None:
+                progress(number, total)
+    form_tags.finish()
     if builder.count == 0:
-        if builder.skipped_tagged_form:
-            reason = '为保留无障碍标签，已跳过具有独立标签的表单对象。其余内容没有可加粗的词首。'
-        elif builder.glyphs.skipped_fonts or builder.text_reader.skipped_fonts:
-            reason = '已读取文字，但没有可用于加粗的嵌入字体。'
+        if builder.glyphs.skipped_fonts or builder.text_reader.skipped_fonts:
+            reason = '已读取文字，但没有可安全加粗的嵌入字体字形。'
         elif builder.has_text:
             reason = '已读取文字，当前规则没有选中可加粗的词首。'
         else:
-            reason = '未找到可处理的文字层。如果页面是扫描图片，请先做 OCR。'
+            reason = ('本地 OCR 没有找到可加粗的扫描文字。' if ocr else
+                      '未找到可处理的文字层。扫描件可勾选「本地 OCR」，或在命令行添加 --ocr。')
         raise ValueError(reason + page_summary(unemphasized))
     title = reader.metadata.title if reader.metadata else None
     writer.add_metadata({'/Title': str(title or source.stem) + suffix, '/Subject': subject})
@@ -281,7 +287,7 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
         temporary.replace(target)
     return {
         'pages': total, 'glyphs': builder.count, 'glyph_forms': len(builder.glyphs.forms),
-        'unemphasized_pages': unemphasized,
+        'unemphasized_pages': unemphasized, 'ocr_pages': ocr_pages,
         'skipped_fonts': sorted(builder.text_reader.skipped_fonts | builder.glyphs.skipped_fonts),
         'mode': mode, 'locale': locale, 'seconds': time.monotonic() - started,
     }

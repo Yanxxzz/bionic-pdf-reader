@@ -9,12 +9,68 @@ function isPdfDocument() {
 const fileAccessHelp = '在扩展详情中启用「允许访问文件网址」，即可直接打开本地 PDF。也可点「打开 PDF」选择文件。';
 const sourceChanged = '原标签页已关闭或已打开其他文档。请点「打开 PDF」重新选择文件。';
 const tabViewKey = 'bionic-tab-view';
+const reselectFile = '本标签页的临时文件已不可用。请点「打开 PDF」重新选择，可以继续上次的进度。';
+let fileRegistration, registering, selectedFile;
+const firefoxBackground = location.protocol === 'moz-extension:' ? globalThis.browser?.runtime : null;
+
+export function prepareFileHandoff() {
+  if (firefoxBackground) return;
+  registering ??= (async () => {
+    try {
+      // A separate scope keeps this worker independent of the extension toolbar.
+      fileRegistration = await navigator.serviceWorker.register('./file-handoff.mjs', {scope:'./file-handoff/', type:'module'});
+    } catch { /* The reader also works where service workers are disabled. */ }
+    return fileRegistration;
+  })();
+  return registering;
+}
+
+export function rememberSelectedFile(file, documentId) {
+  selectedFile = file instanceof File ? {documentId, file} : null;
+}
+
+addEventListener('pagehide', () => {
+  if (selectedFile) {
+    if (firefoxBackground) {
+      firefoxBackground.sendMessage({kind:'selected-file', ...selectedFile}).catch(() => {});
+      return;
+    }
+    try { fileRegistration?.active?.postMessage(selectedFile); } catch {}
+  }
+});
+
+async function takeSelectedFile(documentId) {
+  if (firefoxBackground) {
+    try { return await firefoxBackground.sendMessage({kind:'selected-file', documentId}); } catch { return null; }
+  }
+  const worker = (await prepareFileHandoff())?.active;
+  if (!worker) return null;
+  const {port1, port2} = new MessageChannel();
+  return new Promise(resolve => {
+    function finish(file) {
+      clearTimeout(timer);
+      port1.close();
+      resolve(file);
+    }
+    const timer = setTimeout(() => finish(null), 3000);
+    port1.onmessage = event => finish(event.data);
+    port1.onmessageerror = () => finish(null);
+    try { worker.postMessage({documentId}, [port2]); } catch { finish(null); }
+  });
+}
+
+export function savedTabView() {
+  try { return JSON.parse(sessionStorage.getItem(tabViewKey)); } catch { return null; }
+}
 
 export function rememberTabView(source, position) {
   try {
     if (source) sessionStorage.setItem(tabViewKey, JSON.stringify({...source, position}));
     else sessionStorage.removeItem(tabViewKey);
-  } catch {}
+  } catch {
+    // An old source must not reopen if the replacement view exceeds the quota.
+    try { sessionStorage.removeItem(tabViewKey); } catch {}
+  }
 }
 
 function initialDestination(hash) {
@@ -43,17 +99,22 @@ export async function initialPdf() {
     const response = await fetch('/selected/' + handoff[1], {cache:'no-store'});
     if (!response.ok) throw new Error('所选文件已不可用，请在制作工具中重新点「在浏览器中阅读」。');
     const name = decodeURIComponent(response.headers.get('X-PDF-Name') || 'document.pdf');
-    return new File([await response.blob()], name, {type:'application/pdf'});
+    return {file: new File([await response.blob()], name, {type:'application/pdf'})};
   }
-  const api = globalThis.browser || globalThis.chrome;
-  if (!api?.tabs) return null;
   const clicked = location.hash === '#current-tab';
   let resume;
   if (!clicked && performance.getEntriesByType('navigation')[0]?.type === 'reload') {
-    try { resume = JSON.parse(sessionStorage.getItem(tabViewKey)); } catch {}
+    resume = savedTabView();
   } else {
     rememberTabView(null);
   }
+  if (resume?.local && resume.documentId) {
+    const file = await takeSelectedFile(resume.documentId);
+    if (!file) throw new Error(reselectFile);
+    return {file, resume};
+  }
+  const api = globalThis.browser || globalThis.chrome;
+  if (!api?.tabs) return null;
   if (!clicked && !resume?.sourceKey) return null;
   if (clicked) history.replaceState(null, '', location.pathname + location.search);
   const reader = await api.tabs.getCurrent();
@@ -85,6 +146,6 @@ export async function initialPdf() {
     if (resume) throw new Error(sourceChanged);
     return null;
   }
-  return {url: url.href, name: getPdfFilenameFromUrl(url.href, '当前文档.pdf'), type: 'application/pdf',
-    sourceKey, resume, ...initialDestination(clicked ? hash : '')};
+  return {resume, file: {url: url.href, name: getPdfFilenameFromUrl(url.href, '当前文档.pdf'),
+    type: 'application/pdf', sourceKey, ...initialDestination(clicked ? hash : '')}};
 }

@@ -31,13 +31,13 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 The in-app guide and the offline `使用指南.html` in each ZIP explain the controls. The Firefox temporary extension must be loaded again after restarting Firefox. [Setup guide](docs/usage.md)
 
-**Development build.** Load the `extension` folder from the source checkout to start reading directly from an open PDF tab in Chrome or Edge. For local files, enable **Allow access to file URLs** in the extension details. Web and DOI links open in a new tab. Reopening the same PDF restores the page, zoom and position within the page. [Setup guide](docs/usage.md)
+Click the extension icon to start reading directly from an open PDF tab in Chrome or Edge. For local files, enable **Allow access to file URLs** in the extension details. Web and DOI links open in a new tab. Reopening the same PDF restores the page, zoom and position within the page. [Setup guide](docs/usage.md)
 
 ## Document languages and fonts
 
-The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. In the development build, Auto in both readers applies the English reference rule to words made up of plain English letters, as in **t**he **read**ers. Other eligible words use the first half, counted in whole grapheme clusters. You can also choose the half-word rule in the browser. [Language support](docs/languages.md)
+The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. Auto in both readers applies the English reference rule to words made up of plain English letters, as in **t**he **read**ers. Other eligible words use the first half, counted in whole grapheme clusters. You can also choose the half-word rule in the browser. [Language support](docs/languages.md)
 
-Start with a PDF whose text you can select. Find the next or previous match across the document, or follow a citation and return to your reading position. The desktop tool exports two-up handouts and lists output pages that received no emphasis. Image-only scans need OCR first. Vertical text and certain fonts can retain their original appearance. [PDF and font compatibility](docs/compatibility.md)
+Start with a PDF whose text you can select. Find the next or previous match across the document, or follow a citation and return to your reading position. The desktop tool exports two-up handouts and lists output pages that received no emphasis. For image-only scans, choose local OCR in the desktop tool. The switchable copy emphasizes the original ink and adds searchable text. Install Tesseract 5 and the matching language data on your computer. Vertical text and certain fonts can retain their original appearance. [PDF and font compatibility](docs/compatibility.md)
 
 ## Command line and development
 
@@ -48,6 +48,8 @@ python -m pip install .
 bionic-pdf source.pdf switchable.pdf --mode switchable --language en
 bionic-pdf source.pdf mobile.pdf --mode static --language en
 ```
+
+For an image-only scan, install local Tesseract, run `python -m pip install ".[ocr]"`, then use `bionic-pdf scan.pdf reading.pdf --ocr --language en --pages 1-3`. The Windows tool provides the same option. [Local OCR setup](docs/usage.md#扫描件本地-ocr)
 
 The browser reader draws with PDF.js. The desktop converter uses pypdf and fontTools to add vector outlines while retaining the original text. The Python wheel contains the converter. The web reader is included in the web ZIP, source checkout and Windows bundle. [Architecture, tests and builds](docs/development.md)
 

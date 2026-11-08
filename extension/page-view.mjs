@@ -78,24 +78,37 @@ export function resetPageView() {
   return pending;
 }
 
-async function drawCanvas(page, target, viewport, transform, reader) {
+export async function embeddedReadingLayer(pdf) {
+  const original = await pdf.getOptionalContentConfig();
+  const ids = [...original].filter(([, group]) => group.name === '仿生阅读 · Bionic Reading').map(([id]) => id);
+  if (!ids.length) return null;
+  const bionic = await pdf.getOptionalContentConfig();
+  for (const id of ids) {
+    original.setVisibility(id, false, false);
+    bionic.setVisibility(id, true, false);
+  }
+  return {original, bionic};
+}
+
+async function drawCanvas(page, target, viewport, transform, reader, layers) {
   target.bionicReader = reader;
-  activeTask = page.render({canvas: target, viewport, transform, annotationMode: AnnotationMode.ENABLE});
+  activeTask = page.render({canvas: target, viewport, transform, annotationMode: AnnotationMode.ENABLE,
+    optionalContentConfigPromise: layers && Promise.resolve(layers)});
   try { await activeTask.promise; }
   finally { target.bionicReader = null; activeTask = null; }
 }
 
-async function pagePlan(page, viewport, {rule, locale}, originalPaint) {
+async function pagePlan(page, viewport, {rule, locale, embeddedLayer}, originalPaint) {
   let entry = layouts.get(page);
   if (!entry) {
     const capture = new GlyphCapture(originalPaint?.scale);
     if (originalPaint) {
-      await drawCanvas(page, originalCanvas, originalPaint.viewport, originalPaint.transform, capture);
+      await drawCanvas(page, originalCanvas, originalPaint.viewport, originalPaint.transform, capture, embeddedLayer?.original);
     } else {
       const scratch = document.createElement('canvas');
       scratch.width = Math.ceil(viewport.width);
       scratch.height = Math.ceil(viewport.height);
-      try { await drawCanvas(page, scratch, viewport, null, capture); }
+      try { await drawCanvas(page, scratch, viewport, null, capture, embeddedLayer?.original); }
       finally { scratch.width = scratch.height = 0; }
     }
     entry = {capture};
@@ -185,7 +198,11 @@ async function drawPage(request, pdf, number, settings) {
       return mask;
     },
   };
-  if (!originalPaint && !reuseOriginal) await drawCanvas(page, canvas, viewport, transform, settings.enabled ? emphasis : null);
+  if (!originalPaint && !reuseOriginal) {
+    const live = settings.enabled && !settings.embeddedLayer;
+    const layers = settings.enabled ? settings.embeddedLayer?.bionic : settings.embeddedLayer?.original;
+    await drawCanvas(page, canvas, viewport, transform, live ? emphasis : null, layers);
+  }
   if (request !== revision) return;
   if (!settings.enabled) originalView = {page, scale, outputScale};
   if (displayedText) {

@@ -18,6 +18,8 @@ class Maker:
         self.mode = tk.StringVar(value='可切换版 · WPS / Acrobat / Foxit')
         self.language_options={'自动分词 · auto':'auto',**{f'{name} · {code}':code for code,name in LANGUAGES.items()}}
         self.locale = tk.StringVar(value='自动分词 · auto')
+        self.pages = tk.StringVar()
+        self.ocr = tk.BooleanVar()
         self.source, self.target, self.status = tk.StringVar(),tk.StringVar(),tk.StringVar(value='选择原始 PDF，按阅读器选择可切换版或普通仿生版。')
         root.title('Bionic PDF · 仿生阅读制作工具')
         root.geometry('760x650'); root.minsize(700,630)
@@ -38,6 +40,11 @@ class Maker:
         ttk.Label(language,text='文档语言',width=9).pack(side='left')
         ttk.Combobox(language,textvariable=self.locale,state='readonly',width=24,values=list(self.language_options)).pack(side='left')
         ttk.Label(language,text='自动和英语对纯英文字母词使用参考规则。').pack(side='left',padx=12)
+        selection = ttk.Frame(frame); selection.pack(fill='x',pady=(12,0))
+        ttk.Label(selection,text='导出页码',width=9).pack(side='left')
+        ttk.Entry(selection,textvariable=self.pages,width=24).pack(side='left')
+        ttk.Label(selection,text='留空为整本，如 1-3,7,5-4').pack(side='left',padx=8)
+        ttk.Checkbutton(selection,text='扫描页本地 OCR',variable=self.ocr).pack(side='left',padx=4)
         self.progress = ttk.Progressbar(frame,maximum=100); self.progress.pack(fill='x',pady=(18,10))
         self.status_line = ttk.Label(frame,textvariable=self.status,wraplength=650)
         self.status_line.pack(anchor='w')
@@ -61,6 +68,7 @@ class Maker:
         name = filedialog.askopenfilename(title='选择原始 PDF',filetypes=[('PDF 文档','*.pdf')])
         if name:
             self.source.set(name)
+            self.pages.set('')
             path=Path(name);self.target.set(str(path.with_name(path.stem+'_仿生阅读.pdf')))
     def pick_target(self):
         if self.busy:return
@@ -75,12 +83,14 @@ class Maker:
         if target.exists() and not messagebox.askyesno('替换阅读副本','目标文件已存在，是否替换这份阅读副本？'):return
         mode = 'static' if self.mode.get().startswith('普通') else 'switchable'
         locale = self.language_options[self.locale.get()]
+        pages = self.pages.get().strip() or None
+        ocr = self.ocr.get()
         self.busy=True;self.generate.config(state='disabled');self.open_button.config(state='disabled');self.progress['value']=0
         self.status.set('正在准备字体和页面…')
         self.page_list.pack_forget()
         def work(allow_signature_loss):
             try:
-                report=make_pdf(source,target,mode=mode,locale=locale,
+                report=make_pdf(source,target,pages=pages,mode=mode,locale=locale,ocr=ocr,
                     allow_signature_loss=allow_signature_loss,
                     progress=lambda current,total:self.events.put(('progress',(current,total))))
                 self.events.put(('done',(report,target)))
@@ -159,7 +169,7 @@ HELP_TEXT='''选择你的阅读方式
 制作步骤
 1. 选择原始 PDF。
 2. 选择新的保存文件名。
-3. 选择阅读方式与文档语言，然后生成。
+3. 选择阅读方式与文档语言。页码留空可导出整本，输入 1-3,7,5-4 可按指定顺序导出，再点「生成阅读副本」。
 4. 查看未加粗的副本页码，点击「打开阅读副本」。双页讲义的左右两半合计一页。
 已有数字签名时，工具会在导出前提示。选择「否」可在浏览器中阅读原件，选择「是」生成的副本会失去原签名的效力。
 
@@ -168,7 +178,8 @@ HELP_TEXT='''选择你的阅读方式
 选择自动或英语时，纯英文字母词使用英语参考规则，带重音的词按完整字素加粗前半词。选择其他 12 种语言时统一加粗前半词。自动模式保留原 PDF 的语言标记，手动选择会设置副本的文档语言。
 
 常见问题
-• 没有加粗：扫描图片需要先做 OCR；未嵌入字体、特殊编码、竖排、原有粗斜体和部分嵌套内容会保持原样。
+• 扫描件：安装本地 Tesseract 5 和对应语言包，选择文档语言并勾选「扫描页本地 OCR」。可切换版会在原图笔画处加粗；关闭图层可看原图，识别到的文字可以搜索、复制。
+• 没有加粗：未嵌入字体、特殊编码、竖排或本来就加粗的文字可能保持原样。
 • 原始模式也乱码：先用其他阅读器检查源 PDF。
 • 找不到图层：改用普通仿生版，或在浏览器阅读页开关。
 • 浏览器版本没有导出按钮：使用本制作工具生成副本。

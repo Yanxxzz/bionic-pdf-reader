@@ -9,7 +9,7 @@ import reportlab
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import Link
 from pypdf.constants import UserAccessPermissions
-from pypdf.generic import (ArrayObject, BooleanObject, ByteStringObject, DecodedStreamObject,
+from pypdf.generic import (ArrayObject, BooleanObject, ByteStringObject, ContentStream, DecodedStreamObject,
                            DictionaryObject, NameObject, NullObject, NumberObject, TextStringObject)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -288,7 +288,7 @@ def test_tagged_selection_refuses_unmapped_references_and_keeps_whole_copy(tagge
                 assert saved.get('/Page') == result.pages[2].indirect_reference
 
 
-def test_tagged_form_keeps_its_original_stream_and_reports_unemphasized_page(tagged, tmp_path):
+def test_tagged_form_only_document_can_be_emphasized(tagged, tmp_path):
     writer = PdfWriter(clone_from=tagged)
     page = writer.pages[0]
     form = DecodedStreamObject()
@@ -307,24 +307,154 @@ def test_tagged_form_keeps_its_original_stream_and_reports_unemphasized_page(tag
     span[NameObject('/K')] = DictionaryObject({NameObject('/Type'): NameObject('/MCR'),
         NameObject('/MCID'): NumberObject(1), NameObject('/Pg'): page.indirect_reference, NameObject('/Stm'): reference})
     path, target = tmp_path/'tagged-form.pdf', tmp_path/'output.pdf'
-    writer.write(path)
-    target.write_bytes(b'keep')
-    with pytest.raises(ValueError, match='内容流.*整本'):
-        make_pdf(path, target, pages=[1])
-    assert target.read_bytes() == b'keep'
-    assert make_pdf(path, target)['unemphasized_pages'] == [1, 3]
-    reader = PdfReader(target)
-    page = reader.pages[0]
-    assert page.get_contents().get_data() == b'q /TaggedForm Do Q'
-    document = reader.root_object['/StructTreeRoot']['/K'][0].get_object()
-    span = document['/K'][0].get_object()['/K'][0].get_object()
-    assert page['/Resources']['/XObject'].raw_get('/TaggedForm') == span['/K'].raw_get('/Stm')
     writer.pages[1].replace_contents(None)
     writer.write(path)
-    previous = target.read_bytes()
-    with pytest.raises(ValueError, match='跳过具有独立标签的表单对象'):
-        make_pdf(path, target)
-    assert target.read_bytes() == previous
+    result = make_pdf(path, target)
+    assert result['glyphs'] > 0 and result['unemphasized_pages'] == [2, 3]
+    assert make_pdf(path, target, pages=[1])['unemphasized_pages'] == []
+    reader = PdfReader(target)
+    page = reader.pages[0]
+    name, = next(args for args, op in page.get_contents().operations if op == b'Do')
+    document = reader.root_object['/StructTreeRoot']['/K'][0].get_object()
+    span = document['/K'][0].get_object()['/K'][0].get_object()
+    assert span['/K'][0].raw_get('/Stm') == page['/Resources']['/XObject'].raw_get(name)
+
+
+@pytest.fixture
+def shared_tagged_forms(source, tmp_path):
+    writer = PdfWriter(clone_from=source)
+    first = writer.pages[0]
+    fonts = first['/Resources']['/Font']
+    font = next(name for name in fonts if fonts[name]['/Subtype'] == '/TrueType')
+
+    def form(data, resources):
+        stream = DecodedStreamObject()
+        stream.set_data(data)
+        stream.update({NameObject('/Type'): NameObject('/XObject'), NameObject('/Subtype'): NameObject('/Form'),
+                       NameObject('/BBox'): first.mediabox, NameObject('/Resources'): resources})
+        return writer._add_object(stream)
+
+    inner = form(f'/Span <</MCID 0>> BDC BT {font} 18 Tf 24 60 Td (Reading together) Tj ET EMC'.encode(),
+                 DictionaryObject({NameObject('/Font'): fonts}))
+    inner.get_object()[NameObject('/StructParents')] = NumberObject(7)
+    outer = form(b'/Text Do', DictionaryObject({
+        NameObject('/XObject'): DictionaryObject({NameObject('/Text'): inner})}))
+    outer.get_object()[NameObject('/StructParent')] = NumberObject(8)
+    root = DictionaryObject({NameObject('/Type'): NameObject('/StructTreeRoot')})
+    writer.root_object[NameObject('/StructTreeRoot')] = writer._add_object(root)
+    writer.root_object[NameObject('/MarkInfo')] = DictionaryObject({NameObject('/Marked'): BooleanObject(True)})
+    children = ArrayObject()
+    paragraph = writer._add_object(DictionaryObject({NameObject('/Type'): NameObject('/StructElem'),
+        NameObject('/S'): NameObject('/P'), NameObject('/P'): root.indirect_reference, NameObject('/K'): children}))
+    root[NameObject('/K')] = paragraph
+    root[NameObject('/ParentTree')] = DictionaryObject({NameObject('/Nums'): ArrayObject([
+        NumberObject(7), ArrayObject([paragraph]), NumberObject(8), paragraph])})
+    for page, colour in zip(writer.pages, (b'1 0 0', b'0 0 1')):
+        page[NameObject('/Resources')] = DictionaryObject({
+            NameObject('/XObject'): DictionaryObject({NameObject('/Panel'): outer})})
+        content = DecodedStreamObject()
+        content.set_data(colour + b' rg /Panel Do')
+        page[NameObject('/Contents')] = writer._add_object(content)
+        children.extend((DictionaryObject({NameObject('/Type'): NameObject('/MCR'), NameObject('/MCID'): NumberObject(0),
+            NameObject('/Pg'): page.indirect_reference, NameObject('/Stm'): inner, NameObject('/StmOwn'): outer}),
+            DictionaryObject({NameObject('/Type'): NameObject('/OBJR'), NameObject('/Pg'): page.indirect_reference,
+                              NameObject('/Obj'): outer})))
+    path = tmp_path/'shared-tagged.pdf'
+    writer.write(path)
+    return path
+
+
+@pytest.mark.parametrize('selection', [None, [2], [2, 1, 2]])
+def test_shared_nested_tagged_forms_follow_the_painted_streams(shared_tagged_forms, tmp_path, selection):
+    from PIL import ImageChops
+
+    source = shared_tagged_forms
+    off, bold = tmp_path/'switchable.pdf', tmp_path/'static.pdf'
+    for mode, target in (('switchable', off), ('static', bold)):
+        assert make_pdf(source, target, pages=selection, mode=mode)['unemphasized_pages'] == []
+    reader = PdfReader(bold)
+    root = reader.root_object['/StructTreeRoot']
+    nums = root['/ParentTree']['/Nums']
+    parents = dict(zip(nums[::2], nums[1::2]))
+    physical = selection or [1, 2]
+    assert len(parents) == 2 * len(physical)
+    top = root['/K']
+    paragraphs = list(top) if isinstance(top, ArrayObject) else [top.indirect_reference]
+    structure = {}
+    for paragraph in paragraphs:
+        for kid in paragraph.get_object()['/K']:
+            item = kid.get_object()
+            structure[(item.get('/Pg'), item['/Type'])] = (item, paragraph)
+    with pdfium.PdfDocument(source) as original, pdfium.PdfDocument(off) as off_doc, pdfium.PdfDocument(bold) as bold_doc:
+        for i, page in enumerate(reader.pages):
+            def painted_form(stream, resources):
+                name, = next(args for args, op in ContentStream(stream, reader).operations if op == b'Do')
+                return resources['/XObject'].raw_get(name)
+
+            outer = painted_form(page.get_contents(), page['/Resources'])
+            inner = painted_form(outer.get_object(), outer.get_object()['/Resources'])
+            mark, paragraph = structure[page.indirect_reference, '/MCR']
+            obj, _ = structure[page.indirect_reference, '/OBJR']
+            assert mark.get('/Stm') == inner and mark.get('/StmOwn') == outer and obj.get('/Obj') == outer
+            assert parents[inner.get_object()['/StructParents']][0] == paragraph
+            assert parents[outer.get_object()['/StructParent']] == paragraph
+            pages = [original[physical[i]-1], off_doc[i], bold_doc[i]]
+            text = pages[0].get_textpage().get_text_bounded()
+            assert text == 'Reading together' and all(p.get_textpage().get_text_bounded() == text for p in pages[1:])
+            before, disabled, enabled = [p.render(scale=2).to_pil().convert('RGB') for p in pages]
+            assert before.tobytes() == disabled.tobytes()
+            difference = ImageChops.difference(before, enabled)
+            assert difference.getbbox() and difference.getchannel('R' if physical[i] == 1 else 'B').getbbox() is None
+
+
+def test_broken_form_parent_stops_before_writing(shared_tagged_forms, tmp_path):
+    writer = PdfWriter(clone_from=shared_tagged_forms)
+    numbers = writer.root_object['/StructTreeRoot']['/ParentTree']['/Nums']
+    numbers[1] = ArrayObject([NullObject()])
+    source, target = tmp_path/'invalid-parent.pdf', tmp_path/'previous.pdf'
+    writer.write(source)
+    target.write_bytes(b'keep')
+    for pages in (None, [2], [2, 1, 2]):
+        with pytest.raises(ValueError, match='父级索引'):
+            make_pdf(source, target, pages=pages)
+        assert target.read_bytes() == b'keep'
+
+
+def test_shared_form_drops_keys_owned_only_by_an_omitted_page(shared_tagged_forms, tmp_path):
+    writer = PdfWriter(clone_from=shared_tagged_forms)
+    kids = writer.root_object['/StructTreeRoot']['/K']['/K']
+    del kids[2:]  # Page 2 paints the same resources but the source tags only page 1.
+    source, target = tmp_path/'one-tagged-placement.pdf', tmp_path/'second.pdf'
+    writer.write(source)
+    make_pdf(source, target, pages=[2])
+    reader = PdfReader(target)
+    assert not reader.root_object['/StructTreeRoot']['/ParentTree']['/Nums']
+    for number in reader.xref[0]:
+        obj = reader.get_object(number)
+        if isinstance(obj, DictionaryObject) and obj.get('/Subtype') == '/Form':
+            assert '/StructParent' not in obj and '/StructParents' not in obj
+
+
+def test_same_page_form_reuses_matching_render_and_rejects_ambiguous_placements(shared_tagged_forms, tmp_path):
+    writer = PdfWriter(clone_from=shared_tagged_forms)
+    page = writer.pages[0]
+    source, target = tmp_path/'twice.pdf', tmp_path/'previous.pdf'
+    for colour in (b'1 0 0', b'0 0 1'):
+        content = DecodedStreamObject()
+        content.set_data(b'1 0 0 rg /Panel Do ' + colour + b' rg /Panel Do')
+        page[NameObject('/Contents')] = writer._add_object(content)
+        writer.write(source)
+        if colour == b'1 0 0':
+            make_pdf(source, target, pages=[1])
+            output = PdfReader(target).pages[0]
+            names = [args[0] for args, op in output.get_contents().operations if op == b'Do']
+            refs = [output['/Resources']['/XObject'].raw_get(name) for name in names]
+            assert len(refs) == 2 and refs[0] == refs[1]
+        else:
+            previous = target.read_bytes()
+            with pytest.raises(ValueError, match='不同且标签无法区分'):
+                make_pdf(source, target, pages=[1])
+            assert target.read_bytes() == previous
 
 
 @pytest.mark.parametrize('issue', ['missing', 'omitted-parent'])

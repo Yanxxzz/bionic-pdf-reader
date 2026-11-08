@@ -26,7 +26,8 @@ try{
     const engine=name==='firefox'?firefox:chromium;
     const options={headless:true};if(name==='chrome'||name==='edge')options.channel=name==='edge'?'msedge':'chrome';
     const browser=await engine.launch(options);
-    const page=await browser.newPage({viewport:{width:1440,height:1040}});
+    const context=await browser.newContext({viewport:{width:1440,height:1040}});
+    const page=await context.newPage();
     if(process.env.FORCE_LEGACY_STREAMS==='1')await page.addInitScript(()=>Object.defineProperty(ReadableStream.prototype,Symbol.asyncIterator,{value:undefined,configurable:true,writable:true}));
     const errors=[],external=[];page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:')&&!/^(blob:|data:)/.test(r.url()))external.push(r.url());});
@@ -37,6 +38,10 @@ try{
       assert.equal(await page.locator('#file-name').textContent(), '已选 #1.pdf');
       assert.equal(page.url(), url);
       await page.reload();
+      await page.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
+      assert.equal(await page.locator('#file-name').textContent(), '已选 #1.pdf');
+      await page.goto('about:blank');
+      await page.goto(url);
       assert.deepEqual(await page.locator('#language option').evaluateAll(options=>options.map(o=>o.value)),['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
       await page.locator('#help-button').click();
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
@@ -94,7 +99,8 @@ try{
         localStorage.setItem(progress, '2.5');
         localStorage.setItem('bionic-pdf-settings', JSON.stringify({locale:'fr', rule:'retired', enabled:'false', strength:99}));
       });
-      await page.reload();
+      await page.goto('about:blank');
+      await page.goto(url);
       await page.waitForSelector('html[data-reader-ready]');
       assert.equal(await page.locator('#language').inputValue(), 'fr');
       assert.equal(await page.locator('#rule').inputValue(), 'reference');
@@ -128,6 +134,9 @@ try{
       assert.equal(await page.locator('#reading-status').textContent(), '仿生模式 · 词首加粗');
       assert.equal(await page.locator('#text-layer').textContent(), previousText);
       assert.equal(await page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL()), previousPixels);
+      await page.reload();
+      await wait(2, 'bionic');
+      assert.equal(await page.locator('#text-layer').textContent(), previousText);
       const locked = path.join(path.dirname(pdf), 'locked.pdf');
       await chooseSample('#open-file', locked);
       const password = page.locator('#pdf-password');
@@ -210,7 +219,7 @@ try{
       assert.match(await page.locator('#text-layer').textContent(), /Password protected example/);
       await page.evaluate(() => window.finishOldRead());
       assert.ok(await page.locator('#message').isHidden());
-      await chooseSample('#open-file', locked);
+      await page.reload();
       await password.waitFor();
       await page.locator('#file-input').setInputFiles(pdf);
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'multilingual.pdf');
@@ -289,17 +298,25 @@ try{
       await scroller.evaluate(el => el.scrollTo(40, 388));
       const fixed = await scroll();
       assert.ok(fixed[1] > 300);
+      const second = await context.newPage();
+      await second.goto(url);
+      await second.locator('#file-input').setInputFiles(pdf);
+      await second.locator('#outline').getByRole('button', {name:'de', exact:true}).click();
+      await second.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '3');
       await page.reload();
-      await chooseSample('#choose-file');
       await wait(1, 'bionic');
       assert.equal(await page.locator('#zoom').inputValue(), '2');
       assert.deepEqual(await scroll(), fixed);
+      await second.reload();
+      await second.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '3');
+      await second.locator('#return-position').click();
+      await second.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
+      await second.close();
       await zoomTo('fit');
       await scroller.evaluate(el => el.scrollTo(0, 320));
       const fraction = await visibleFraction();
       await page.reload();
       await page.setViewportSize({width:1050, height:650});
-      await chooseSample('#choose-file');
       await wait(1, 'bionic');
       assert.equal(await page.locator('#zoom').inputValue(), 'fit');
       assert.ok(Math.abs(await visibleFraction() - fraction) < .003, 'The same line is visible after resizing');
@@ -308,7 +325,6 @@ try{
       await zoomTo('2');
       assert.ok(Math.abs(await visibleFraction() - fraction) < .003, 'Changing zoom keeps the same line');
       const projectUrl = 'https://github.com/Yanxxzz/bionic-pdf-reader';
-      const context = page.context();
       await context.route(projectUrl, route => route.fulfill({contentType:'text/html', body:'<title>Paper link</title>'}));
       for (const mode of ['original', 'bionic']) {
         await page.locator('#' + mode + '-mode').click();
@@ -323,6 +339,18 @@ try{
         assert.deepEqual(await scroll(), before);
         assert.equal(await page.locator('#page-number').inputValue(), '1');
       }
+      const blocked = await context.newPage();
+      await blocked.addInitScript(() => Object.defineProperty(navigator, 'serviceWorker', {value:undefined}));
+      await blocked.goto(url);
+      await blocked.locator('#file-input').setInputFiles(pdf);
+      await blocked.locator('#outline').getByRole('button', {name:'de', exact:true}).click();
+      await blocked.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '3');
+      await blocked.reload();
+      await blocked.getByRole('alert').filter({hasText:'重新选择'}).waitFor();
+      assert.ok(await blocked.locator('#choose-file').isVisible());
+      await blocked.locator('#file-input').setInputFiles(pdf);
+      await blocked.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '3');
+      await blocked.close();
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');

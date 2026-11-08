@@ -116,7 +116,13 @@ try:
     assert page_pixels() == before
     activate_control('prev-page')
     wait.until(lambda d: d.find_element(By.ID, 'page-frame').get_attribute('data-rendered-page') == str(len(samples) - 1))
-    print('Actual Safari: shaped text, selection, toggles and failed file replacement passed')
+    step = 'reloading the selected file'
+    before = page_pixels()
+    driver.refresh()
+    wait.until(lambda d: d.find_element(By.ID, 'page-frame').get_attribute('data-rendered-page') == str(len(samples) - 1))
+    assert driver.find_element(By.ID, 'file-name').text == 'shaped-plain.pdf'
+    assert page_pixels() == before
+    print('Actual Safari: shaped text, selection, toggles, failed replacement and local-file reload passed')
 except Exception:
     debug=driver.execute_script("return {errors:window.__readerErrors,ready:document.documentElement.dataset.readerReady,frame:{...document.querySelector('#page-frame').dataset},status:document.querySelector('#reading-status').textContent,message:document.querySelector('#message').textContent,pressed:document.querySelector('#bionic-mode').getAttribute('aria-pressed'),active:document.activeElement?.tagName+'#'+document.activeElement?.id,scroll:{x:scrollX,y:scrollY,height:document.documentElement.scrollHeight,viewport:innerHeight},toolbar:document.querySelector('#bionic-mode').getBoundingClientRect().toJSON(),ua:navigator.userAgent}")
     debug['step']=step;debug['capabilities']=driver.capabilities

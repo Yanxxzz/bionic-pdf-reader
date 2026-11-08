@@ -1,8 +1,22 @@
 """Document-level checks and navigation for reading copies."""
+import re
+
 from pypdf import PdfWriter
 from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, NameObject, NumberObject, TextStringObject
 
 from .tagged import copy_structure
+
+
+def bind_resource(resources, group, preferred, reference):
+    """Bind a resource without displacing one used by the original document."""
+    entries = resources.setdefault(NameObject(group), DictionaryObject()).get_object()
+    name = preferred
+    suffix = 1
+    while name in entries and entries.raw_get(name) != reference:
+        name = NameObject(f'{preferred}_{suffix}')
+        suffix += 1
+    entries[name] = reference
+    return name
 
 
 class SignatureLossError(ValueError):
@@ -39,19 +53,39 @@ def has_signature(reader):
     return False
 
 
-def copy_pages(reader, pages):
-    if pages is None:
-        return PdfWriter(clone_from=reader)
+class PageSelectionError(ValueError):
+    """The requested physical page numbers cannot be exported."""
 
-    total = len(reader.pages)
-    indices = []
-    for number in pages:
+
+def page_indices(pages, total):
+    if pages is None:
+        return range(total)
+
+    def index(number):
         if isinstance(number, bool) or not isinstance(number, int) or not 1 <= number <= total:
-            raise ValueError(f'页码必须是 1 到 {total} 之间的整数。')
-        indices.append(number - 1)
+            raise PageSelectionError(f'页码必须是 1 到 {total} 之间的整数。')
+        return number - 1
+
+    if isinstance(pages, str):
+        indices = []
+        for part in re.split('[,，]', pages):
+            match = re.fullmatch(r'\s*([0-9]+)(?:\s*[-–]\s*([0-9]+))?\s*', part)
+            if not match:
+                raise PageSelectionError('页码格式有误，例如 1-3,7,5-4。')
+            first = index(int(match[1]))
+            last = index(int(match[2])) if match[2] else first
+            step = 1 if first <= last else -1
+            indices.extend(range(first, last + step, step))
+    else:
+        indices = [index(number) for number in pages]
     if not indices:
-        raise ValueError('请至少选择一页。')
-    if indices == list(range(total)):
+        raise PageSelectionError('请至少选择一页。')
+    return indices
+
+
+def copy_pages(reader, indices, *, projected_forms=None):
+    total = len(reader.pages)
+    if indices == range(total) or (len(indices) == total and all(i == page for i, page in enumerate(indices))):
         return PdfWriter(clone_from=reader)
 
     writer = PdfWriter()
@@ -88,5 +122,5 @@ def copy_pages(reader, pages):
                         annotation[NameObject(key)] = annotations[target]
             page[NameObject('/Annots')] = ArrayObject(annotations.values())
     if '/StructTreeRoot' in catalog:
-        copy_structure(reader, writer, indices)
+        copy_structure(reader, writer, indices, projected_forms)
     return writer

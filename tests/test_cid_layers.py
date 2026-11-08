@@ -14,6 +14,116 @@ def stream(writer,data):
     obj=DecodedStreamObject();obj.set_data(data);return writer._add_object(obj)
 
 
+def cff_fixture(writer, cid_keyed, wrapper, fd_matrix=None):
+    from fontTools.cffLib import FDArrayIndex, FDSelect, FontDict
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.t2CharStringPen import T2CharStringPen
+
+    names = (['.notdef', 'cid00101', 'cid00003', 'cid00002', 'cid00004'] if cid_keyed
+             else ['.notdef', 'bar', 'r', 's', 'second'])
+    builder = FontBuilder(1000, isTTF=False)
+    builder.setupGlyphOrder(names)
+    builder.setupCharacterMap({ord('r'): names[2]})
+    outlines = {}
+    for i, name in enumerate(names):
+        pen = T2CharStringPen(600, None)
+        if i:
+            left = 120 * i
+            pen.moveTo((left, 40))
+            pen.lineTo((left + 65, 40))
+            pen.lineTo((left + 65, 650))
+            pen.lineTo((left, 650))
+            pen.closePath()
+        outlines[name] = pen.getCharString()
+    builder.setupCFF('ReadingBars', {'FullName': 'Reading Bars'}, outlines, {})
+    builder.setupHorizontalMetrics({name: (600, 0) for name in names})
+    builder.setupHorizontalHeader(ascent=800, descent=-200)
+    builder.setupNameTable({'familyName': 'ReadingBars', 'styleName': 'Regular'})
+    builder.setupOS2()
+    builder.setupPost()
+    builder.setupMaxp()
+    top = builder.font['CFF '].cff.topDictIndex[0]
+    if cid_keyed:
+        top.ROS, top.CIDCount = ('Adobe', 'Identity', 0), 102
+        fd = FontDict()
+        fd.FontName, fd.Private = 'ReadingBars-FD', top.Private
+        del top.Private
+        if fd_matrix:
+            fd.FontMatrix = fd_matrix
+        top.FDArray, top.FDSelect = FDArrayIndex(), FDSelect()
+        top.FDArray.append(fd)
+        top.FDSelect.gidArray = [0] * len(names)
+        top.CharStrings.fdArray, top.CharStrings.fdSelect = top.FDArray, top.FDSelect
+    buffer = BytesIO()
+    builder.save(buffer)
+    data = buffer.getvalue() if wrapper == '/OpenType' else TTFont(BytesIO(buffer.getvalue())).getTableData('CFF ')
+    program = stream(writer, data)
+    program.get_object()[N('/Subtype')] = N(wrapper)
+    descriptor = writer._add_object(D({N('/Type'): N('/FontDescriptor'), N('/FontName'): N('/ReadingBars'),
+        N('/Flags'): I(4), N('/FontBBox'): A(map(I, [0, 0, 600, 700])), N('/ItalicAngle'): I(0),
+        N('/Ascent'): I(800), N('/Descent'): I(-200), N('/CapHeight'): I(650), N('/StemV'): I(65), N('/FontFile3'): program}))
+    child = writer._add_object(D({N('/Type'): N('/Font'), N('/Subtype'): N('/CIDFontType0'), N('/BaseFont'): N('/ReadingBars'),
+        N('/CIDSystemInfo'): D({N('/Registry'): T('Adobe'), N('/Ordering'): T('Identity'), N('/Supplement'): I(0)}),
+        N('/DW'): I(600), N('/FontDescriptor'): descriptor}))
+    code = 3 if cid_keyed else 1
+    mapping = (f'/CIDInit /ProcSet findresource begin 12 dict begin begincmap /CMapType 2 def '
+               f'1 begincodespacerange <0000> <FFFF> endcodespacerange '
+               f'2 beginbfchar\n<{code:04x}> <0072>\n<0004> <0072>\nendbfchar endcmap end end')
+    font = writer._add_object(D({N('/Type'): N('/Font'), N('/Subtype'): N('/Type0'), N('/BaseFont'): N('/ReadingBars'),
+        N('/Encoding'): N('/Identity-H'), N('/DescendantFonts'): A([child]), N('/ToUnicode'): stream(writer, mapping.encode())}))
+    return font, code
+
+
+@pytest.mark.parametrize('cid_keyed', [True, False], ids=['CID-charset', 'GID'])
+@pytest.mark.parametrize('wrapper', ['/CIDFontType0C', '/OpenType'])
+def test_cff_identity_h_uses_the_font_indices_instead_of_unicode(tmp_path, cid_keyed, wrapper):
+    from PIL import ImageChops
+    from bionic_pdf.embedded_font import EmbeddedFont
+
+    writer = PdfWriter()
+    font, code = cff_fixture(writer, cid_keyed, wrapper)
+    embedded = EmbeddedFont.from_pdf(font.get_object())
+    sparse_opentype = cid_keyed and wrapper == '/OpenType'
+    expected = None if sparse_opentype else ('cid00003' if cid_keyed else 'bar')
+    assert embedded.glyph_name(code, 'r') == expected
+    assert embedded.glyph_name(4, 'r') == ('cid00004' if cid_keyed else 'second')
+    if cid_keyed:
+        assert embedded.glyph_name(101, 'r') == (None if sparse_opentype else 'cid00101')
+    assert embedded.glyph_name(20000, 'r') is None
+    page = writer.add_blank_page(140, 110)
+    page[N('/Resources')] = D({N('/Font'): D({N('/F0'): font})})
+    encoded = f'{code:04x}' * 5
+    control = '0004' * 5
+    page[N('/Contents')] = stream(writer, f'BT /F0 20 Tf 20 60 Td <{encoded}> Tj 0 -38 Td <{control}> Tj ET'.encode())
+    original, off, static = (tmp_path/name for name in ('source.pdf', 'off.pdf', 'static.pdf'))
+    writer.write(original)
+    selected = 2 if sparse_opentype else 4
+    assert make_pdf(original, off)['glyphs'] == selected and make_pdf(original, static, mode='static')['glyphs'] == selected
+    with pdfium.PdfDocument(original) as a, pdfium.PdfDocument(off) as b, pdfium.PdfDocument(static) as c:
+        pages = [doc[0] for doc in (a, b, c)]
+        assert all(p.get_textpage().get_text_bounded().split() == ['rrrrr', 'rrrrr'] for p in pages)
+        before, disabled, enabled = [p.render(scale=4).to_pil().convert('RGB') for p in pages]
+        assert before.tobytes() == disabled.tobytes()
+        delta = ImageChops.difference(before, enabled)
+        # Both source lines have visible ink, including the fallback renderer's sparse-CID glyph.
+        assert ImageChops.invert(before.crop((0, 130, 560, 210))).getbbox()
+        assert ImageChops.invert(before.crop((0, 280, 560, 370))).getbbox()
+        assert bool(delta.crop((0, 130, 560, 210)).getbbox()) == (not sparse_opentype)
+        if not sparse_opentype:
+            # The glyph's design x is 240 in the CID charset, 120 in the name-keyed GID list.
+            left = 99 if cid_keyed else 89
+            assert delta.crop((left - 2, 130, left + 8, 210)).getbbox()
+            assert not delta.crop((left + 8, 130, left + 15, 210)).getbbox()
+        assert delta.crop((0, 280, 176, 370)).getbbox() and not delta.crop((176, 0, 560, 440)).getbbox()
+
+
+def test_cff_with_nonidentity_fd_transform_is_left_untouched():
+    from bionic_pdf.embedded_font import EmbeddedFont
+
+    font, _ = cff_fixture(PdfWriter(), True, '/CIDFontType0C', [1.1, 0, 0, 1, 0, 0])
+    assert EmbeddedFont.from_pdf(font.get_object()) is None
+
+
 def test_cid_width_ranges_use_space_proportional_to_the_table():
     import tracemalloc
     from bionic_pdf.pdf_text import TextFont

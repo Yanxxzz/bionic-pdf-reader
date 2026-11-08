@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bionic-pdf-reader"
-version = "0.4.3"
+version = "0.5.0"
 description = "Local multilingual bionic PDF reading, with optional-content layers and original glyph preservation"
 readme = "README.en.md"
 requires-python = ">=3.11"
@@ -14,8 +14,9 @@ keywords = ["bionic-reading", "pdf", "reading", "multilingual", "english-reading
 dependencies = ["pypdf==6.21.4", "fonttools==4.63.0", "regex>=2024.11.6", "freetype-py==2.5.1"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "reportlab>=4.4,<6", "pypdfium2>=4.30,<6", "Pillow>=10", "build>=1.2"]
-windows = ["pyinstaller>=6,<8"]
+dev = ["pytest>=8,<10", "reportlab>=4.4,<6", "pypdfium2>=5.9,<6", "Pillow>=10", "build>=1.2"]
+ocr = ["pypdfium2>=5.9,<6", "Pillow>=10"]
+windows = ["pyinstaller>=6,<8", "pypdfium2>=5.9,<6", "Pillow>=10"]
 
 [project.scripts]
 bionic-pdf = "bionic_pdf.cli:main"

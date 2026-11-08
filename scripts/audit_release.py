@@ -59,6 +59,8 @@ def audit(folder,version):
                 assert any(n.startswith('third-party-licenses/pypdf/') for n in names)
                 assert any(n.startswith('third-party-licenses/fonttools/') for n in names)
                 assert 'third-party-licenses/freetype-py/FTL.TXT' in names
+                assert any(n.startswith('third-party-licenses/pypdfium2/') for n in names)
+                assert any(n.startswith('third-party-licenses/Pillow/') for n in names)
             elif 'web-reader' in name:
                 assert 'manifest.json' not in names and 'layout.mjs' in names
             else:

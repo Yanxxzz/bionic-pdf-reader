@@ -60,6 +60,20 @@ python scripts/build_packages.py
 
 GitHub 工作流只在测试代码或原创样例上运行。通过 `workflow_dispatch` 可重新测试；不会自动上传用户文档，也不自动改变仓库可见性。
 
+## Firefox 签名
+
+Firefox 自分发签名使用项目固定的扩展 ID `bionic-pdf-reader@yanxxzz`。先运行 `python scripts/build_packages.py`，将生成的 Firefox ZIP 解压到 `firefox-build`。用 Mozilla 的 `web-ext` 校验这个目录，确保实际发送的包已包含完整的本地阅读器。
+
+```sh
+npx web-ext lint --source-dir firefox-build
+```
+
+具有该扩展发布权限的维护者在本机设置 `WEB_EXT_API_KEY` 和 `WEB_EXT_API_SECRET`，检查扩展版本号后运行签名命令。凭据由 Mozilla Add-on Developer Hub 签发。下列命令会向 Mozilla 提交扩展文件，审核签名后将 XPI 下载到 `signed-firefox`。上传签名的 XPI 到 Release 前，在正式版 Firefox 的 `about:addons` 中选择「从文件安装附加组件」，重启并验证阅读器仍然可用。[Mozilla 签名与分发说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/) · [web-ext sign 参数](https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-sign)
+
+```sh
+npx web-ext sign --channel unlisted --source-dir firefox-build --artifacts-dir signed-firefox
+```
+
 ## 已知边界
 
 桌面端复用 pypdf 的字体解码和内容流解析器，在原始字节中定位文字对象的起点（`BT`）。升级 pypdf 时需验证内联图像、注释和字符串里的同名字符，以及开关前后的像素和复制文字。PDF.js 的补丁也需在升级后重验 CSP、原始像素、字距、复制层与公式。复杂脚本、专业排版与阅读效果需要额外人工和用户验证。

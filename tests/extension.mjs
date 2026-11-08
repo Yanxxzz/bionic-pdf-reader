@@ -114,10 +114,22 @@ try {
   assert.ok(await reader.locator('#page-scroller').evaluate(el => el.scrollTop > 300));
   await reader.locator('#file-input').setInputFiles(sample);
   await waitForPage(reader, 3);
+  await reader.reload();
+  await waitForPage(reader, 3);
+  assert.equal(await reader.locator('#file-name').textContent(), 'multilingual.pdf');
+  await reader.evaluate(() => {
+    const write = Storage.prototype.setItem;
+    Storage.prototype.setItem = function(key, value) {
+      if (this === sessionStorage) throw new DOMException('Full', 'QuotaExceededError');
+      return write.call(this, key, value);
+    };
+  });
+  await reader.locator('#file-input').setInputFiles(path.join(path.dirname(sample), 'named.pdf'));
+  await reader.waitForFunction(() => document.querySelector('#file-name').textContent === 'named.pdf' &&
+    document.querySelector('#page-frame').dataset.renderState === 'ready');
   assert.equal(await reader.evaluate(() => sessionStorage.getItem('bionic-tab-view')), null);
   await reader.reload();
-  await reader.waitForSelector('html[data-reader-ready]');
-  assert.ok(await reader.locator('#choose-file').isVisible());
+  await reader.locator('#choose-file').waitFor();
   await reader.close();
   await source.goto(base + '/paper#page=2');
   expired = true;
