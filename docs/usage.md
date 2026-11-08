@@ -38,7 +38,7 @@ Windows 便携版和 Python 安装包的图形界面都可点击「在浏览器�
 
 ## 扫描件本地 OCR
 
-1. 在本机安装 Tesseract 5 和文档对应的语言包。在终端运行 `tesseract --list-langs` 可查看已安装模型。Windows 常规安装目录也能被制作工具自动识别。Windows 便携版自带图像处理组件。使用 Python 源码时运行 `python -m pip install ".[ocr]"`。[Tesseract 安装说明](https://tesseract-ocr.github.io/tessdoc/Installation.html) · [官方语言模型](https://github.com/tesseract-ocr/tessdata_fast)
+1. 在本机安装 Tesseract 5 和文档对应的语言包，例如英语用 `eng`。在终端运行 `tesseract --list-langs` 可查看已安装模型。Windows 常规安装目录也能被制作工具自动识别。Windows 便携版自带图像处理组件。使用 Python 源码时运行 `python -m pip install ".[ocr]"`。[13 种语言与模型名](languages.md#ocr-语言模型) · [Tesseract 安装说明](https://tesseract-ocr.github.io/tessdoc/Installation.html) · [官方语言模型](https://github.com/tesseract-ocr/tessdata_fast)
 2. 在制作工具中选择原 PDF、文档语言和「可切换版」，勾选「扫描页本地 OCR」。在命令行可运行 `bionic-pdf scan.pdf reading.pdf --ocr --language en --mode switchable`。也可以用 `--pages` 先试读一页。自动模式优先使用 PDF 的语言标记，无法识别语言时使用英语。
 3. 打开副本，在浏览器的「原始／仿生」按钮或桌面阅读器的图层面板切换。程序根据识别出的字母位置加粗扫描图上的深色笔画。纯图片页补入一层可搜索、复制的文字，已有 OCR 正文会沿用。识别与生成都在本机完成。
 

@@ -8,6 +8,8 @@
 - 教材按 `971,16-15,971`、论文按 `4,11-10,4` 导出，复制文字和关闭图层时的画面逐页与对应原页一致。用 veraPDF 的 7.20-t02-pass-a 表单图像样本及保留其结构的嵌字衍生件复查独立标签和父级索引。另测正序、倒序与重复页中的表单引用。[veraPDF 公开测试语料](https://github.com/veraPDF/veraPDF-corpus/wiki/PDFUA-1-test-corpus)
 - 在两个浏览器标签页分别打开教材第 971 页和论文第 10 页。Chrome 和 Edge 刷新后各自恢复了页码、缩放、页内位置、渲染画面和选区文字。Firefox 159.0.1 的临时扩展也完成了本地文件刷新续读。
 - 使用 Windows 便携程序导出上述教材和论文，用 Python wheel 在 13 份扫描样例上逐页测试。两种桌面入口遇到错误的页码、强度或缺失的 OCR 模型时保留已有文件。Chrome、Edge 加载构建后的扩展，在含第二个独立图层的扫描副本上验证开关、搜索和复制。
+- 用同一 Chrome 发布包复查 112 处搜索命中。教材的 `Treynor` 有 82 处，论文的 `sinusoid` 有 4 处，双页讲义的 `probability` 有 26 处。逐次查找上一处、下一处后，用原件字形坐标校验高亮。另在原始和仿生模式实点教材、论文和 RFC 中的五处引用，返回时页码、缩放和滚动位置都与出发处一致。
+- Windows 便携版和 wheel 导出的 3 张 PLOS 双页讲义左右两栏均有加粗，关闭图层后与原页逐像素一致。混合讲义的第 2、6 页保持原样，程序列出的未加粗页码也是 2、6。用横排双字节字体对照普通版与图层版，验证词间距、开关恢复和复制结果。
 - Windows 正式版 Firefox 的内置 PDF 查看器按 13 种语言逐页切换预制图层，关闭后画面恢复，复制层一致。SumatraPDF 3.6.1 在 13 种语言的普通副本中绘出词首。Mac 版 Apple Books 8.5 导入后的文件与原副本字节相同。iOS 26.5 的 iPhone 17 Pro 模拟器在 Safari 原生 PDF 视图中显示了普通版的词首，关闭图层的副本与原文截图相同。[Apple Books 记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42479896097/job/128729353138) · [iPhone 模拟器记录](https://github.com/Yanxxzz/bionic-pdf-reader/actions/runs/42478774120)
 
 ## 开发版 · 导出强度与自动模式的英文词首
