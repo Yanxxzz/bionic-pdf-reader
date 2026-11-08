@@ -12,12 +12,12 @@ from reportlab.pdfgen.canvas import Canvas
 from bionic_pdf import make_pdf
 
 
-def scan_sample(folder, *, rotated=False, hidden_text=False):
+def scan_sample(folder, *, rotated=False, hidden_text=False, lines=('Reading together', 'the readers')):
     image = Image.new('RGB', (1200, 440), 'white')
     font = ImageFont.truetype(str(Path(__file__).parent/'assets/fonts/Latin.ttf'), 56)
     draw = ImageDraw.Draw(image)
-    draw.text((90, 65), 'Reading together', font=font, fill='black')
-    draw.text((90, 200), 'the readers', font=font, fill='black')
+    for y, line in zip((65, 200), lines):
+        draw.text((90, y), line, font=font, fill='black')
     path = folder/'scan.pdf'
     width, height = (132, 360) if rotated else (360, 132)
     margin = 18 if rotated else 0
@@ -108,6 +108,18 @@ def test_rotated_and_cropped_scan_keeps_the_same_highlight_positions(tmp_path):
             assert ink.crop((80, 180, 103, 265)).getbbox()
             assert ink.crop((111, 180, 155, 265)).getbbox() is None
             assert 'the readers' in page.get_textpage().get_text_bounded()
+
+
+@with_tesseract
+def test_number_only_scan_remains_searchable_without_any_emphasis(tmp_path):
+    source = scan_sample(tmp_path, lines=('12345', '67890'))
+    target = tmp_path/'numbers.pdf'
+    report = make_pdf(source, target, ocr=True)
+    assert report['glyphs'] == 0
+    assert report['ocr_pages'] == report['unemphasized_pages'] == [1]
+    with pdfium.PdfDocument(source) as original, pdfium.PdfDocument(target) as result:
+        assert result[0].render(scale=2).to_pil().tobytes() == original[0].render(scale=2).to_pil().tobytes()
+        assert result[0].get_textpage().get_text_bounded().split() == ['12345', '67890']
 
 
 @with_tesseract

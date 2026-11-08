@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+from xml.etree import ElementTree
 
 from PIL import Image, ImageChops
 from reportlab.pdfbase import pdfmetrics
@@ -179,26 +180,40 @@ def iphone(folder):
     return {"app": "Safari PDF viewer", "simulator": device["name"], "iOS": version, **compare_pages(shots)}
 
 
+def choose_android_pdf(folder, package, name):
+    """Select a downloaded file in the system picker launched by MuPDF mini."""
+    command("adb", "shell", "am", "force-stop", package)
+    command("adb", "shell", "am", "start", "-W", "-n", package + "/.LibraryActivity")
+    visited = set()
+    for _ in range(12):
+        command("adb", "shell", "uiautomator", "dump", "/sdcard/bionic-ui.xml")
+        xml = command("adb", "shell", "cat", "/sdcard/bionic-ui.xml")
+        nodes = ElementTree.fromstring(xml).iter("node")
+        labels = {label: node.get("bounds") for node in nodes for label in
+                  [node.get("text"), node.get("content-desc")] if label}
+        for target in (name, name.removesuffix(".pdf"), "Downloads", "Show roots"):
+            if target in labels and target not in visited:
+                x, y, right, bottom = map(int, re.findall(r"\d+", labels[target]))
+                command("adb", "shell", "input", "tap", str((x + right) // 2), str((y + bottom) // 2))
+                if target in (name, name.removesuffix(".pdf")):
+                    return
+                visited.add(target)
+                break
+        time.sleep(.5)
+    (folder / "android-picker.xml").write_text(xml, encoding="utf-8")
+    raise AssertionError(f"Android's document picker did not offer {name}: {list(labels)}")
+
+
 def android(folder):
     package = "com.artifex.mupdf.mini.app"
-    downloads = "content://media/external_primary/downloads"
     shots = {}
     for mode in ("original", "static", "off"):
-        # Import through Android's public Downloads collection and share a read-only URI.
-        name = f"bionic-{mode}.pdf"
-        command("adb", "shell", "content", "insert", "--uri", downloads, "--bind",
-                f"_display_name:s:{name}", "--bind", "mime_type:s:application/pdf")
-        rows = command("adb", "shell", "content", "query", "--uri", downloads, "--projection", "_id:_display_name")
-        match = re.search(rf"_id=(\d+), _display_name={re.escape(name)}$", rows, re.MULTILINE)
-        assert match, rows
-        uri = f"{downloads}/{match[1]}"
-        data = (folder / mode / "sample.pdf").read_bytes()
-        subprocess.run(["adb", "shell", "-T", "content", "write", "--uri", uri], input=data, check=True)
-        assert subprocess.check_output(["adb", "exec-out", "content", "read", "--uri", uri]) == data
-        command("adb", "shell", "am", "force-stop", package)
-        launch = command("adb", "shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
-                         "-t", "application/pdf", "-d", uri, "--grant-read-uri-permission", "-p", package)
-        assert package in launch and "Error" not in launch, launch
+        name = f"{mode}.pdf"
+        path_on_device = f"/sdcard/Download/{name}"
+        command("adb", "push", str(folder / mode / "sample.pdf"), path_on_device)
+        command("adb", "shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE",
+                "-d", "file://" + path_on_device)
+        choose_android_pdf(folder, package, name)
         path = folder / f"android-{mode}.png"
         for _ in range(25):
             time.sleep(1)

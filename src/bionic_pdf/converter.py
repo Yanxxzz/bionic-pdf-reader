@@ -238,12 +238,12 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
     if mode == 'switchable':
         layer = _add_reading_layer(writer)
         suffix = ' - Switchable Reading'
-        subject = ('Original PDF text plus optional vector word-prefix emphasis. '
+        subject = ('Original PDF pages with optional word-prefix emphasis. '
                    'Toggle the Bionic Reading layer in your reader.')
     else:
         layer = None
         suffix = ' - Bionic Reading'
-        subject = 'Original PDF text plus always-visible vector word-prefix emphasis.'
+        subject = 'Original PDF pages with always-visible word-prefix emphasis.'
     rule = 'reference' if locale in ('auto', 'en') else 'half'
     builder = OverlayBuilder(writer, layer, weight, rule, form_tags)
     total = len(writer.pages)
@@ -257,18 +257,16 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
     with scans as scan:
         for number, page in enumerate(writer.pages, 1):
             if not builder.build_page(page):
-                count = 0
-                if scan is not None:
-                    count = scan(indices[number - 1], writer, page, layer)
-                if count:
+                count = scan(indices[number - 1], writer, page, layer) if scan is not None else None
+                if count is not None:
                     builder.count += count
                     ocr_pages.append(number)
-                else:
+                if not count:
                     unemphasized.append(number)
             if progress is not None:
                 progress(number, total)
     form_tags.finish()
-    if builder.count == 0:
+    if builder.count == 0 and not ocr_pages:
         if builder.glyphs.skipped_fonts or builder.text_reader.skipped_fonts:
             reason = '已读取文字，但没有可安全加粗的嵌入字体字形。'
         elif builder.has_text:

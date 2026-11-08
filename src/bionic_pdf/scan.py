@@ -152,21 +152,23 @@ def _add_scan(writer, page, mask, matrix, text_pdf, layer):
                      NameObject('/Resources'): text['/Resources'].clone(writer)})
         name = bind_resource(resources, '/XObject', NameObject('/BROcrText'), writer._add_object(form.flate_encode()))
         commands.append(f'q {1/float(text.mediabox.width):.10f} 0 0 {1/float(text.mediabox.height):.10f} 0 0 cm {name} Do Q')
-    image = stream(mask.tobytes())
-    image.update({NameObject('/Type'): NameObject('/XObject'), NameObject('/Subtype'): NameObject('/Image'),
-                  NameObject('/Width'): NumberObject(mask.width), NameObject('/Height'): NumberObject(mask.height),
-                  NameObject('/BitsPerComponent'): NumberObject(1), NameObject('/ImageMask'): BooleanObject(True),
-                  NameObject('/Interpolate'): BooleanObject(True),
-                  NameObject('/Decode'): ArrayObject([NumberObject(1), NumberObject(0)])})
-    name = bind_resource(resources, '/XObject', NameObject('/BROcrInk'), writer._add_object(image.flate_encode()))
-    commands.append('/Artifact BMC')
-    if layer is not None:
-        group = bind_resource(resources, '/Properties', NameObject('/BRBionic'), layer)
-        commands.append(f'/OC {group} BDC')
-    commands.append(f'0 g {name} Do')
-    if layer is not None:
+    if mask is not None:
+        image = stream(mask.tobytes())
+        image.update({NameObject('/Type'): NameObject('/XObject'), NameObject('/Subtype'): NameObject('/Image'),
+                      NameObject('/Width'): NumberObject(mask.width), NameObject('/Height'): NumberObject(mask.height),
+                      NameObject('/BitsPerComponent'): NumberObject(1), NameObject('/ImageMask'): BooleanObject(True),
+                      NameObject('/Interpolate'): BooleanObject(True),
+                      NameObject('/Decode'): ArrayObject([NumberObject(1), NumberObject(0)])})
+        name = bind_resource(resources, '/XObject', NameObject('/BROcrInk'), writer._add_object(image.flate_encode()))
+        commands.append('/Artifact BMC')
+        if layer is not None:
+            group = bind_resource(resources, '/Properties', NameObject('/BRBionic'), layer)
+            commands.append(f'/OC {group} BDC')
+        commands.append(f'0 g {name} Do')
+        if layer is not None:
+            commands.append('EMC')
         commands.append('EMC')
-    commands.append('EMC Q')
+    commands.append('Q')
     old = page.raw_get('/Contents')
     contents = old.get_object()
     originals = contents if isinstance(contents, ArrayObject) else [old]
@@ -180,13 +182,13 @@ def _scan_page(document, model, rule, weight, index, writer, target, layer):
 
     # A raster cannot identify which source OCG owns each pixel.
     if _has_source_layers(target.get('/Resources', DictionaryObject())):
-        return 0
+        return None
     with closing(document[index]) as page:
         objects = list(page.get_objects(filter=[raw.FPDF_PAGEOBJ_IMAGE, raw.FPDF_PAGEOBJ_TEXT]))
         if not any(obj.type == raw.FPDF_PAGEOBJ_IMAGE for obj in objects):
-            return 0
+            return None
         if any(obj.type == raw.FPDF_PAGEOBJ_TEXT and raw.FPDFTextObj_GetTextRenderMode(obj.raw) != 3 for obj in objects):
-            return 0
+            return None
         with closing(page.get_textpage()) as text:
             need_text = not text.get_text_bounded().strip()
         scale = min(300/72, 4200/max(page.get_size()))
@@ -206,6 +208,9 @@ def _scan_page(document, model, rule, weight, index, writer, target, layer):
                     draw.rectangle((min(ax,bx), min(ay,by), max(ax,bx), max(ay,by)), fill=255)
         hocr, text_pdf = _recognize(image, model, max(1, round(scale*72)), need_text)
         mask, count = _ink_mask(image, hocr, rule, weight)
-        if count:
-            _add_scan(writer, target, mask, (right[0]-x,right[1]-y,top[0]-x,top[1]-y,x,y), text_pdf, layer)
+        # Numbers and short labels may be searchable even when no letter should be thickened.
+        if not count and not (text_pdf and hocr.find(".//*[@class='ocrx_word']") is not None):
+            return None
+        matrix = (right[0]-x, right[1]-y, top[0]-x, top[1]-y, x, y)
+        _add_scan(writer, target, mask if count else None, matrix, text_pdf, layer)
         return count
