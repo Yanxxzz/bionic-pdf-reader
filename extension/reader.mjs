@@ -4,7 +4,7 @@ import { prefixLength } from './words.mjs';
 import {fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
 import {installFindBar} from './find-bar.mjs';
 import {externalLink, pageInRange, savedPosition} from './navigation.mjs';
-import {pdfFromOpener} from './tab-source.mjs';
+import {pdfFromOpener, rememberTabView} from './tab-source.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -27,7 +27,7 @@ try {
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
-let documentId, navigationRevision = 0, pendingPosition = null;
+let documentId, tabSource, navigationRevision = 0, pendingPosition = null;
 let progressTimer, lastProgress;
 const findBar = installFindBar(() => pageNumber, number => {
   ++navigationRevision;
@@ -103,12 +103,12 @@ async function scheduleRender() {
 function saveProgress() {
   clearTimeout(progressTimer);
   if (!pdf || $('page-frame').dataset.renderedPage !== String(pageNumber)) return;
-  const progress = JSON.stringify({number: pageNumber, ...readingPosition($('zoom').value)});
+  const position = {number: pageNumber, ...readingPosition($('zoom').value)};
+  const progress = JSON.stringify(position);
   if (progress === lastProgress) return;
-  try {
-    localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, progress);
-    lastProgress = progress;
-  } catch {}
+  lastProgress = progress;
+  if (tabSource) rememberTabView(tabSource, position);
+  try { localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, progress); } catch {}
 }
 $('page-scroller').addEventListener('scroll', () => {
   clearTimeout(progressTimer);
@@ -141,18 +141,23 @@ function showPosition(position) {
   return scheduleRender();
 }
 
+async function destinationPage(activePDF, destination) {
+  const dest = typeof destination === 'string' ? await activePDF.getDestination(destination) : destination;
+  if (!dest) throw new Error('找不到这个链接指向的页面。');
+  const ref = dest[0];
+  const index = Number.isInteger(ref) ? ref : await activePDF.getPageIndex(ref);
+  return {page: await activePDF.getPage(index + 1), dest};
+}
+
 async function goToDestination(activePDF, dest) {
   if (!dest || pdf !== activePDF) return;
   findBar.clear();
   const revision = ++navigationRevision;
   const origin = {number: pageNumber, ...readingPosition($('zoom').value)};
   try {
-    const target = typeof dest === 'string' ? await activePDF.getDestination(dest) : dest;
-    const ref = target?.[0];
-    const index = Number.isInteger(ref) ? ref : await activePDF.getPageIndex(ref);
-    const page = await activePDF.getPage(index + 1);
+    const target = await destinationPage(activePDF, dest);
     if (pdf !== activePDF || revision !== navigationRevision) return;
-    const position = {number: index + 1, ...resolvePosition(page, target, origin)};
+    const position = resolvePosition(target, origin);
     const depth = history.state?.documentId === documentId ? history.state.depth : 0;
     history.replaceState({documentId, depth, position: origin}, '');
     history.pushState({documentId, depth: depth + 1, position}, '');
@@ -218,12 +223,14 @@ async function openFile(file) {
     };
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) return;
-    const [labels, permissions, metadata] = await Promise.all([loadedPDF.getPageLabels(), loadedPDF.getPermissions(),
-      file.url ? loadedPDF.getMetadata().catch(() => null) : null]);
+    const [labels, permissions, metadata, target] = await Promise.all([
+      loadedPDF.getPageLabels(), loadedPDF.getPermissions(), file.url ? loadedPDF.getMetadata().catch(() => null) : null,
+      file.named ? destinationPage(loadedPDF, file.named).catch(() => null) : null,
+    ]);
     if (currentLoad !== loadRevision) return;
     loadingTask = null;
     $('message').hidden = true;
-    await showDocument(loadedPDF, metadata?.contentDispositionFilename || file.name, labels, permissions, file.initialPage);
+    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target});
   } catch (error) {
     if (currentLoad === loadRevision) {
       const reason = file.url ? '请在原标签页保存文件，再点「打开 PDF」。' : error.message;
@@ -237,21 +244,24 @@ async function openFile(file) {
   }
 }
 
-async function showDocument(loadedPDF, name, labels, permissions, initialPage) {
+async function showDocument(loadedPDF, {name, labels, permissions, file, target}) {
   saveProgress();
   lastProgress = null;
   const previous = pdf;
   pdf = loadedPDF;
   findBar.reset(pdf);
-  documentId = crypto.randomUUID();
+  const pdfVersion = pdf.fingerprints[1] || pdf.fingerprints[0];
+  const resumed = file.resume?.pdfVersion === pdfVersion ? file.resume : null;
+  documentId = resumed?.documentId || crypto.randomUUID();
+  tabSource = file.sourceKey ? {sourceKey: file.sourceKey, documentId, pdfVersion} : null;
+  if (!tabSource) rememberTabView(null);
   ++navigationRevision;
-  $('return-position').disabled = true;
+  $('return-position').disabled = history.state?.documentId !== documentId || !history.state?.depth;
   pageLabels = labels;
   copyAllowed = permissions === null || permissions.includes(pdfjs.PermissionFlag.COPY);
   let raw = null;
   try { raw = localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`); } catch {}
-  let position = savedPosition(raw, pdf.numPages, $('zoom').value);
-  if (initialPage) position = {number: pageInRange(initialPage, pdf.numPages, 1), zoom: position.zoom};
+  let position = savedPosition(resumed?.position ?? raw, pdf.numPages, $('zoom').value);
   $('welcome').hidden = true;
   $('document').hidden = false;
   $('file-name').textContent = name;
@@ -261,6 +271,9 @@ async function showDocument(loadedPDF, name, labels, permissions, initialPage) {
   $('page-label').textContent = '';
   $('outline').replaceChildren();
   document.title = `${name} · 仿生 PDF 阅读`;
+  if (target) position = resolvePosition(target, {zoom: position.zoom});
+  else if (file.initialPage) position = {number: pageInRange(file.initialPage, pdf.numPages, 1), zoom: position.zoom};
+  if (file.named && !target) notify('找不到链接指定的书签，已打开 PDF。');
   const reset = resetPageView();
   const rendering = showPosition(position);
   await reset;

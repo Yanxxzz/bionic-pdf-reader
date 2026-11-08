@@ -13,6 +13,7 @@ const channel = process.env.EXTENSION_CHANNEL || 'chromium';
 const app = path.join(root, 'extension');
 const sample = path.join(root, '.tmp/examples/multilingual.pdf');
 const bytes = fs.readFileSync(sample);
+const named = fs.readFileSync(path.join(path.dirname(sample), 'named.pdf'));
 let expired = false;
 let htmlRequests = 0;
 const server = http.createServer((req, res) => {
@@ -20,6 +21,8 @@ const server = http.createServer((req, res) => {
   if (req.url === '/ordinary.pdf') {
     ++htmlRequests;
     res.writeHead(200, {'Content-Type':'text/html'}).end('<title>HTML article</title>');
+  } else if (req.url === '/named') {
+    res.writeHead(200, {'Content-Type':'application/pdf', 'Content-Length':named.length}).end(named);
   } else if (req.url === '/paper' && !expired && req.headers.cookie?.includes('session=reader-test')) {
     res.writeHead(200, {'Content-Type':'application/pdf', 'Content-Length':bytes.length,
       'Content-Disposition':'inline; filename="article.pdf"'}).end(bytes);
@@ -81,17 +84,51 @@ try {
   assert.equal(await reader.locator('#file-name').textContent(), 'article.pdf');
   assert.equal(reader.url(), `chrome-extension://${id}/reader.html`);
   assert.equal(source.url(), base + '/paper#page=2');
+  const saved = await reader.evaluate(() => sessionStorage.getItem('bionic-tab-view'));
+  assert.ok(saved && !saved.includes(base));
+  await reader.locator('#outline').getByRole('button', {name:'de', exact:true}).click();
+  await waitForPage(reader, 3);
+  await reader.locator('#zoom').selectOption('2');
+  await waitForPage(reader, 3);
+  const top = await reader.locator('#page-scroller').evaluate(el => { el.scrollTop = 290; return el.scrollTop; });
+  assert.ok(top > 0);
+  const other = await clickExtension();
+  await waitForPage(other, 2);
+  await reader.reload();
+  await waitForPage(reader, 3);
+  assert.equal(await reader.locator('#page-scroller').evaluate(el => el.scrollTop), top);
+  assert.ok(await reader.locator('#return-position').isEnabled());
+  await other.close();
+  await source.goto(base + '/ordinary.pdf');
+  const ordinaryVisits = htmlRequests;
+  await reader.reload();
+  await reader.getByRole('alert').filter({hasText:'原标签页'}).waitFor();
+  assert.ok(await reader.locator('#choose-file').isVisible());
+  assert.equal(htmlRequests, ordinaryVisits, 'Reload never fetches the replacement page');
   await reader.close();
 
+  await source.goto(base + '/named#page=2#nameddest=Methods%20+%20data');
+  reader = await clickExtension();
+  await waitForPage(reader, 4);
+  assert.equal(await reader.locator('#zoom').inputValue(), '2');
+  assert.ok(await reader.locator('#page-scroller').evaluate(el => el.scrollTop > 300));
+  await reader.locator('#file-input').setInputFiles(sample);
+  await waitForPage(reader, 3);
+  assert.equal(await reader.evaluate(() => sessionStorage.getItem('bionic-tab-view')), null);
+  await reader.reload();
+  await reader.waitForSelector('html[data-reader-ready]');
+  assert.ok(await reader.locator('#choose-file').isVisible());
+  await reader.close();
+  await source.goto(base + '/paper#page=2');
   expired = true;
   reader = await clickExtension();
   await reader.getByRole('alert').filter({hasText:'请在原标签页保存文件'}).waitFor();
   assert.ok(await reader.locator('#choose-file').isVisible());
   await reader.locator('#file-input').setInputFiles(sample);
-  await waitForPage(reader, 2);
+  await waitForPage(reader, 3);
   assert.equal(await reader.locator('#file-name').textContent(), 'multilingual.pdf');
   assert.deepEqual(errors, []);
-  console.log('Extension toolbar, authenticated PDF, expired session, file picker and bionic rendering passed');
+  console.log('Extension toolbar, reload, named destination, expired session and file picker passed');
 } finally {
   await context?.close();
   await new Promise(resolve => server.close(resolve));

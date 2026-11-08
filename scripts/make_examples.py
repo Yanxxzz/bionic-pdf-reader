@@ -41,7 +41,16 @@ def create_sample(target, samples=None):
     return target
 
 if __name__=='__main__':
-    print(create_sample(ROOT/'.tmp/examples/multilingual.pdf'))
+    from pypdf import PdfWriter
+    from pypdf.generic import Destination, Fit
+
+    sample = create_sample(ROOT/'.tmp/examples/multilingual.pdf')
+    print(sample)
+    with PdfWriter() as writer:
+        writer.append(sample, pages=(0, 4))
+        writer.add_named_destination_object(Destination('Methods + data', writer.pages[3].indirect_reference,
+                                                        Fit.xyz(60, 460, 2)))
+        writer.write(sample.with_name('named.pdf'))
     locked = canvas.Canvas(str(ROOT/'.tmp/examples/locked.pdf'), invariant=1, encrypt='reader-test')
     locked.drawString(48, 740, 'Password protected example')
     locked.save()

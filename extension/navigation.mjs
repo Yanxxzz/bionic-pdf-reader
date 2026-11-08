@@ -65,9 +65,10 @@ export function pageInRange(number, total, fallback) {
   return Number.isInteger(number) ? Math.min(total, Math.max(1, number)) : fallback;
 }
 
-export function savedPosition(raw, total, defaultZoom) {
-  let saved;
-  try { saved = JSON.parse(raw); } catch {}
+export function savedPosition(saved, total, defaultZoom) {
+  if (typeof saved === 'string') {
+    try { saved = JSON.parse(saved); } catch { saved = null; }
+  }
   const fallback = {number: 1, zoom: defaultZoom};
   if (typeof saved === 'number') return {...fallback, number: pageInRange(saved, total, 1)};
   if (!saved || !Number.isInteger(saved.number)) return fallback;

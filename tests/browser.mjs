@@ -224,14 +224,15 @@ try{
         const frame = document.querySelector('#page-frame').getBoundingClientRect();
         return (el.getBoundingClientRect().top - frame.top) / frame.height;
       });
-      async function zoomTo(value) {
+      async function changeView(change) {
         const revision = await page.locator('#page-frame').getAttribute('data-render-revision');
-        await page.locator('#zoom').selectOption(value);
+        await change();
         await page.waitForFunction(old => {
           const f = document.querySelector('#page-frame').dataset;
           return f.renderState === 'ready' && f.renderRevision !== old;
         }, revision);
       }
+      const zoomTo = value => changeView(() => page.locator('#zoom').selectOption(value));
       await zoomTo('2');
       await scroller.evaluate(el => el.scrollTo(40, 388));
       const fixed = await scroll();
@@ -250,6 +251,10 @@ try{
       await wait(1, 'bionic');
       assert.equal(await page.locator('#zoom').inputValue(), 'fit');
       assert.ok(Math.abs(await visibleFraction() - fraction) < .003, 'The same line is visible after resizing');
+      await changeView(() => page.setViewportSize({width:1250, height:650}));
+      assert.ok(Math.abs(await visibleFraction() - fraction) < .003, 'Live fit-width resizing keeps the same line');
+      await zoomTo('2');
+      assert.ok(Math.abs(await visibleFraction() - fraction) < .003, 'Changing zoom keeps the same line');
       const projectUrl = 'https://github.com/Yanxxzz/bionic-pdf-reader';
       const context = page.context();
       await context.route(projectUrl, route => route.fulfill({contentType:'text/html', body:'<title>Paper link</title>'}));

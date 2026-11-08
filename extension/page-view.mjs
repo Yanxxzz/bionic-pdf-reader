@@ -36,13 +36,14 @@ export function readingPosition(zoom) {
     point: displayedText?.viewport.convertToPdfPoint(Math.max(0, -x), Math.max(0, -y))};
 }
 
-export function resolvePosition(page, dest, origin) {
+export function resolvePosition({page, dest}, origin) {
   const inset = parseFloat(getComputedStyle(scroller).paddingTop);
-  return destinationView(page, dest, origin, fitWidth(), Math.max(1, scroller.clientHeight - 2 * inset));
+  return {number: page.pageNumber,
+    ...destinationView(page, dest, origin, fitWidth(), Math.max(1, scroller.clientHeight - 2 * inset))};
 }
 
 function restorePosition(viewport, position) {
-  const resized = position?.zoom === 'fit' && position.scale && position.scale !== viewport.scale;
+  const resized = position?.scale && position.scale !== viewport.scale;
   if (position?.point && (position.top === undefined || resized)) {
     const [x, y] = viewport.convertToViewportPoint(...position.point);
     const [left, top] = frameOrigin();
@@ -144,7 +145,7 @@ async function drawPage(request, pdf, number, settings) {
   const viewport = page.getViewport({scale});
   const outputScale = Math.min(devicePixelRatio || 1, 2);
   const samePage = displayedText?.page === page;
-  const position = settings.position ?? (samePage ? {left: scroller.scrollLeft, top: scroller.scrollTop} : {});
+  const position = settings.position ?? (samePage ? readingPosition(settings.zoom) : null);
   const canvas = settings.enabled ? bionicCanvas : originalCanvas;
   const previous = frame.querySelector('canvas');
   if (previous !== canvas) {
