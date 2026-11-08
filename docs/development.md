@@ -65,14 +65,16 @@ GitHub 工作流只在测试代码或原创样例上运行。通过 `workflow_di
 Firefox 自分发签名使用项目固定的扩展 ID `bionic-pdf-reader@yanxxzz`。先运行 `python scripts/build_packages.py`，将生成的 Firefox ZIP 解压到 `firefox-build`。用 Mozilla 的 `web-ext` 校验这个目录，确保实际发送的包已包含完整的本地阅读器。
 
 ```sh
-npx web-ext lint --source-dir firefox-build
+npx web-ext@10.8.0 lint --source-dir firefox-build
 ```
 
 具有该扩展发布权限的维护者在本机设置 `WEB_EXT_API_KEY` 和 `WEB_EXT_API_SECRET`，检查扩展版本号后运行签名命令。凭据由 Mozilla Add-on Developer Hub 签发。下列命令会向 Mozilla 提交扩展文件，审核签名后将 XPI 下载到 `signed-firefox`。上传签名的 XPI 到 Release 前，在正式版 Firefox 的 `about:addons` 中选择「从文件安装附加组件」，重启并验证阅读器仍然可用。[Mozilla 签名与分发说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/) · [web-ext sign 参数](https://extensionworkshop.com/documentation/develop/web-ext-command-reference/#web-ext-sign)
 
 ```sh
-npx web-ext sign --channel unlisted --source-dir firefox-build --artifacts-dir signed-firefox
+npx web-ext@10.8.0 sign --channel unlisted --source-dir firefox-build --artifacts-dir signed-firefox
 ```
+
+0.5.0 的 Firefox 构建通过了上述本地校验，报告 0 个错误和 7 个警告。其中 2 个涉及老版本 Firefox 对数据收集声明的支持，另外 5 个指向随包分发的 PDF.js 中的动态代码或模块导入。可按发布提交追溯 PDF.js 版本、许可证和工作线程补丁。[第三方组件说明](../THIRD_PARTY_NOTICES.md)
 
 ## 已知边界
 

@@ -4,6 +4,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import json
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import threading
@@ -180,15 +181,23 @@ def iphone(folder):
 
 def android(folder):
     package = "com.artifex.mupdf.mini.app"
-    directory = f"/sdcard/Android/data/{package}/files"
-    command("adb", "shell", "mkdir", "-p", directory)
+    downloads = "content://media/external_primary/downloads"
     shots = {}
     for mode in ("original", "static", "off"):
-        dest = f"{directory}/{mode}.pdf"
-        command("adb", "push", str(folder / mode / "sample.pdf"), dest)
+        # Import through Android's public Downloads collection and share a read-only URI.
+        name = f"bionic-{mode}.pdf"
+        command("adb", "shell", "content", "insert", "--uri", downloads, "--bind",
+                f"_display_name:s:{name}", "--bind", "mime_type:s:application/pdf")
+        rows = command("adb", "shell", "content", "query", "--uri", downloads, "--projection", "_id:_display_name")
+        match = re.search(rf"_id=(\d+), _display_name={re.escape(name)}$", rows, re.MULTILINE)
+        assert match, rows
+        uri = f"{downloads}/{match[1]}"
+        data = (folder / mode / "sample.pdf").read_bytes()
+        subprocess.run(["adb", "shell", "-T", "content", "write", "--uri", uri], input=data, check=True)
+        assert subprocess.check_output(["adb", "exec-out", "content", "read", "--uri", uri]) == data
         command("adb", "shell", "am", "force-stop", package)
         launch = command("adb", "shell", "am", "start", "-W", "-a", "android.intent.action.VIEW",
-                         "-t", "application/pdf", "-d", "file://" + dest, "-p", package)
+                         "-t", "application/pdf", "-d", uri, "--grant-read-uri-permission", "-p", package)
         assert package in launch and "Error" not in launch, launch
         path = folder / f"android-{mode}.png"
         for _ in range(25):
