@@ -1,6 +1,6 @@
 import {AnnotationMode, TextLayer} from './vendor/pdf.mjs';
 import {GlyphCapture, planGlyphs, repairTextContent} from './layout.mjs';
-import {destinationView} from './navigation.mjs';
+import {destinationView, externalLink} from './navigation.mjs';
 import {matchRanges} from './search.mjs';
 
 const scroller = document.getElementById('page-scroller');
@@ -32,7 +32,7 @@ function frameOrigin() {
 
 export function readingPosition(zoom) {
   const [x, y] = frameOrigin();
-  return {zoom, left: scroller.scrollLeft, top: scroller.scrollTop,
+  return {zoom, left: scroller.scrollLeft, top: scroller.scrollTop, scale: displayedText?.viewport.scale,
     point: displayedText?.viewport.convertToPdfPoint(Math.max(0, -x), Math.max(0, -y))};
 }
 
@@ -42,11 +42,17 @@ export function resolvePosition(page, dest, origin) {
 }
 
 function restorePosition(viewport, position) {
-  if (position?.point && position.top === undefined) {
+  const resized = position?.zoom === 'fit' && position.scale && position.scale !== viewport.scale;
+  if (position?.point && (position.top === undefined || resized)) {
     const [x, y] = viewport.convertToViewportPoint(...position.point);
     const [left, top] = frameOrigin();
     const margin = parseFloat(getComputedStyle(scroller).paddingTop);
-    scroller.scrollBy(left + x - margin, top + y - margin);
+    if (resized) {
+      scroller.scrollBy(position.left <= margin ? position.left - scroller.scrollLeft : left + x,
+                        position.top <= margin ? position.top - scroller.scrollTop : top + y);
+    } else {
+      scroller.scrollBy(left + x - margin, top + y - margin);
+    }
   } else {
     scroller.scrollTo(position?.left ?? 0, position?.top ?? 0);
   }
@@ -107,17 +113,23 @@ async function pagePlan(page, viewport, {rule, locale}, originalPaint) {
 
 function showPageLinks(annotations, viewport, followDestination) {
   const links = document.createDocumentFragment();
-  for (const {subtype, dest, rect, contentsObj} of annotations) {
-    if (subtype !== 'Link' || !dest) continue;
+  for (const annotation of annotations) {
+    const {subtype, dest, rect, contentsObj} = annotation;
+    if (subtype !== 'Link') continue;
+    const link = dest ? document.createElement('a') : externalLink(annotation);
+    if (!link) continue;
     const [x1, y1, x2, y2] = viewport.convertToViewportRectangle(rect);
-    const link = document.createElement('a');
-    link.href = '#page-frame';
-    link.setAttribute('aria-label', contentsObj?.str || '跳转到书内链接目标');
+    if (dest) {
+      link.href = '#page-frame';
+      link.setAttribute('aria-label', contentsObj?.str || '跳转到书内链接目标');
+      link.addEventListener('click', event => { event.preventDefault(); followDestination(dest); });
+    } else {
+      link.setAttribute('aria-label', `${contentsObj?.str || link.host}（在新标签页打开）`);
+    }
     Object.assign(link.style, {
       left: `${100 * Math.min(x1, x2) / viewport.width}%`, top: `${100 * Math.min(y1, y2) / viewport.height}%`,
       width: `${100 * Math.abs(x2 - x1) / viewport.width}%`, height: `${100 * Math.abs(y2 - y1) / viewport.height}%`,
     });
-    link.addEventListener('click', event => { event.preventDefault(); followDestination(dest); });
     links.append(link);
   }
   linkContainer.replaceChildren(links);

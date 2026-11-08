@@ -3,6 +3,8 @@ import * as pdfjs from './vendor/pdf.mjs';
 import { prefixLength } from './words.mjs';
 import {fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
 import {installFindBar} from './find-bar.mjs';
+import {externalLink, pageInRange, savedPosition} from './navigation.mjs';
+import {pdfFromOpener} from './tab-source.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -26,6 +28,7 @@ let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null;
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
 let documentId, navigationRevision = 0, pendingPosition = null;
+let progressTimer, lastProgress;
 const findBar = installFindBar(() => pageNumber, number => {
   ++navigationRevision;
   return showPosition({number, zoom: $('zoom').value});
@@ -88,7 +91,7 @@ async function scheduleRender() {
     if (!result.hasText) status = '图片页或无可识别文字，保留原页';
     else if (snapshot.enabled) status = result.stroked ? '仿生模式 · 词首加粗' : '此页没有可加粗文字，保留原页';
     $('reading-status').textContent = status;
-    try { localStorage.setItem(`bionic-page-${activePDF.fingerprints[0]}`, String(number)); } catch {}
+    saveProgress();
   } catch (error) {
     if (pdf !== activePDF) return;
     $('reading-status').textContent = '此页暂时无法显示';
@@ -97,9 +100,22 @@ async function scheduleRender() {
   }
 }
 
-function pageInRange(number, total, fallback) {
-  return Number.isInteger(number) ? Math.min(total, Math.max(1, number)) : fallback;
+function saveProgress() {
+  clearTimeout(progressTimer);
+  if (!pdf || $('page-frame').dataset.renderedPage !== String(pageNumber)) return;
+  const progress = JSON.stringify({number: pageNumber, ...readingPosition($('zoom').value)});
+  if (progress === lastProgress) return;
+  try {
+    localStorage.setItem(`bionic-page-${pdf.fingerprints[0]}`, progress);
+    lastProgress = progress;
+  } catch {}
 }
+$('page-scroller').addEventListener('scroll', () => {
+  clearTimeout(progressTimer);
+  progressTimer = setTimeout(saveProgress, 180);
+}, {passive: true});
+addEventListener('pagehide', saveProgress);
+document.addEventListener('visibilitychange', () => { if (document.hidden) saveProgress(); });
 function goToPage(number) {
   if (!pdf) return;
   const next = pageInRange(number, pdf.numPages, pageNumber);
@@ -173,10 +189,12 @@ async function openFile(file) {
   try {
     await superseded?.destroy();
     if (currentLoad !== loadRevision) return;
-    const data = new Uint8Array(await file.arrayBuffer());
+    const source = file.url
+      ? {url: file.url, withCredentials: true, docBaseUrl: /^https?:/.test(file.url) ? file.url : undefined}
+      : {data: new Uint8Array(await file.arrayBuffer())};
     if (currentLoad !== loadRevision) return;
     task = pdfjs.getDocument({
-      data, worker, isEvalSupported: false,
+      ...source, worker, isEvalSupported: false,
       cMapUrl: new URL('./vendor/cmaps/', import.meta.url).href,
       cMapPacked: true,
       standardFontDataUrl: new URL('./vendor/standard_fonts/', import.meta.url).href,
@@ -200,14 +218,16 @@ async function openFile(file) {
     };
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) return;
-    const [labels, permissions] = await Promise.all([loadedPDF.getPageLabels(), loadedPDF.getPermissions()]);
+    const [labels, permissions, metadata] = await Promise.all([loadedPDF.getPageLabels(), loadedPDF.getPermissions(),
+      file.url ? loadedPDF.getMetadata().catch(() => null) : null]);
     if (currentLoad !== loadRevision) return;
     loadingTask = null;
     $('message').hidden = true;
-    await showDocument(loadedPDF, file.name, labels, permissions);
+    await showDocument(loadedPDF, metadata?.contentDispositionFilename || file.name, labels, permissions, file.initialPage);
   } catch (error) {
     if (currentLoad === loadRevision) {
-      notify(passwordCancelled ? `已取消打开「${file.name}」。` : `无法打开 PDF「${file.name}」：${error.message}`);
+      const reason = file.url ? '请在原标签页保存文件，再点「打开 PDF」。' : error.message;
+      notify(passwordCancelled ? `已取消打开「${file.name}」。` : `无法打开 PDF「${file.name}」：${reason}`);
     }
   } finally {
     if (task && loadingTask === task) {
@@ -217,30 +237,32 @@ async function openFile(file) {
   }
 }
 
-async function showDocument(loadedPDF, name, labels, permissions) {
+async function showDocument(loadedPDF, name, labels, permissions, initialPage) {
+  saveProgress();
+  lastProgress = null;
   const previous = pdf;
   pdf = loadedPDF;
   findBar.reset(pdf);
   documentId = crypto.randomUUID();
   ++navigationRevision;
-  pendingPosition = {};
   $('return-position').disabled = true;
   pageLabels = labels;
   copyAllowed = permissions === null || permissions.includes(pdfjs.PermissionFlag.COPY);
-  pageNumber = 1;
-  try { pageNumber = pageInRange(Number(localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`)), pdf.numPages, 1); } catch {}
+  let raw = null;
+  try { raw = localStorage.getItem(`bionic-page-${pdf.fingerprints[0]}`); } catch {}
+  let position = savedPosition(raw, pdf.numPages, $('zoom').value);
+  if (initialPage) position = {number: pageInRange(initialPage, pdf.numPages, 1), zoom: position.zoom};
   $('welcome').hidden = true;
   $('document').hidden = false;
   $('file-name').textContent = name;
   $('file-name').title = name;
   $('page-count').textContent = String(pdf.numPages);
   $('page-number').max = String(pdf.numPages);
-  $('page-number').value = pageNumber;
   $('page-label').textContent = '';
   $('outline').replaceChildren();
   document.title = `${name} · 仿生 PDF 阅读`;
   const reset = resetPageView();
-  const rendering = scheduleRender();
+  const rendering = showPosition(position);
   await reset;
   await previous?.destroy();
   await rendering;
@@ -271,10 +293,10 @@ async function buildOutline(activePDF) {
         summary.textContent = item.title; wrapper.append(summary);
         target = document.createElement('div'); wrapper.append(target);
       }
-      const button = document.createElement('button');
-      button.textContent = item.title;
-      button.addEventListener('click', () => goToDestination(activePDF, item.dest));
-      target.append(button);
+      const entry = item.dest ? document.createElement('button') : externalLink(item) || document.createElement('span');
+      entry.textContent = item.title;
+      if (item.dest) entry.addEventListener('click', () => goToDestination(activePDF, item.dest));
+      target.append(entry);
       if (item.items?.length) append(item.items, target);
       container.append(wrapper);
     }
@@ -354,3 +376,9 @@ addEventListener('resize', () => {
 });
 updateModeUI();
 document.documentElement.dataset.readerReady='true';
+const initialLoad = loadRevision;
+pdfFromOpener().then(file => {
+  if (file && initialLoad === loadRevision) openFile(file);
+}).catch(error => {
+  if (initialLoad === loadRevision) notify(error.message);
+});

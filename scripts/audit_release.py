@@ -44,7 +44,7 @@ def audit(folder,version):
             assert version in guide and '乌克兰语' in guide and '希腊语' in guide
             if 'windows-x64' not in name:
                 assert {'reader.mjs','page-view.mjs','layout.mjs','compat.mjs','pdf-worker.mjs',
-                        'navigation.mjs','search.mjs','find-bar.mjs'}<=set(names)
+                        'navigation.mjs','tab-source.mjs','search.mjs','find-bar.mjs'}<=set(names)
                 assert f'LOCAL READER · {version}' in archive.read('reader.html').decode('utf-8')
             if 'windows-x64' in name:
                 assert 'BionicPDF.exe' in names and 'LICENSE' in names

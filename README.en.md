@@ -31,6 +31,8 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 The in-app guide and the offline `使用指南.html` in each ZIP explain the controls. The Firefox temporary extension must be loaded again after restarting Firefox. [Setup guide](docs/usage.md)
 
+**Development build.** Load the `extension` folder from the source checkout to start reading directly from an open PDF tab in Chrome or Edge. For local files, enable **Allow access to file URLs** in the extension details. Web and DOI links open in a new tab. Reopening the same PDF restores the page, zoom and position within the page. [Setup guide](docs/usage.md)
+
 ## Document languages and fonts
 
 The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. The browser offers an English reference rule and a half-word rule. In the desktop converter, choosing English applies the reference rule to words made up of plain English letters. Auto and the other 12 languages use half words with whole grapheme clusters. Choosing a language also sets the reading copy’s PDF language tag. [Language support](docs/languages.md)

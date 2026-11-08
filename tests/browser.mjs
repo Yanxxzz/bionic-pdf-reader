@@ -217,6 +217,55 @@ try{
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'multilingual.pdf');
       await wait(1,'bionic');
       assert.equal(await copyBlocked(), false);
+      // Reopen immediately after scrolling, including at a different fit width.
+      const scroller = page.locator('#page-scroller');
+      const scroll = () => scroller.evaluate(el => [el.scrollLeft, el.scrollTop]);
+      const visibleFraction = () => scroller.evaluate(el => {
+        const frame = document.querySelector('#page-frame').getBoundingClientRect();
+        return (el.getBoundingClientRect().top - frame.top) / frame.height;
+      });
+      async function zoomTo(value) {
+        const revision = await page.locator('#page-frame').getAttribute('data-render-revision');
+        await page.locator('#zoom').selectOption(value);
+        await page.waitForFunction(old => {
+          const f = document.querySelector('#page-frame').dataset;
+          return f.renderState === 'ready' && f.renderRevision !== old;
+        }, revision);
+      }
+      await zoomTo('2');
+      await scroller.evaluate(el => el.scrollTo(40, 388));
+      const fixed = await scroll();
+      assert.ok(fixed[1] > 300);
+      await page.reload();
+      await chooseSample('#choose-file');
+      await wait(1, 'bionic');
+      assert.equal(await page.locator('#zoom').inputValue(), '2');
+      assert.deepEqual(await scroll(), fixed);
+      await zoomTo('fit');
+      await scroller.evaluate(el => el.scrollTo(0, 320));
+      const fraction = await visibleFraction();
+      await page.reload();
+      await page.setViewportSize({width:1050, height:650});
+      await chooseSample('#choose-file');
+      await wait(1, 'bionic');
+      assert.equal(await page.locator('#zoom').inputValue(), 'fit');
+      assert.ok(Math.abs(await visibleFraction() - fraction) < .003, 'The same line is visible after resizing');
+      const projectUrl = 'https://github.com/Yanxxzz/bionic-pdf-reader';
+      const context = page.context();
+      await context.route(projectUrl, route => route.fulfill({contentType:'text/html', body:'<title>Paper link</title>'}));
+      for (const mode of ['original', 'bionic']) {
+        await page.locator('#' + mode + '-mode').click();
+        await wait(1, mode);
+        const link = page.locator(`#page-links a[href="${projectUrl}"]`);
+        await link.scrollIntoViewIfNeeded();
+        const before = await scroll();
+        const [tab] = await Promise.all([context.waitForEvent('page'), link.click()]);
+        await tab.waitForURL(projectUrl);
+        assert.deepEqual(await tab.evaluate(() => [window.opener === null, document.referrer]), [true, '']);
+        await tab.close();
+        assert.deepEqual(await scroll(), before);
+        assert.equal(await page.locator('#page-number').inputValue(), '1');
+      }
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');
