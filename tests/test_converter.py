@@ -11,6 +11,42 @@ from bionic_pdf import make_pdf
 
 ROOT=Path(__file__).resolve().parents[1]
 
+
+@pytest.mark.parametrize(('label_font', 'size'), [('Helvetica', 18), ('Courier', 20)])
+def test_switching_from_standard_font_preserves_position(tmp_path, label_font, size):
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+    from reportlab.pdfgen.canvas import Canvas
+
+    pdfmetrics.registerFont(TTFont('EmbeddedBody', str(ROOT/'tests/assets/fonts/Latin.ttf')))
+    source = tmp_path/'mixed-fonts.pdf'
+    pdf = Canvas(str(source), pagesize=(400, 120), invariant=True)
+    label = 'Section 12: '
+    for absolute in (False, True):
+        line = pdf.beginText(30, 58)
+        line.setFont(label_font, size)
+        line.textOut(label)
+        if absolute:
+            line.setTextOrigin(30 + pdfmetrics.stringWidth(label, label_font, size), 58)
+        line.setFont('EmbeddedBody', size)
+        line.textOut('Reading together')
+        pdf.drawText(line)
+        pdf.showPage()
+    pdf.save()
+
+    def pixels(path):
+        with pdfium.PdfDocument(path) as doc:
+            return [page.render(scale=3).to_pil().tobytes() for page in doc]
+
+    original = pixels(source)
+    assert original[0] == original[1]
+    static, off = tmp_path/'static.pdf', tmp_path/'off.pdf'
+    make_pdf(source, static, mode='static')
+    make_pdf(source, off)
+    emphasized = pixels(static)
+    assert emphasized[0] == emphasized[1] != original[0]
+    assert pixels(off) == original
+
 def source_bytes_without_test_layer(page):
     # These fixtures have no source OCG. Remove only our blocks before the real BT operators.
     return re.sub(rb'\n/OC /BRBionic BDC\n.*?\nEMC\n(?=BT)', b'',

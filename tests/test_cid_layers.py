@@ -198,7 +198,28 @@ def test_single_byte_space_moves_the_following_glyph():
         _, glyphs, _ = reader.read(content.get_object(), resources, GraphicsState())
         return [glyph['text_matrix'][4] for glyph in glyphs]
 
-    assert [b - a for a, b in zip(positions(0), positions(12))] == [0, 0, 12]
+    assert [b - a for a, b in zip(positions(0), positions(12))] == pytest.approx([0, 0, 12])
+
+
+def test_font_widths_use_drawing_codes_and_recover_after_unknown_advance():
+    from bionic_pdf.pdf_text import GraphicsState, PageTextReader, font_width_lookup
+
+    writer = PdfWriter()
+    encoding = D({N('/Differences'): A([I(65), N('/W')])})
+    font = D({N('/Type'): N('/Font'), N('/Subtype'): N('/Type1'), N('/BaseFont'): N('/Helvetica'),
+              N('/Encoding'): encoding})
+    assert font_width_lookup(font, False)(65) == 944
+    explicit = D({N('/FirstChar'): I(65), N('/Widths'): A([I(0)]),
+                  N('/FontDescriptor'): D({N('/MissingWidth'): I(425)})})
+    width = font_width_lookup(explicit, False)
+    assert width(65) == 0 and width(66) == 425
+
+    unknown = D({N('/Subtype'): N('/Type1'), N('/BaseFont'): N('/Unknown')})
+    resources = D({N('/Font'): D({N('/F1'): writer._add_object(unknown), N('/F2'): writer._add_object(font)})})
+    content = stream(writer, b'BT /F1 12 Tf (unknown) Tj /F2 12 Tf (wrong) Tj 30 20 Td (known) Tj ET')
+    _, glyphs, _ = PageTextReader(writer).read(content.get_object(), resources, GraphicsState())
+    assert ''.join(g['text'] for g in glyphs) == 'known'
+    assert glyphs[0]['x'] == 30 and all(g['eligible'] for g in glyphs)
 
 
 @pytest.mark.parametrize('pages', [None, [1]], ids=['whole-document', 'selected-page'])

@@ -7,7 +7,8 @@ from copy import copy
 from dataclasses import dataclass
 from io import BytesIO
 
-from pypdf._cmap import get_encoding
+from pypdf._cmap import _parse_encoding, get_encoding
+from pypdf._codecs.core_font_metrics import CORE_FONT_METRICS
 from pypdf.generic import ArrayObject, ContentStream, DictionaryObject, NameObject, TextStringObject
 
 
@@ -124,9 +125,26 @@ def character_map(font, cid):
 
 def font_width_lookup(font, cid):
     if not cid:
-        first = int(font.get('/FirstChar', 0))
-        widths = font['/Widths'] if '/Widths' in font else ()
-        return lambda code: float(widths[code - first]) if first <= code < first + len(widths) else 0
+        descriptor = font.get('/FontDescriptor', DictionaryObject()).get_object()
+        missing = (float(descriptor['/MissingWidth'])
+                   if isinstance(descriptor, DictionaryObject) and '/MissingWidth' in descriptor else None)
+        if '/Widths' in font:
+            first = int(font.get('/FirstChar', 0))
+            widths = font['/Widths']
+
+            def width_for(code):
+                if first <= code < first + len(widths):
+                    return float(widths[code - first].get_object())
+                return missing
+
+            return width_for
+        metrics = CORE_FONT_METRICS.get(str(font.get('/BaseFont', '')).removeprefix('/'))
+        if metrics is not None:
+            # /ToUnicode controls copying. The font's drawing encoding determines its advances.
+            encoding = _parse_encoding(font)
+            if isinstance(encoding, dict):
+                return lambda code: metrics.character_widths.get(encoding.get(code), missing)
+        return lambda code: None
 
     descendant = font['/DescendantFonts'][0].get_object()
     entries = iter(descendant['/W'] if '/W' in descendant else ())
@@ -163,7 +181,7 @@ class TextFont:
     code_size: int
     styled: bool
     characters: list | dict
-    width_for: Callable[[int], float]
+    width_for: Callable[[int], float | None]
 
     @classmethod
     def from_pdf(cls, font):
@@ -261,6 +279,8 @@ class PageTextReader:
         return data, records, forms
 
     def _show_text(self, values, state, resources, marked, anchor):
+        if not state.position_known:
+            return
         reference = state.font
         if reference is None:
             state.position_known = False
@@ -295,6 +315,11 @@ class PageTextReader:
             for start in range(0, len(raw), metrics.code_size):
                 code = int.from_bytes(raw[start:start + metrics.code_size], 'big')
                 width = metrics.width_for(code)
+                if width is None:
+                    # Tm, Td and other line-positioning operators re-establish a known origin.
+                    self.skipped_fonts.add(str(font.get('/BaseFont', 'unknown')))
+                    state.position_known = False
+                    return
                 word_spacing = state.word_spacing if metrics.code_size == 1 and code == 32 else 0
                 advance = (width * size / 1000 + state.char_spacing + word_spacing) * scale
                 local = translated(state.text_matrix, 0, state.rise)
