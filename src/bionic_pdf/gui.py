@@ -37,7 +37,7 @@ class Maker:
         language = ttk.Frame(frame); language.pack(fill='x',pady=(12,0))
         ttk.Label(language,text='文档语言',width=9).pack(side='left')
         ttk.Combobox(language,textvariable=self.locale,state='readonly',width=24,values=list(self.language_options)).pack(side='left')
-        ttk.Label(language,text='英语用参考规则，自动及其他语言加粗前半词。').pack(side='left',padx=12)
+        ttk.Label(language,text='自动和英语对纯英文字母词使用参考规则。').pack(side='left',padx=12)
         self.progress = ttk.Progressbar(frame,maximum=100); self.progress.pack(fill='x',pady=(18,10))
         self.status_line = ttk.Label(frame,textvariable=self.status,wraplength=650)
         self.status_line.pack(anchor='w')
@@ -165,7 +165,7 @@ HELP_TEXT='''选择你的阅读方式
 
 语言与配置
 支持英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。
-制作副本时，选英语会对纯英文字母词应用参考规则。自动模式和其他 12 种语言按完整字素加粗前半词。手动选择会设置副本的文档语言，自动模式沿用原文件的语言标记。多语言混排可以选自动。
+选择自动或英语时，纯英文字母词使用英语参考规则，带重音的词按完整字素加粗前半词。选择其他 12 种语言时统一加粗前半词。自动模式保留原 PDF 的语言标记，手动选择会设置副本的文档语言。
 
 常见问题
 • 没有加粗：扫描图片需要先做 OCR；未嵌入字体、特殊编码、竖排、原有粗斜体和部分嵌套内容会保持原样。

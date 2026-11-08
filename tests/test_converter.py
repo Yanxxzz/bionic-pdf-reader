@@ -91,8 +91,9 @@ def test_document_language_changes_prefixes_and_preserves_original_text(converte
             assert result[0].get_textpage().get_text_range() == original_text
             pixels = result[0].render(scale=1.5).to_pil().tobytes()
             page_hashes[language] = hashlib.sha256(pixels).digest()
-    assert page_hashes['en'] != page_hashes['auto']
-    assert all(digest == page_hashes['auto'] for lang, digest in page_hashes.items() if lang != 'en')
+    assert page_hashes['auto'] == page_hashes['en']
+    assert page_hashes['fr'] != page_hashes['en']
+    assert all(page_hashes[lang] == page_hashes['fr'] for lang in LANGUAGES if lang != 'en')
 
 def test_refuses_original_overwrite_and_repeated_conversion(converted,tmp_path):
     source,switchable,*_=converted

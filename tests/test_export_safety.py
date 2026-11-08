@@ -16,6 +16,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
 
 from bionic_pdf import make_pdf
+from bionic_pdf.cli import main as run_cli
 from bionic_pdf.document import SignatureLossError
 
 
@@ -47,6 +48,32 @@ def source(tmp_path):
         page.showPage()
     page.save()
     return source
+
+
+@pytest.mark.parametrize('weight', [-0.5, 0, 0.00499, 0.08001, float('nan'), float('inf'), -float('inf'), None, 'invalid'])
+def test_invalid_weight_preserves_output(source, tmp_path, weight, capsys):
+    target = tmp_path/'reading.pdf'
+    original = source.read_bytes()
+    for previous in (None, b'previous output'):
+        if previous is not None:
+            target.write_bytes(previous)
+        with pytest.raises(ValueError, match='weight'):
+            make_pdf(source, target, weight=weight)
+        assert (target.read_bytes() if target.exists() else None) == previous
+        with pytest.raises(SystemExit) as error:
+            run_cli([str(source), str(target), f'--weight={weight}'])
+        assert error.value.code == 2 and '--weight' in capsys.readouterr().err
+        assert (target.read_bytes() if target.exists() else None) == previous
+    assert source.read_bytes() == original
+
+
+@pytest.mark.parametrize('weight', [0.005, 0.08])
+def test_weight_endpoints_work_in_api_and_cli(source, tmp_path, weight):
+    direct, cli = tmp_path/'direct.pdf', tmp_path/'cli.pdf'
+    assert make_pdf(source, direct, mode='static', weight=weight)['glyphs'] > 0
+    assert run_cli([str(source), str(cli), '--mode=static', f'--weight={weight}']) == 0
+    with pdfium.PdfDocument(direct) as a, pdfium.PdfDocument(cli) as b:
+        assert a[0].render(scale=2).to_pil().tobytes() == b[0].render(scale=2).to_pil().tobytes()
 
 
 def test_damaged_xref_fails_promptly_and_preserves_target(tmp_path):

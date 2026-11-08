@@ -1,4 +1,11 @@
 [
+  {
+    "name": "auto uses reference prefixes for English and half words for accented text",
+    "locale": "auto",
+    "rule": "reference",
+    "text": ["t","h","e"," ","r","e","a","d","e","r","s"," ","é","c","o","l","e"," ","I","S","O","9","0","0","1"],
+    "selected": [0,4,5,6,7,12,13,14]
+  },
 {"name":"an English word beside Han characters keeps its word boundaries","locale":"en","rule":"reference","text":["中","R","e","a","d","i","n","g","文"],"selected":[1,2,3,4]},
 {"name":"reference rule leaves mixed letter and number identifiers intact","locale":"en","rule":"reference","text":["I","S","O","9","0","0","1"," ","m","e","e","t","s"," ","2","0","2","4","r","e","p","o","r","t"," ","W","o","r","d","2","V","e","c"],"selected":[8,9]},
 {"name":"text below 6.8 points stays original","locale":"en","fontSize":6.79,"text":["R","e","a","d","i","n","g"],"selected":[]},

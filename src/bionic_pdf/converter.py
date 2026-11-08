@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from numbers import Real
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -23,6 +24,11 @@ from .words import LANGUAGES
 
 
 LAYER_NAME = '仿生阅读 · Bionic Reading'
+DEFAULT_WEIGHT = 0.026
+
+
+class InvalidWeightError(ValueError):
+    """An invalid stroke width is a usage error for command-line callers."""
 
 
 def num(value):
@@ -205,10 +211,15 @@ def _add_reading_layer(writer):
     return layer
 
 
-def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale='auto', *,
+def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='switchable', locale='auto', *,
              progress: Callable[[int, int], None] | None = None, allow_signature_loss=False):
-    """Create a reading copy; optionally report each processed page as (current, total)."""
+    """Create a reading copy with a stroke weight from 0.005 through 0.08.
+
+    If supplied, progress receives (current, total) after each processed page.
+    """
     started = time.monotonic()
+    if not isinstance(weight, Real) or not 0.005 <= weight <= 0.08:
+        raise InvalidWeightError('--weight must be between 0.005 and 0.08 (inclusive)')
     source, target = Path(source), Path(target)
     if mode not in ('switchable', 'static'):
         raise ValueError('mode must be switchable or static')
@@ -241,7 +252,8 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         layer = None
         suffix = ' - Bionic Reading'
         subject = 'Original PDF text plus always-visible vector word-prefix emphasis.'
-    builder = OverlayBuilder(writer, layer, weight, 'reference' if locale == 'en' else 'half')
+    rule = 'reference' if locale in ('auto', 'en') else 'half'
+    builder = OverlayBuilder(writer, layer, weight, rule)
     total = len(writer.pages)
     unemphasized = []
     for number, page in enumerate(writer.pages, 1):

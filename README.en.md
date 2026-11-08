@@ -35,7 +35,7 @@ The in-app guide and the offline `使用指南.html` in each ZIP explain the con
 
 ## Document languages and fonts
 
-The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. The browser offers an English reference rule and a half-word rule. In the desktop converter, choosing English applies the reference rule to words made up of plain English letters. Auto and the other 12 languages use half words with whole grapheme clusters. Choosing a language also sets the reading copy’s PDF language tag. [Language support](docs/languages.md)
+The reader supports **13 document languages** across Latin, Cyrillic and Greek scripts. They are English, French, German, Spanish, Portuguese, Italian, Dutch, Polish, Turkish, Vietnamese, Russian, Ukrainian and Greek. In the development build, Auto in both readers applies the English reference rule to words made up of plain English letters, as in **t**he **read**ers. Other eligible words use the first half, counted in whole grapheme clusters. You can also choose the half-word rule in the browser. [Language support](docs/languages.md)
 
 Start with a PDF whose text you can select. Find the next or previous match across the document, or follow a citation and return to your reading position. The desktop tool exports two-up handouts and lists output pages that received no emphasis. Image-only scans need OCR first. Vertical text and certain fonts can retain their original appearance. [PDF and font compatibility](docs/compatibility.md)
 

@@ -184,6 +184,9 @@ try{
       await page.locator('#language').selectOption('en');await wait(1,'bionic');
       assert.notEqual(await strokes(),half,'Changing language updates English reference prefixes');
       assert.notEqual(await sample.textContent(), halfPreview);
+      const englishPage = await page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL());
+      await page.locator('#language').selectOption('auto');await wait(1,'bionic');
+      assert.equal(await page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL()), englishPage);
       await page.locator('#rule').selectOption('half');await wait(1,'bionic');
       assert.equal(await strokes(),half,'Changing the rule restores half-word prefixes');
       assert.equal(await sample.textContent(), halfPreview);
