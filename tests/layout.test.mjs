@@ -12,8 +12,15 @@ test('search aligns an inferred space and a ligature with the painted line', () 
 });
 const cases=JSON.parse(fs.readFileSync(new URL('./layout-cases.json',import.meta.url),'utf8'));
 for(const item of cases)test(item.name,()=>{
- const records=item.text.map((text,i)=>({run:i,index:0,text,x:item.x?.[i]??i*10,y:item.y?.[i]??100,w:10,h:15,font:'normal',eligible:true,actual:item.actual?.[i]||null}));
- const plan=planGlyphs({runs:records.map(()=>1),records},{rule:'half',locale:item.locale});
+ const capture = new GlyphCapture(), size = item.fontSize ?? 15;
+ const state = {font:{name:'normal'}, fontMatrix:[.001,0,0,.001], fontSize:size,
+   fontSizeScale:1, fontDirection:1, charSpacing:0, wordSpacing:0, textRenderingMode:0};
+ item.text.forEach((unicode, i) => {
+   capture.mask([{unicode, width:10000 / size}], state,
+     {a:1, b:0, c:0, d:1, e:item.x?.[i] ?? i*10, f:item.y?.[i] ?? 100});
+   capture.records[i].actual = item.actual?.[i] ?? null;
+ });
+ const plan=planGlyphs(capture,{rule:item.rule ?? 'half',locale:item.locale});
  const selected=plan.masks.flatMap((mask,i)=>mask[0]?[i]:[]);assert.deepEqual(selected,item.selected);
 });
 

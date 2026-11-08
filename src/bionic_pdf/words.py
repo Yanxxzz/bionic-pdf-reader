@@ -3,7 +3,10 @@ import regex
 
 LANGUAGES = {'en':'英语','fr':'法语','de':'德语','es':'西班牙语','pt':'葡萄牙语','it':'意大利语','nl':'荷兰语','pl':'波兰语','tr':'土耳其语','vi':'越南语','ru':'俄语','uk':'乌克兰语','el':'希腊语'}
 COMMON = set('the and in on at by with about against between into through during before after above below to from up down over under again further then once here there when where why how all any both each few more most other some'.split())
-TOKENS = regex.compile(r'[\p{Latin}\p{Cyrillic}\p{Greek}][\p{Latin}\p{Cyrillic}\p{Greek}\p{M}]*(?:[’\x27][\p{Latin}\p{Cyrillic}\p{Greek}\p{M}]+)*')
+# Unicode word boundaries keep an identifier whole, even when its first character is a digit.
+TOKENS = regex.compile(
+    r"\b[\p{Latin}\p{Cyrillic}\p{Greek}][\p{Latin}\p{Cyrillic}\p{Greek}\p{M}]*"
+    r"(?:[’'][\p{Latin}\p{Cyrillic}\p{Greek}\p{M}]+)*\b", regex.WORD)
 INLINE_TOKENS = regex.compile(r'(?:https?://|www\.)[^\s<>()]+|[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{M}\p{N}.-]+|[\p{L}\p{M}\p{N}_]+|\S', regex.I)
 OPERATORS = frozenset('=+<>∑∫√±×÷≤≥∞')
 

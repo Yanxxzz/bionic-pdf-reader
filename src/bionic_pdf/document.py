@@ -1,6 +1,8 @@
 """Document-level checks and navigation for reading copies."""
 from pypdf import PdfWriter
-from pypdf.generic import ArrayObject, DictionaryObject, NameObject, NumberObject, TextStringObject
+from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, NameObject, NumberObject, TextStringObject
+
+from .tagged import copy_structure
 
 
 class SignatureLossError(ValueError):
@@ -49,11 +51,13 @@ def copy_pages(reader, pages):
         indices.append(number - 1)
     if not indices:
         raise ValueError('请至少选择一页。')
+    if indices == list(range(total)):
+        return PdfWriter(clone_from=reader)
 
     writer = PdfWriter()
     writer.append(reader, pages=indices)  # Remap destinations and keep bookmarks for included pages.
     catalog = reader.root_object
-    for key in ('/OCProperties', '/Lang'):
+    for key in ('/OCProperties', '/Lang', '/MarkInfo', '/Version'):
         if key in catalog:
             writer.root_object[NameObject(key)] = catalog[key].clone(writer)
     if '/PageLabels' in catalog:
@@ -71,10 +75,18 @@ def copy_pages(reader, pages):
         original = writer.pages[last[index]]
         if '/Annots' in original:
             page = writer.pages[i]
-            annotations = ArrayObject()
+            annotations = {}
             for ref in original['/Annots']:
                 annotation = DictionaryObject(ref.get_object())
                 annotation[NameObject('/P')] = page.indirect_reference
-                annotations.append(writer._add_object(annotation))
-            page[NameObject('/Annots')] = annotations
+                annotations[ref] = writer._add_object(annotation)
+            for ref in annotations.values():
+                annotation = ref.get_object()
+                for key in ('/Popup', '/Parent', '/IRT'):
+                    target = annotation.get(key)
+                    if isinstance(target, IndirectObject) and target in annotations:
+                        annotation[NameObject(key)] = annotations[target]
+            page[NameObject('/Annots')] = ArrayObject(annotations.values())
+    if '/StructTreeRoot' in catalog:
+        copy_structure(reader, writer, indices)
     return writer

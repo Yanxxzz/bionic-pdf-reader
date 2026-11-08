@@ -10,6 +10,11 @@ const app=path.join(root,'extension'),pdf=path.join(root,'.tmp/examples/multilin
 const output=path.join(root,'test-results');fs.mkdirSync(output,{recursive:true});
 const mime={'.mjs':'text/javascript','.js':'text/javascript','.html':'text/html; charset=utf-8','.css':'text/css','.wasm':'application/wasm'};
 const server=http.createServer((req,res)=>{
+  if (req.url === '/selected/sample') {
+    res.writeHead(200, {'Content-Type':'application/pdf', 'X-PDF-Name':encodeURIComponent('已选 #1.pdf')});
+    fs.createReadStream(pdf).pipe(res);
+    return;
+  }
   const file=path.resolve(app,'.'+decodeURIComponent(new URL(req.url,'http://localhost').pathname));
   if(!file.startsWith(app+path.sep)||!fs.existsSync(file)||!fs.statSync(file).isFile()){res.writeHead(404).end();return;}
   res.setHeader('Content-Type',mime[path.extname(file)]||'application/octet-stream');fs.createReadStream(file).pipe(res);
@@ -26,7 +31,12 @@ try{
     const errors=[],external=[];page.on('pageerror',e=>errors.push(e.message));
     page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:')&&!/^(blob:|data:)/.test(r.url()))external.push(r.url());});
     try{
-      await page.goto(`http://127.0.0.1:${server.address().port}/reader.html`);
+      const url = `http://127.0.0.1:${server.address().port}/reader.html`;
+      await page.goto(url + '#selected=sample');
+      await page.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
+      assert.equal(await page.locator('#file-name').textContent(), '已选 #1.pdf');
+      assert.equal(page.url(), url);
+      await page.reload();
       assert.deepEqual(await page.locator('#language option').evaluateAll(options=>options.map(o=>o.value)),['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
       await page.locator('#help-button').click();
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
@@ -55,6 +65,29 @@ try{
       await page.waitForFunction(()=>document.querySelector('#page-frame').dataset.renderedPage==='1');
       const pages=Number(await page.locator('#page-count').textContent());
       const wait=async(n,mode)=>page.waitForFunction(({n,mode})=>{const f=document.querySelector('#page-frame');return f.dataset.renderedPage===String(n)&&f.dataset.mode===mode;},{n,mode});
+      const settingsToggle = page.locator('#sidebar-toggle');
+      for (const width of [760, 375, 320]) {
+        await page.setViewportSize({width,height:812});
+        assert.equal(await settingsToggle.count(), 1);
+        await settingsToggle.click();
+        assert.equal(await settingsToggle.getAttribute('aria-expanded'), 'true');
+        await settingsToggle.press('Escape');
+        assert.equal(await settingsToggle.getAttribute('aria-expanded'), 'false');
+        await settingsToggle.press('Enter');
+        for (const id of ['language','rule','strength','outline']) assert.ok(await page.locator('#'+id).isVisible());
+        await page.locator('#language').selectOption('de');
+        await page.locator('#outline').getByRole('button', {name:'de', exact:true}).click();
+        await wait(3,'original');
+        assert.equal(await settingsToggle.getAttribute('aria-expanded'), 'false');
+        for (const id of ['return-position','find-toggle','prev-page','page-number','next-page','zoom','help-button']) {
+          const box = await page.locator('#'+id).boundingBox();
+          assert.ok(box && box.x >= 0 && box.x + box.width <= width + 1, id + ' at ' + width);
+        }
+      }
+      await page.setViewportSize({width:1440,height:1040});
+      assert.ok(await settingsToggle.isHidden());
+      await page.locator('#outline').getByRole('button', {name:'en', exact:true}).click();
+      await wait(1,'original');
       // Old or damaged settings can coexist with a valid language preference.
       await page.evaluate(() => {
         const progress = Object.keys(localStorage).find(key => key.startsWith('bionic-page-'));

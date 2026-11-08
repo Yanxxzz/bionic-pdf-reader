@@ -2,7 +2,7 @@
 const commonWords = new Set('the and in on at by with about against between into through during before after above below to from up down over under again further then once here there when where why how all any both each few more most other some'.split(' '));
 const segmenters = new Map();
 const supportedLetter = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}]/u;
-const unsupportedCharacter = /[^\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{M}’'\d]/u;
+const unsupportedCharacter = /[^\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{M}’']/u;
 // Keep addresses and identifiers whole. Other punctuation separates adjacent prose.
 const inlineTokens = /(?:https?:\/\/|www\.)[^\s<>()]+|[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{M}\p{N}.-]+|[\p{L}\p{M}\p{N}_]+|\S/giu;
 const operator = /^[=+<>∑∫√±×÷≤≥∞]$/u;

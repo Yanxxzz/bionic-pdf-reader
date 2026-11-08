@@ -109,6 +109,7 @@ class OverlayBuilder:
         self.glyphs = GlyphLibrary(writer, weight)
         self.count = 0
         self.has_text = False
+        self.skipped_tagged_form = False
 
     def build_page(self, page):
         content = page.get_contents()
@@ -131,6 +132,10 @@ class OverlayBuilder:
         self.has_text |= bool(records)
         edits = []
         for (start, end), form, child in forms:
+            # Tagged content can point to this exact Form through /Stm or /Obj.
+            if '/StructParents' in form or '/StructParent' in form:
+                self.skipped_tagged_form = True
+                continue
             key = id(form)
             if key in ancestors:
                 continue
@@ -223,7 +228,7 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
             raise ValueError('这份 PDF 已包含仿生开关，请直接在 WPS 中切换，或选择原始 PDF。')
 
     writer = copy_pages(reader, pages)
-    writer.pdf_header = b'%PDF-1.6'
+    writer.pdf_header = max(reader.pdf_header, '%PDF-1.6')
     if locale != 'auto':
         writer.root_object[N('/Lang')] = T(locale)
 
@@ -245,7 +250,9 @@ def make_pdf(source, target, pages=None, weight=0.026, mode='switchable', locale
         if progress is not None:
             progress(number, total)
     if builder.count == 0:
-        if builder.glyphs.skipped_fonts or builder.text_reader.skipped_fonts:
+        if builder.skipped_tagged_form:
+            reason = '为保留无障碍标签，已跳过具有独立标签的表单对象。其余内容没有可加粗的词首。'
+        elif builder.glyphs.skipped_fonts or builder.text_reader.skipped_fonts:
             reason = '已读取文字，但没有可用于加粗的嵌入字体。'
         elif builder.has_text:
             reason = '已读取文字，当前规则没有选中可加粗的词首。'

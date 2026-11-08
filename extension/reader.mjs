@@ -4,7 +4,7 @@ import { prefixLength } from './words.mjs';
 import {fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
 import {installFindBar} from './find-bar.mjs';
 import {externalLink, pageInRange, savedPosition} from './navigation.mjs';
-import {pdfFromOpener, rememberTabView} from './tab-source.mjs';
+import {initialPdf, rememberTabView} from './tab-source.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
@@ -308,7 +308,10 @@ async function buildOutline(activePDF) {
       }
       const entry = item.dest ? document.createElement('button') : externalLink(item) || document.createElement('span');
       entry.textContent = item.title;
-      if (item.dest) entry.addEventListener('click', () => goToDestination(activePDF, item.dest));
+      if (item.dest) entry.addEventListener('click', () => {
+        closeSidebar();
+        goToDestination(activePDF, item.dest);
+      });
       target.append(entry);
       if (item.items?.length) append(item.items, target);
       container.append(wrapper);
@@ -364,12 +367,25 @@ $('next-page').addEventListener('click', () => goToPage(pageNumber + 1));
 $('page-number').addEventListener('change', e => goToPage(e.target.valueAsNumber));
 $('page-number').addEventListener('keydown', e => { if (e.key === 'Enter') goToPage(e.target.valueAsNumber); });
 $('zoom').addEventListener('change', () => scheduleRender());
+const sidebarToggle = $('sidebar-toggle');
+function closeSidebar() {
+  if (sidebarToggle.getAttribute('aria-expanded') !== 'true') return;
+  sidebarToggle.setAttribute('aria-expanded', 'false');
+  if (sidebarToggle.offsetWidth) sidebarToggle.focus({preventScroll:true});
+}
+sidebarToggle.addEventListener('click', () => {
+  sidebarToggle.setAttribute('aria-expanded', String(sidebarToggle.getAttribute('aria-expanded') !== 'true'));
+});
 $('outline-toggle').addEventListener('click', () => {
   $('outline').hidden = !$('outline').hidden;
   $('outline-toggle').setAttribute('aria-expanded', String(!$('outline').hidden));
 });
 document.addEventListener('keydown', e => {
   if(document.querySelector('dialog[open]'))return;
+  if (e.key === 'Escape' && (e.target === sidebarToggle || $('reading-sidebar').contains(e.target))) {
+    closeSidebar();
+    return;
+  }
   if (e.altKey && e.code === 'KeyB') { e.preventDefault(); setMode(!settings.enabled); return; }
   if ((e.ctrlKey || e.metaKey) && e.code === 'KeyO') { e.preventDefault(); chooseFile(); return; }
   if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
@@ -394,7 +410,7 @@ addEventListener('resize', () => {
 updateModeUI();
 document.documentElement.dataset.readerReady='true';
 const initialLoad = loadRevision;
-pdfFromOpener().then(file => {
+initialPdf().then(file => {
   if (file && initialLoad === loadRevision) openFile(file);
 }).catch(error => {
   if (initialLoad === loadRevision) notify(error.message);

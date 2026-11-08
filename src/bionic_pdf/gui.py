@@ -133,7 +133,9 @@ class Maker:
     def open_reader(self):
         import webbrowser
         from .local_reader import start_reader
-        try: webbrowser.open_new_tab(start_reader())
+        try:
+            if not webbrowser.open_new_tab(start_reader(self.source.get())):
+                raise OSError('无法启动默认浏览器。')
         except OSError as error:messagebox.showerror('无法打开阅读器',str(error))
     def show_help(self):
         window=tk.Toplevel(self.root);window.title('使用指南与配置说明');window.geometry('680x520');window.minsize(580,420)
@@ -144,7 +146,7 @@ class Maker:
 
 HELP_TEXT='''选择你的阅读方式
 
-• 在浏览器中直接切换：点击「在浏览器中阅读」，选择 PDF。顶部「原始 / 仿生」或 Alt+B 切换；左侧选择语言、规则与强度。使用期间保持制作工具开启。
+• 点击「在浏览器中阅读」即可打开已选的原始 PDF。也可以在浏览器中选文件。点击顶部「原始 / 仿生」或按 Alt+B 切换。在侧栏调整语言、规则和强度，窄窗口中先展开「阅读设置与目录」。使用期间保持制作工具开启。
 
 • WPS / Acrobat / Foxit / PDF-XChange：选择「可切换版」，生成后打开副本。在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。默认关闭，开关时页码和缩放保持原位。
   WPS：左侧图层图标 → 眼睛开关。

@@ -9,7 +9,8 @@ import reportlab
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import Link
 from pypdf.constants import UserAccessPermissions
-from pypdf.generic import ArrayObject, ByteStringObject, DecodedStreamObject, DictionaryObject, NameObject, NumberObject
+from pypdf.generic import (ArrayObject, BooleanObject, ByteStringObject, DecodedStreamObject,
+                           DictionaryObject, NameObject, NullObject, NumberObject, TextStringObject)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
@@ -136,6 +137,184 @@ def test_selected_pages_preserve_labels_bookmarks_and_internal_links(source, tmp
     copied = PdfReader(output)
     assert [b.title for b in copied.outline] == ['Second']
     assert not copied.pages[0].get('/Annots')
+
+
+@pytest.fixture
+def tagged(source, tmp_path):
+    writer = PdfWriter(clone_from=source)
+    writer.pdf_header = '%PDF-2.0'
+    root = DictionaryObject({NameObject('/Type'): NameObject('/StructTreeRoot')})
+    writer.root_object[NameObject('/StructTreeRoot')] = writer._add_object(root)
+    writer.root_object[NameObject('/MarkInfo')] = DictionaryObject({NameObject('/Marked'): BooleanObject(True)})
+    writer.root_object[NameObject('/Lang')] = TextStringObject('en')
+
+    def child(parent, role):
+        node = DictionaryObject({NameObject('/Type'): NameObject('/StructElem'), NameObject('/S'): NameObject(role),
+                                 NameObject('/P'): parent.indirect_reference})
+        parent.setdefault(NameObject('/K'), ArrayObject()).append(writer._add_object(node))
+        return node
+
+    document = child(root, '/Document')
+    paragraph = child(document, '/P')
+    numbers = ArrayObject()
+    for i, page in enumerate(writer.pages):
+        writer.add_outline_item(f'Page {i + 1}', i)
+        span = child(paragraph, '/Span')
+        span[NameObject('/Lang')] = TextStringObject(('en', 'fr')[i])
+        page[NameObject('/StructParents')] = NumberObject(i)
+        tagged_text = DecodedStreamObject()
+        tagged_text.set_data(b'/Span <</MCID 1>> BDC\n' + page.get_contents().get_data() + b'\nEMC')
+        page[NameObject('/Contents')] = writer._add_object(tagged_text)
+        if i == 0:
+            # Both forms of a marked-content reference are valid.
+            span[NameObject('/Pg')] = page.indirect_reference
+            span[NameObject('/K')] = NumberObject(1)
+        else:
+            span[NameObject('/K')] = DictionaryObject({NameObject('/Type'): NameObject('/MCR'),
+                NameObject('/MCID'): NumberObject(1), NameObject('/Pg'): page.indirect_reference})
+        numbers.extend((NumberObject(i), ArrayObject([NullObject(), span.indirect_reference])))
+    annotation = writer.add_annotation(1, Link(rect=(20, 30, 100, 45), target_page_index=0))
+    annotation[NameObject('/StructParent')] = NumberObject(2)
+    link = child(paragraph, '/Link')
+    link[NameObject('/Pg')] = writer.pages[1].indirect_reference
+    link[NameObject('/K')] = DictionaryObject({NameObject('/Type'): NameObject('/OBJR'),
+                                               NameObject('/Obj'): annotation.indirect_reference})
+    numbers.extend((NumberObject(2), link.indirect_reference))
+    leaf = writer._add_object(DictionaryObject({NameObject('/Nums'): numbers}))
+    root[NameObject('/ParentTree')] = DictionaryObject({NameObject('/Kids'): ArrayObject([leaf])})
+    writer.add_blank_page(280, 160)
+    path = tmp_path/'tagged.pdf'
+    writer.write(path)
+    return path
+
+
+@pytest.mark.parametrize('pages', [[2], [1, 2], [2, 1, 2]])
+def test_selected_tags_match_content_annotations_and_reading_order(tagged, tmp_path, pages):
+    output = tmp_path/'selected.pdf'
+    make_pdf(tagged, output, pages=pages)
+    reader = PdfReader(output)
+    assert reader.pdf_header == '%PDF-2.0'
+    assert reader.root_object['/MarkInfo']['/Marked']
+    root = reader.root_object['/StructTreeRoot']
+    numbers = root['/ParentTree']['/Nums']
+    parents = dict(zip(numbers[::2], numbers[1::2]))
+    document, = root['/K']
+    paragraphs = document.get_object()['/K']
+    assert len(paragraphs) == (2 if pages == [2, 1, 2] else 1)
+    logical_pages = []
+    for paragraph_ref in paragraphs:
+        paragraph = paragraph_ref.get_object()
+        assert paragraph.get('/P') == document
+        for ref in paragraph['/K']:
+            node = ref.get_object()
+            assert node.get('/P') == paragraph_ref
+            if node['/S'] == '/Span':
+                content = node['/K'][0].get_object()
+                pg = node['/Pg'] if isinstance(content, NumberObject) else content['/Pg']
+                number = reader.get_page_number(pg)
+                logical_pages.append(number)
+                assert node['/Lang'] == ('en', 'fr')[pages[number] - 1]
+                slots = parents[pg['/StructParents']].get_object()
+                assert isinstance(slots[0], NullObject) and slots[1] == ref
+            else:
+                objr = node['/K'][0].get_object()
+                pg = objr['/Pg']
+                annotation = objr.raw_get('/Obj')
+                assert annotation in pg['/Annots']
+                assert parents[annotation.get_object()['/StructParent']] == ref
+                assert annotation.get_object()['/Dest'][0] == reader.pages[pages.index(1)].indirect_reference
+    assert logical_pages == list(range(len(pages)))
+    assert sum(len(p.get('/Annots', [])) for p in reader.pages) == (pages.count(2) if 1 in pages else 0)
+    assert len(reader.outline) == len(set(pages))
+    all_pages = [n for n in reader.xref[0] if isinstance((obj := reader.get_object(n)), DictionaryObject)
+                 and obj.get('/Type') == '/Page']
+    assert len(all_pages) == len(pages)
+
+
+@pytest.mark.parametrize('attribute,reason', [('/Ref', '交叉引用'), ('/A', '未选择的页面')])
+def test_tagged_selection_refuses_unmapped_references_and_keeps_whole_copy(tagged, tmp_path, attribute, reason):
+    writer = PdfWriter(clone_from=tagged)
+    document = writer.root_object['/StructTreeRoot']['/K'][0].get_object()
+    spans = document['/K'][0].get_object()['/K']
+    extra = (ArrayObject([spans[1]]) if attribute == '/Ref' else
+             DictionaryObject({NameObject('/O'): NameObject('/Custom'), NameObject('/Page'): writer.pages[2].indirect_reference}))
+    spans[0].get_object()[NameObject(attribute)] = extra
+    writer.root_object[NameObject('/Version')] = NameObject('/2.0')
+    writer.pdf_header = '%PDF-1.7'
+    path, target = tmp_path/'cross-reference.pdf', tmp_path/'existing.pdf'
+    writer.write(path)
+    target.write_bytes(b'keep')
+    with pytest.raises(ValueError, match=reason + '.*整本'):
+        make_pdf(path, target, pages=[1])
+    assert target.read_bytes() == b'keep'
+    for selection in (None, [1, 2, 3], [2]):
+        make_pdf(path, target, pages=selection)
+        result = PdfReader(target)
+        assert result.pdf_header == '%PDF-1.7' and result.root_object['/Version'] == '/2.0'
+        copied = result.root_object['/StructTreeRoot']['/K'][0].get_object()
+        if selection != [2]:
+            children = copied['/K'][0].get_object()['/K']
+            saved = children[0].get_object()[attribute]
+            if attribute == '/Ref':
+                assert saved[0] == children[1]
+            else:
+                assert saved.get('/Page') == result.pages[2].indirect_reference
+
+
+def test_tagged_form_keeps_its_original_stream_and_reports_unemphasized_page(tagged, tmp_path):
+    writer = PdfWriter(clone_from=tagged)
+    page = writer.pages[0]
+    form = DecodedStreamObject()
+    form.set_data(page.get_contents().get_data())
+    form.update({NameObject('/Type'): NameObject('/XObject'), NameObject('/Subtype'): NameObject('/Form'),
+                 NameObject('/Resources'): page['/Resources'], NameObject('/BBox'): page.mediabox,
+                 NameObject('/StructParents'): page.pop('/StructParents')})
+    reference = writer._add_object(form)
+    page[NameObject('/Resources')] = DictionaryObject({
+        NameObject('/XObject'): DictionaryObject({NameObject('/TaggedForm'): reference})})
+    invoke = DecodedStreamObject()
+    invoke.set_data(b'q /TaggedForm Do Q')
+    page[NameObject('/Contents')] = writer._add_object(invoke)
+    document = writer.root_object['/StructTreeRoot']['/K'][0].get_object()
+    span = document['/K'][0].get_object()['/K'][0].get_object()
+    span[NameObject('/K')] = DictionaryObject({NameObject('/Type'): NameObject('/MCR'),
+        NameObject('/MCID'): NumberObject(1), NameObject('/Pg'): page.indirect_reference, NameObject('/Stm'): reference})
+    path, target = tmp_path/'tagged-form.pdf', tmp_path/'output.pdf'
+    writer.write(path)
+    target.write_bytes(b'keep')
+    with pytest.raises(ValueError, match='内容流.*整本'):
+        make_pdf(path, target, pages=[1])
+    assert target.read_bytes() == b'keep'
+    assert make_pdf(path, target)['unemphasized_pages'] == [1, 3]
+    reader = PdfReader(target)
+    page = reader.pages[0]
+    assert page.get_contents().get_data() == b'q /TaggedForm Do Q'
+    document = reader.root_object['/StructTreeRoot']['/K'][0].get_object()
+    span = document['/K'][0].get_object()['/K'][0].get_object()
+    assert page['/Resources']['/XObject'].raw_get('/TaggedForm') == span['/K'].raw_get('/Stm')
+    writer.pages[1].replace_contents(None)
+    writer.write(path)
+    previous = target.read_bytes()
+    with pytest.raises(ValueError, match='跳过具有独立标签的表单对象'):
+        make_pdf(path, target)
+    assert target.read_bytes() == previous
+
+
+@pytest.mark.parametrize('issue', ['missing', 'omitted-parent'])
+def test_broken_structure_parent_index_stops_before_writing(tagged, tmp_path, issue):
+    writer = PdfWriter(clone_from=tagged)
+    root = writer.root_object['/StructTreeRoot']
+    numbers = root['/ParentTree']['/Kids'][0].get_object()['/Nums']
+    if issue == 'missing':
+        del numbers[:2]
+    else:
+        numbers[1][1] = numbers[3][1]  # MCID on the first page points to the second page's span.
+    path, target = tmp_path/'broken-tags.pdf', tmp_path/'output.pdf'
+    writer.write(path)
+    target.write_bytes(b'keep')
+    with pytest.raises(ValueError, match='父级索引.*整本'):
+        make_pdf(path, target, pages=[1])
+    assert target.read_bytes() == b'keep'
 
 
 def test_embedded_postscript_type1_uses_the_original_word_positions(tmp_path):

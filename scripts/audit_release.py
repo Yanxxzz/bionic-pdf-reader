@@ -4,8 +4,10 @@ import hashlib
 import json
 from pathlib import Path,PurePosixPath
 import tarfile
+from tempfile import TemporaryDirectory
 import tomllib
 import zipfile
+from windows_payload import backend_digest, verify_executable
 
 
 def audit(folder,version):
@@ -48,6 +50,12 @@ def audit(folder,version):
                 assert f'LOCAL READER · {version}' in archive.read('reader.html').decode('utf-8')
             if 'windows-x64' in name:
                 assert 'BionicPDF.exe' in names and 'LICENSE' in names
+                with zipfile.ZipFile(folder/f'bionic_pdf_reader-{version}-py3-none-any.whl') as wheel:
+                    digest = backend_digest((p.removeprefix('bionic_pdf/'), wheel.read(p)) for p in wheel.namelist()
+                                            if p.startswith('bionic_pdf/') and p.endswith('.py'))
+                with TemporaryDirectory() as temp:
+                    verify_executable(archive.extract('BionicPDF.exe', temp),
+                                      folder/f'bionic-pdf-chrome-edge-{version}.zip', digest)
                 assert any(n.startswith('third-party-licenses/pypdf/') for n in names)
                 assert any(n.startswith('third-party-licenses/fonttools/') for n in names)
                 assert 'third-party-licenses/freetype-py/FTL.TXT' in names

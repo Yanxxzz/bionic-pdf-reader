@@ -98,7 +98,7 @@ class GraphicsState:
 
     def can_emphasize(self):
         size = abs(self.font_size) * math.hypot(self.text_matrix[2], self.text_matrix[3])
-        return (self.position_known and self.render_mode == 0 and 6.8 <= size <= 24
+        return (self.position_known and self.render_mode == 0 and 6.8 <= size <= 25
                 and self.fill_alpha == self.stroke_alpha == 1 and self.fill_cs != '/Pattern'
                 and all(abs(skew) < 1e-5 for skew in (*self.text_matrix[1:3], *self.ctm[1:3])))
 

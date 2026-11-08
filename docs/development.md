@@ -8,6 +8,7 @@
 - `tab-source.mjs` 识别来源 PDF 和链接里的书签。刷新时比对来源地址的摘要，阅读位置和文档标识保存在当前标签页的 `sessionStorage` 中。书内引用和来源书签共用目标页与坐标的解析。`navigation.mjs` 换算落点、解析进度并筛选网页与 DOI 链接。
 - `search.mjs` 中的 `BookSearch` 按需索引文档，管理当前命中、前后查找和取消，并把跨行或大小写转换后的命中映射回原文。`find-bar.mjs` 处理输入和状态显示。`page-view.mjs` 使用原文范围绘制高亮，可对齐的水平文字复用 PDF 实际绘制的字形坐标。
 - 桌面端的 `document.py` 识别数字签名并在选页时重建导航。`pdf_text.py` 读取文字和绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 解析嵌入字体的轮廓，`converter.py` 将轮廓写入阅读副本。命令行和图形界面共用 `make_pdf()`。
+- 带标签文档的选页映射集中在 `tagged.py`，负责阅读顺序、标记内容与批注的父级索引。整本导出直接克隆原结构。
 - 修改阅读规则时，浏览器和桌面端分别改 `words.mjs` 和 `words.py`。两端的排版测试共用 `tests/layout-cases.json`，可以在同一个例子里指定字形位置和预期加粗范围。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。
 - `scripts/`：原创示例、开放字体子集、Windows 程序和发布包构建。
@@ -46,7 +47,7 @@ python scripts/build_packages.py
 
 输出在 `dist/`，含 Chrome/Edge ZIP、Firefox 临时开发 ZIP、网页 ZIP、Python 包及 SHA256 校验清单。Windows 可执行文件为独立便携版，不要求安装 Python。它不是带系统安装向导的 MSI，也没有商店签名。
 
-Windows 包构建完成后运行 `python scripts/audit_release.py dist`，核对 6 个下载包的 SHA256、内置指南、许可证和归档内容。SHA256 清单只列实际发布的下载包；不列中间生成的独立 EXE。
+在装有 `.[windows]` 的构建环境中运行 `python scripts/audit_release.py dist`，核对 6 个下载包的 SHA256、内置指南、许可证和归档内容。打包前会比对 EXE 的桌面源码摘要和内置阅读器文件。审计时会从最终 Windows ZIP 取出 EXE，用已打包的 wheel 和浏览器 ZIP 再核对一次。同一版本号的旧构建也会被检出。
 
 ## 维护与发布
 

@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 import zipfile
 import tomllib
+from windows_payload import source_digest, verify_executable
 
 ROOT=Path(__file__).resolve().parents[1]
 
@@ -37,6 +38,8 @@ def main():
             writer.write(ROOT/'LICENSE','LICENSE')
             writer.writestr('使用指南.html',guide)
     if (out/'BionicPDF.exe').is_file():
+        verify_executable(out/'BionicPDF.exe', out/f'bionic-pdf-chrome-edge-{version}.zip',
+                          source_digest(ROOT/'src/bionic_pdf'))
         packages.append(out/f'bionic-pdf-windows-x64-{version}.zip')
         with zipfile.ZipFile(out/f'bionic-pdf-windows-x64-{version}.zip','w',zipfile.ZIP_DEFLATED,compresslevel=6) as writer:
             writer.write(out/'BionicPDF.exe','BionicPDF.exe')

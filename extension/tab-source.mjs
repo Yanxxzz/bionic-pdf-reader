@@ -36,7 +36,15 @@ function initialDestination(hash) {
   return {initialPage, named};
 }
 
-export async function pdfFromOpener() {
+export async function initialPdf() {
+  const handoff = /^#selected=([\w-]+)$/.exec(location.hash);
+  if (handoff && location.protocol === 'http:' && location.hostname === '127.0.0.1') {
+    history.replaceState(null, '', location.pathname + location.search);
+    const response = await fetch('/selected/' + handoff[1], {cache:'no-store'});
+    if (!response.ok) throw new Error('所选文件已不可用，请在制作工具中重新点「在浏览器中阅读」。');
+    const name = decodeURIComponent(response.headers.get('X-PDF-Name') || 'document.pdf');
+    return new File([await response.blob()], name, {type:'application/pdf'});
+  }
   const api = globalThis.browser || globalThis.chrome;
   if (!api?.tabs) return null;
   const clicked = location.hash === '#current-tab';
