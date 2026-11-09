@@ -40,11 +40,60 @@ def create_sample(target, samples=None):
     c.showPage();c.save()
     return target
 
+
+def create_partial_scan(target, layouts):
+    """Scanned sentences with gaps in their authored, selectable text."""
+    from PIL import Image, ImageDraw, ImageFont
+    from reportlab.lib.utils import ImageReader
+
+    font = ImageFont.truetype(str(ROOT/'tests/assets/fonts/Latin.ttf'), 64)
+    pdf = canvas.Canvas(str(target), pagesize=(480, 150), invariant=1)
+    start, baseline = 22, 150 - 165/4
+
+    def hidden_text(x, size):
+        text = pdf.beginText(x, baseline)
+        text.setFont('Helvetica', size)
+        text.setTextRenderMode(3)
+        return text
+
+    for layout in layouts:
+        if layout == 'wider-font':
+            body, second = 'I found a pressed fern between two pages.', 'The next line stays separate.'
+            words, size = ('pressed', 'between'), 18.2
+        else:
+            body, second = 'Reading together readers', 'Research papers retain their words.'
+            words, size = ('Reading', 'readers'), 16
+        image = Image.new('RGB', (1920, 600), 'white')
+        draw = ImageDraw.Draw(image)
+        for y, line in ((165, body), (340, second)):
+            draw.text((88, y), line, font=font, fill='black', anchor='ls')
+        pdf.drawImage(ImageReader(image), 0, 0, 480, 150)
+        pdf.saveState()
+        if layout == 'one-TJ':
+            # One original show operator positions both words around the missing word.
+            gap = font.getlength('Reading together ')/4 - pdfmetrics.stringWidth('Reading ', 'Helvetica', 16)
+            text = hidden_text(start, size)
+            text._code.append(f'[(Reading ) {-1000*gap/16:.4f} (readers)] TJ')
+            pdf.drawText(text)
+        else:
+            for word in words:
+                text = hidden_text(start + font.getlength(body[:body.index(word)])/4, size)
+                text.textOut(word)
+                pdf.drawText(text)
+        pdf.restoreState()
+        if layout == 'wider-font':
+            pdf.drawString(410, 10, '1')
+        pdf.showPage()
+    pdf.save()
+    return target
+
+
 if __name__=='__main__':
     from pypdf import PdfWriter
     from pypdf.generic import Destination, DictionaryObject, Fit, NameObject, RectangleObject, TextStringObject
 
     sample = create_sample(ROOT/'.tmp/examples/multilingual.pdf')
+    create_partial_scan(sample.with_name('partial-scan.pdf'), ['one-TJ', 'wider-font'])
     print(sample)
     with PdfWriter() as writer:
         writer.append(sample, pages=(0, 4))

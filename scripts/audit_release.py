@@ -31,6 +31,7 @@ def audit(folder,version):
             with tarfile.open(path) as archive:
                 check_paths(archive.getnames())
                 assert any(n.endswith('/src/bionic_pdf/layout.py') for n in archive.getnames())
+                assert any(n.endswith('/scripts/offline_guide.html') for n in archive.getnames())
             continue
         with zipfile.ZipFile(path) as archive:
             assert archive.testzip() is None,name
@@ -43,11 +44,13 @@ def audit(folder,version):
                         assert archive.read(f'bionic_pdf/reader/{asset}') == web.read(asset), asset
                 continue
             guide=archive.read('使用指南.html').decode('utf-8')
-            assert version in guide and '乌克兰语' in guide and '希腊语' in guide
+            assert f'v{version}' in guide and '乌克兰语' in guide and '希腊语' in guide
+            assert 'data:image/png;base64,' in guide
             if 'windows-x64' not in name:
                 assert {'reader.mjs','page-view.mjs','layout.mjs','compat.mjs','pdf-worker.mjs',
-                        'navigation.mjs','tab-source.mjs','search.mjs','find-bar.mjs'}<=set(names)
-                assert f'LOCAL READER · {version}' in archive.read('reader.html').decode('utf-8')
+                        'navigation.mjs','tab-source.mjs','search.mjs','find-bar.mjs',
+                        'assets/reading-room.png','assets/icon-32.png'}<=set(names)
+                assert f'<meta name="application-version" content="{version}">' in archive.read('reader.html').decode('utf-8')
             if 'windows-x64' in name:
                 assert 'BionicPDF.exe' in names and 'LICENSE' in names
                 with zipfile.ZipFile(folder/f'bionic_pdf_reader-{version}-py3-none-any.whl') as wheel:
@@ -66,6 +69,7 @@ def audit(folder,version):
             else:
                 manifest=json.loads(archive.read('manifest.json'))
                 assert manifest['version']==version
+                assert set(manifest['icons'].values()) <= set(names)
                 assert 'layout.mjs' in names and 'vendor/LICENSE_PDFJS' in names
                 if 'firefox-temporary' in name:
                     assert manifest['background']=={'scripts':['background.js']}

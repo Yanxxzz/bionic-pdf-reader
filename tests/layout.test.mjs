@@ -61,6 +61,17 @@ test('an implicit identity text matrix gives the same glyph positions at high DP
   assert.equal(captures[0][0].eligible, true);
   assert.deepEqual(captures[1], captures[0]);
 });
+test('a single labelled glyph keeps an OCR word space without merging other text items', () => {
+  const mark = actualText => ({type:'beginMarkedContentProps', actualText});
+  const end = {type:'endMarkedContent'};
+  const glyph = {str:'f', width:4, transform:[10, 0, 0, 10, 40, 25]};
+  const content = {items:[{str:'pressed'}, mark(' f'), glyph, end, {str:'ern'},
+    mark('two lines'), {str:'two', hasEOL:true}, {str:'lines'}, end]};
+  const {items} = repairTextContent(content, [], null);
+  assert.deepEqual(items.map(item => item.str), ['pressed', ' f', 'ern', 'two', 'lines']);
+  assert.deepEqual(items[1], {...glyph, str:' f'});
+});
+
 test('ActualText repairs retain source order across columns',()=>{
  const viewport={convertToViewportPoint:(x,y)=>[x,y],convertToPdfPoint:(x,y)=>[x,y]};
  const item=(str,x,y,width=20)=>({str,width,height:15,fontName:'regular',transform:[15,0,0,15,x,y]});

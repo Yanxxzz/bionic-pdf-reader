@@ -8,7 +8,7 @@ stamp = ROOT/'build/backend.sha256'
 stamp.parent.mkdir(exist_ok=True)
 stamp.write_bytes(source_digest(ROOT/'src/bionic_pdf'))
 command=[sys.executable,'-m','PyInstaller','--noconfirm','--clean','--onefile','--windowed',
-         '--name','BionicPDF','--paths',str(ROOT/'src'),
+         '--name','BionicPDF','--paths',str(ROOT/'src'),'--icon',str(ROOT/'extension/assets/icon-128.png'),
          '--collect-all','regex','--collect-binaries','freetype','--collect-data','pypdfium2','--collect-all','pypdfium2_raw',
          '--add-data',str(ROOT/'extension')+':bionic_pdf/reader',
          '--add-data',str(stamp)+':bionic_pdf',

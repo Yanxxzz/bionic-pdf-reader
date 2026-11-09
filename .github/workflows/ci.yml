@@ -41,10 +41,13 @@ jobs:
       - run: npm run fixtures:shaped
       - run: python scripts/prepare_shaped_outputs.py
       - run: python -m pytest tests/test_shaped_pdf.py -q
-      - run: sudo apt-get install -y tesseract-ocr tesseract-ocr-eng
-      - run: python -m pytest tests/test_scan.py -q
+      - run: sudo apt-get install -y tesseract-ocr tesseract-ocr-eng poppler-utils
+      - run: python -m pytest tests/test_scan*.py -q
+      - run: bionic-pdf .tmp/examples/partial-scan.pdf .tmp/examples/ocr-completed.pdf --ocr --language en
       - run: npm test
       - run: npm run test:browser
+        env:
+          OCR_READING_PDF: .tmp/examples/ocr-completed.pdf
       - run: npm run test:extension
       - run: npm run test:shaped
       - uses: actions/upload-artifact@v7

@@ -1,4 +1,5 @@
 """Release artifacts must identify the same build on every packaging run."""
+import base64
 import os
 from pathlib import Path
 import shutil
@@ -14,6 +15,7 @@ from scripts.windows_payload import source_digest, verify_executable
 def test_browser_packages_ignore_build_and_checkout_times(tmp_path):
     root = Path(__file__).resolve().parents[1]
     for name in ('LICENSE', 'pyproject.toml', 'extension/manifest.json', 'extension/reader.html',
+                 'extension/assets/reading-room.png', 'scripts/offline_guide.html',
                  'scripts/build_packages.py', 'scripts/windows_payload.py'):
         dest = tmp_path/name
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -30,6 +32,10 @@ def test_browser_packages_ignore_build_and_checkout_times(tmp_path):
     for name in first:
         with ZipFile(tmp_path/'dist'/name) as archive:
             assert len({entry.date_time for entry in archive.infolist()}) == 1
+            guide = archive.read('使用指南.html')
+            photo = archive.read('assets/reading-room.png')
+            assert b'data:image/png;base64,' + base64.b64encode(photo) in guide
+            assert b'<form' not in guide
 
 
 def test_stale_windows_payload_is_rejected(tmp_path):

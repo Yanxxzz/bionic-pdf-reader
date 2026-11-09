@@ -42,6 +42,7 @@ try{
       assert.equal(await page.locator('#file-name').textContent(), '已选 #1.pdf');
       await page.goto('about:blank');
       await page.goto(url);
+      await page.locator('#welcome img').evaluate(image => image.decode());
       assert.deepEqual(await page.locator('#language option').evaluateAll(options=>options.map(o=>o.value)),['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
       await page.locator('#help-button').click();
       assert.equal(await page.locator('#help-dialog').evaluate(d=>d.open),true);
@@ -387,6 +388,36 @@ try{
       await query.fill('12345');
       await query.press('Enter');
       await page.locator('#find-marks i').first().waitFor();
+      if (process.env.OCR_READING_PDF) {
+        const scan = path.resolve(root, process.env.OCR_READING_PDF);
+        await chooseSample('#open-file', scan);
+        await page.waitForFunction(file => document.querySelector('#file-name').textContent === file &&
+          document.querySelector('#page-frame').dataset.renderState === 'ready', path.basename(scan));
+        for (const [number, phrase, rest] of [
+          [1, 'Reading together readers', 'Research papers retain their words.'],
+          [2, 'I found a pressed fern between two pages.', 'The next line stays separate. 1'],
+        ]) {
+          await page.locator('#page-number').fill(String(number));
+          await page.locator('#page-number').press('Enter');
+          for (const mode of ['original', 'bionic']) {
+            await page.locator('#' + mode + '-mode').click();
+            await wait(number, mode);
+            const selected = await page.locator('#text-layer').evaluate(layer => {
+              const range = new Range(), selection = getSelection();
+              range.selectNodeContents(layer);
+              selection.removeAllRanges();
+              selection.addRange(range);
+              return selection.toString().replace(/\s+/gu, ' ').trim();
+            });
+            assert.equal(selected, phrase + ' ' + rest);
+          }
+          await page.keyboard.press('Control+f');
+          await query.fill(phrase);
+          await query.press('Enter');
+          await page.locator('#find-marks i').first().waitFor();
+          assert.match(await page.locator('#find-status').textContent(), /本页第 1\/1 处/);
+        }
+      }
       assert.deepEqual(errors,[]);assert.deepEqual(external,[]);
       reports.push({browser:name,version:browser.version(),pages:pages-1,textPreserved:true,originalPixelsRestored:true,noExternalRequests:true});
       console.log(name, 'passed',pages-1,'language pages');

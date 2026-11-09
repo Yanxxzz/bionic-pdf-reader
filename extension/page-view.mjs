@@ -209,7 +209,9 @@ async function drawPage(request, pdf, number, settings) {
   if (displayedText) {
     displayedText.layer.update({viewport});
   } else {
-    const [text, annotations] = await Promise.all([page.getTextContent(), page.getAnnotations()]);
+    const [text, annotations] = await Promise.all([
+      page.getTextContent({includeMarkedContent: true}), page.getAnnotations(),
+    ]);
     if (request !== revision) return;
     const content = repairTextContent(text, repairs, base);
     const layer = new TextLayer({textContentSource: content, container: textContainer, viewport});
@@ -218,7 +220,7 @@ async function drawPage(request, pdf, number, settings) {
     finally { activeTask = null; }
     if (request !== revision) return;
     showPageLinks(annotations, base, number, pdf.numPages, settings.followDestination);
-    const items = content.items.filter(item => typeof item.str === 'string');
+    const items = content.items;
     const hasLetters = items.some(item => /\p{L}/u.test(item.str));
     const textKind = hasLetters ? 'letters' : items.some(item => item.str.trim()) ? 'symbols' : 'empty';
     displayedText = {page, layer, items, textKind};

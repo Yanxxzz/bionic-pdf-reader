@@ -105,7 +105,6 @@ class OverlayBuilder:
         self.form_tags = form_tags
 
     def build_page(self, page):
-        before = self.count
         content = page.get_contents()
         if content is not None:
             result = self._build_stream(content, page.get('/Resources', D()), GraphicsState(), set(), page.indirect_reference)
@@ -113,7 +112,6 @@ class OverlayBuilder:
                 stream, resources = result
                 page[N('/Contents')] = self.writer._add_object(stream)
                 page[N('/Resources')] = resources
-        return self.count > before
 
     def _build_stream(self, content, original_resources, state, ancestors, page):
         # Each invocation can inherit a different colour, font or opacity. Edit only its copy.
@@ -203,7 +201,7 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
     """Create a reading copy with a stroke weight from 0.005 through 0.08.
 
     Pages can be a one-based sequence or a range such as '1-3,7,5-4'.
-    Enable ocr to recognize image-only pages with local Tesseract.
+    Enable ocr to recognize scans and scanned regions alongside selectable text with local Tesseract.
     If supplied, progress receives (current, total) after each processed page.
     """
     started = time.monotonic()
@@ -253,16 +251,18 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
     if ocr:
         from .scan import open_scans
         language = reader.root_object.get('/Lang', 'en') if locale == 'auto' else locale
-        scans = open_scans(reader.stream, str(language), rule, weight, form_tags)
+        scans = open_scans(reader, str(language), rule, weight, form_tags)
     with scans as scan:
         for number, page in enumerate(writer.pages, 1):
-            if not builder.build_page(page):
-                count = scan(indices[number - 1], writer, page, layer) if scan is not None else None
+            before = builder.count
+            builder.build_page(page)
+            if scan is not None:
+                count = scan(indices[number - 1], writer, page, layer)
                 if count is not None:
                     builder.count += count
                     ocr_pages.append(number)
-                if not count:
-                    unemphasized.append(number)
+            if builder.count == before:
+                unemphasized.append(number)
             if progress is not None:
                 progress(number, total)
     form_tags.finish()

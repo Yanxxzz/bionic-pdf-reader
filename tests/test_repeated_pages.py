@@ -2,10 +2,12 @@
 from pathlib import Path
 
 import pypdfium2 as pdfium
+import pytest
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import Link
 from pypdf.constants import FieldDictionaryAttributes
-from pypdf.generic import ArrayObject, DictionaryObject, NameObject, NumberObject, TextStringObject
+from pypdf.generic import (ArrayObject, DecodedStreamObject, DictionaryObject, IndirectObject,
+                           NameObject, NumberObject, StreamObject, TextStringObject)
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen.canvas import Canvas
@@ -13,11 +15,11 @@ from reportlab.pdfgen.canvas import Canvas
 from bionic_pdf import make_pdf
 
 
-def worksheet(folder, *, buttons=False):
+def worksheet(folder, *, buttons=False, page_count=2):
     path = folder/'worksheet.pdf'
     pdfmetrics.registerFont(TTFont('Worksheet', str(Path(__file__).parent/'assets/fonts/Latin.ttf')))
     canvas = Canvas(str(path), pagesize=(320, 200), invariant=True)
-    for number in (1, 2):
+    for number in range(1, page_count + 1):
         canvas.setFont('Worksheet', 16)
         canvas.drawString(15, 152, f'Question number {number}')
         canvas.acroForm.textfield(name=f'Answer{number}', value=f'Original{number}', x=15, y=80, width=170)
@@ -126,3 +128,81 @@ def test_button_values_follow_the_selected_and_repeated_widgets(tmp_path):
     assert {child.get_object()['/P'].indirect_reference for child in radio['/Kids']} == {
         page.indirect_reference for page in saved.pages}
     assert len(fields['Agree2']['/Kids']) == 2 and fields['Agree2']['/V'] == '/Yes'
+
+
+@pytest.mark.parametrize('nested', [False, True])
+@pytest.mark.parametrize('mode', ['static', 'switchable'])
+def test_selected_calculations_cannot_recover_omitted_fields_or_pages(tmp_path, mode, nested):
+    writer = PdfWriter(clone_from=worksheet(tmp_path, page_count=3))
+    form = writer.root_object['/AcroForm']
+    fields = list(form['/Fields'])
+    if nested:
+        group = writer._add_object(DictionaryObject({NameObject('/T'): TextStringObject('Quiz'),
+                                                     NameObject('/Kids'): ArrayObject(fields)}))
+        for field in fields:
+            field.get_object()[NameObject('/Parent')] = group
+        form[NameObject('/Fields')] = ArrayObject([group])
+    for n, field in enumerate(fields, 1):
+        field.get_object()[NameObject('/AA')] = DictionaryObject({NameObject('/C'): DictionaryObject({
+            NameObject('/S'): NameObject('/JavaScript'), NameObject('/JS'): TextStringObject(f'event.value = {n}73;')})})
+    form[NameObject('/CO')] = writer._add_object(ArrayObject(reversed(fields)))
+    source = tmp_path/'calculations.pdf'
+    writer.write(source)
+
+    for pages in ('1', '2', '1,1', '2,1,2', '2,3', '3,1,2', '1,2,3'):
+        selected = list(map(int, pages.split(',')))
+        output = tmp_path/f'{pages}.pdf'
+        make_pdf(source, output, pages=pages, mode=mode)
+        saved = PdfReader(output)
+        order = saved.root_object['/AcroForm']['/CO']
+        assert [ref.get_object()['/T'] for ref in order] == [f'Answer{n}' for n in (3, 2, 1) if n in selected]
+        registered = saved.get_fields()
+        for n in (1, 2, 3):
+            name = ('Quiz.' if nested else '') + f'Answer{n}'
+            if n not in selected:
+                assert name not in registered
+                continue
+            field = registered[name].indirect_reference
+            assert field in order and field.get_object()['/V'] == f'Original{n}'
+            assert field.get_object()['/AA']['/C']['/JS'] == f'event.value = {n}73;'
+
+        visible = {page.indirect_reference for page in saved.pages}
+        assert len(visible) == len(selected)
+        del saved.root_object['/Pages']  # Recover objects using the xref alone, as a recipient could.
+        for generation, entries in saved.xref.items():
+            if generation == 65535:
+                continue
+            for number in entries:
+                ref = IndirectObject(number, generation, saved)
+                obj = ref.get_object()
+                if isinstance(obj, DictionaryObject) and obj.get('/Type') == '/Page':
+                    assert ref in visible
+                data = obj.get_data() if isinstance(obj, StreamObject) else str(obj).encode()
+                for n in {1, 2, 3} - set(selected):
+                    for marker in (f'Question number {n}', f'Answer{n}', f'Original{n}', f'event.value = {n}73;'):
+                        assert marker.encode() not in data
+
+
+@pytest.mark.parametrize('dependency', ['XFA', 'cross-field action', 'field without page pointer'])
+def test_inseparable_form_refuses_partial_export_atomically(tmp_path, dependency):
+    writer = PdfWriter(clone_from=worksheet(tmp_path))
+    form = writer.root_object['/AcroForm']
+    first, second = form['/Fields']
+    if dependency == 'XFA':
+        packet = DecodedStreamObject()
+        packet.set_data(b'<datasets><private>Original2</private></datasets>')
+        form[NameObject('/XFA')] = writer._add_object(packet)
+    else:
+        first.get_object()[NameObject('/AA')] = DictionaryObject({NameObject('/K'): DictionaryObject({
+            NameObject('/S'): NameObject('/ResetForm'), NameObject('/Fields'): ArrayObject([second])})})
+        form[NameObject('/CO')] = ArrayObject([first, second])
+        if dependency == 'field without page pointer':
+            del second.get_object()['/P']
+    source, target = tmp_path/'shared-form.pdf', tmp_path/'previous.pdf'
+    writer.write(source)
+    target.write_bytes(b'previous')
+    with pytest.raises(ValueError, match='导出全部页面'):
+        make_pdf(source, target, pages='1')
+    assert target.read_bytes() == b'previous'
+    make_pdf(source, target)
+    assert PdfReader(target).get_fields()['Answer2']['/V'] == 'Original2'

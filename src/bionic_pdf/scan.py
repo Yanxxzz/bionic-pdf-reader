@@ -13,7 +13,7 @@ from pypdf.generic import (ArrayObject, BooleanObject, DecodedStreamObject,
                            DictionaryObject, NameObject, NumberObject)
 
 from .document import bind_resource
-from .scan_text import existing_words, place_text, prepare_text
+from .scan_text import existing_words, paints_text, place_text, prepare_text
 from .words import segment_flags
 
 
@@ -22,15 +22,15 @@ MODELS = dict(en='eng', fr='fra', de='deu', es='spa', pt='por', it='ita', nl='nl
 
 
 @contextmanager
-def open_scans(source, locale, rule, weight, form_tags):
+def open_scans(reader, locale, rule, weight, form_tags):
     try:
         import pypdfium2 as pdfium
         from PIL import Image
     except ImportError as error:
         raise ValueError('本地 OCR 需要额外组件。请安装 bionic-pdf-reader[ocr] 或使用 Windows 便携版。') from error
     model = MODELS.get(locale.lower().replace('_', '-').split('-')[0], 'eng')
-    with pdfium.PdfDocument(source) as document:
-        yield partial(_scan_page, document, model, rule, weight, form_tags)
+    with pdfium.PdfDocument(reader.stream) as document:
+        yield partial(_scan_page, document, reader, model, rule, weight, form_tags)
 
 
 def _recognize(image, model, dpi):
@@ -203,37 +203,98 @@ def _add_scan(writer, page, ink, matrix, text, text_groups, layer, form_tags):
         writer._add_object(stream(('\n'+'\n'.join(commands)+'\n').encode('ascii')))])
 
 
-def _scan_page(document, model, rule, weight, form_tags, index, writer, target, layer):
-    from PIL import ImageDraw
+def _page_quad(obj):
+    """PDFium reports a nested object's corners in its containing Form's coordinates."""
+    points = obj.get_quad_points()
+    parent = obj.container
+    while parent is not None:
+        matrix = parent.get_matrix()
+        points = [matrix.on_point(x, y) for x, y in points]
+        parent = parent.container
+    return points
+
+
+def _scan_regions(page):
+    """Return scan quadrilaterals, an empty tuple for image-only pages, or None to skip."""
+    from PIL import Image, ImageDraw
     from pypdfium2 import raw
 
-    # A raster cannot identify which source OCG owns each pixel.
-    if _has_source_layers(target.get('/Resources', DictionaryObject())):
+    pictures, visible = [], False
+    for obj in page.get_objects(filter=[raw.FPDF_PAGEOBJ_IMAGE, raw.FPDF_PAGEOBJ_TEXT]):
+        if obj.type == raw.FPDF_PAGEOBJ_IMAGE:
+            pictures.append(obj)
+        elif not visible and paints_text(obj.raw):
+            visible = True
+    if not pictures:
         return None
+    if not visible:
+        return ()  # An image-only or invisibly transcribed page is already a scan candidate.
+    pictures = [_page_quad(obj) for obj in pictures]
+    left, bottom, right, top = page.get_bbox()
+    if right <= left or top <= bottom:
+        return None
+    # Measure the union in the visible crop before paying for a high-resolution render.
+    # Several tiles can form a scan. A logo on a digital text page needs no OCR.
+    coverage = Image.new('1', (96, 96))
+    draw = ImageDraw.Draw(coverage)
+    for quad in pictures:
+        draw.polygon([((x-left)*coverage.width/(right-left), (y-bottom)*coverage.height/(top-bottom))
+                      for x, y in quad], fill=255)
+    page_area = (right-left) * (top-bottom)
+    covered_area = page_area * coverage.histogram()[255] / (coverage.width * coverage.height)
+    # A paragraph-sized inset (3 × 1 inches) can occupy little of a large page.
+    if covered_area < min(.20 * page_area, 216 * 72):
+        return None
+    return pictures
+
+
+def _scan_input(page, coords, image, pictures, annotations):
+    """Restrict both recognition and added ink to raster regions outside native text and annotations."""
+    from PIL import Image, ImageDraw
+
+    if not pictures and not annotations:
+        return existing_words(page, coords), None
+    excluded = Image.new('1', image.size, 255 if pictures else 0)
+    draw = ImageDraw.Draw(excluded)
+    for quad in pictures:
+        draw.polygon([coords.to_bitmap(x, y) for x, y in quad], fill=0)
+
+    def exclude(a, b, pad=1):
+        x, y = a
+        r, t = b
+        draw.rectangle((min(x,r)-pad, min(y,t)-pad, max(x,r)+pad, max(y,t)+pad), fill=255)
+
+    # One native text object can put labels on both sides of a scanned word using TJ.
+    existing = existing_words(page, coords, mask_visible=exclude if pictures else None)
+    for ref in annotations:  # Includes pending redactions.
+        rect = ref.get_object().get('/Rect', ArrayObject()).get_object()
+        if isinstance(rect, ArrayObject) and len(rect) == 4:
+            exclude(coords.to_bitmap(float(rect[0]), float(rect[1])),
+                    coords.to_bitmap(float(rect[2]), float(rect[3])), pad=0)
+    image.paste('white', (0, 0, *image.size), excluded)
+    return existing, excluded
+
+
+def _scan_page(document, reader, model, rule, weight, form_tags, index, writer, target, layer):
     with closing(document[index]) as page:
-        objects = list(page.get_objects(filter=[raw.FPDF_PAGEOBJ_IMAGE, raw.FPDF_PAGEOBJ_TEXT]))
-        if not any(obj.type == raw.FPDF_PAGEOBJ_IMAGE for obj in objects):
-            return None
-        if any(obj.type == raw.FPDF_PAGEOBJ_TEXT and raw.FPDFTextObj_GetTextRenderMode(obj.raw) != 3 for obj in objects):
+        regions = _scan_regions(page)
+        # A bitmap cannot say which source OCG owns a pixel. Inspect the input, before
+        # vector emphasis has added this application's own OCG to the output resources.
+        if regions is None or _has_source_layers(reader.pages[index].get('/Resources', DictionaryObject())):
             return None
         scale = min(300/72, 4200/max(page.get_size()))
         with closing(page.render(scale=scale, draw_annots=True)) as bitmap:
             image = bitmap.to_pil().convert('RGB')
             coords = bitmap.get_posconv(page)
-            existing = existing_words(page, coords)
+            annots = target.get('/Annots', ArrayObject()).get_object()
+            existing, excluded = _scan_input(page, coords, image, regions, annots)
             x, y = coords.to_page(0, image.height)
             right = coords.to_page(image.width, image.height)
             top = coords.to_page(0, 0)
-            # Exclude annotation rectangles from recognition, including pending redactions.
-            draw = ImageDraw.Draw(image)
-            for ref in target.get('/Annots', []):
-                rect = ref.get_object().get('/Rect')
-                if rect is not None and len(rect) == 4:
-                    ax, ay = coords.to_bitmap(float(rect[0]), float(rect[1]))
-                    bx, by = coords.to_bitmap(float(rect[2]), float(rect[3]))
-                    draw.rectangle((min(ax,bx), min(ay,by), max(ax,bx), max(ay,by)), fill='white')
         hocr, text_pdf = _recognize(image, model, max(1, round(scale*72)))
         ink, count = _ink_mask(image, hocr, rule, weight)
+        if ink is not None and excluded is not None:
+            ink[0].paste(0, (0, 0, *image.size), excluded)
         text, text_groups = prepare_text(text_pdf, hocr, target, existing)
         # Numbers and short labels may be searchable even when no letter should be thickened.
         if not count and not text_groups:

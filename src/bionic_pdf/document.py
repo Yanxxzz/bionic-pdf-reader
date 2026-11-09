@@ -3,7 +3,8 @@ import re
 
 from pypdf import PdfWriter
 from pypdf.constants import FieldDictionaryAttributes
-from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, NameObject, NumberObject, TextStringObject
+from pypdf.generic import (ArrayObject, DictionaryObject, IndirectObject, NameObject, NumberObject,
+                           TextStringObject, is_null_or_none)
 
 from .tagged import copy_structure
 
@@ -127,14 +128,19 @@ def _local_link(annotation, original, copy, named):
         owner[NameObject(key)] = ArrayObject([copy, *destination[1:]])
 
 
+def _widgets(page):
+    annots = page.get('/Annots', ArrayObject()).get_object()
+    if isinstance(annots, ArrayObject):
+        for ref in annots:
+            if ref.get_object().get('/Subtype') == '/Widget':
+                yield ref
+
+
 def _button_options(reader, occurrences):
     """Button export values follow the field's kids, even when other pages are omitted."""
     options = {}
-    def widgets(page):
-        return (ref for ref in page.get('/Annots', []) if ref.get_object().get('/Subtype') == '/Widget')
-
     for index, pages in occurrences.items():
-        for source, target in zip(widgets(reader.pages[index]), widgets(pages[-1])):
+        for source, target in zip(_widgets(reader.pages[index]), _widgets(pages[-1])):
             parent = source.get_object().get('/Parent')
             if parent is None:
                 continue
@@ -179,13 +185,53 @@ def _repeat_annotations(writer, pages, named):
         page[NameObject('/Annots')] = ArrayObject(refs.values())
 
 
+def _append_selection(writer, reader, indices):
+    """Import calculation order only after the selected widgets have established the field tree."""
+    selected = set(indices)
+    form = reader.root_object.get('/AcroForm', DictionaryObject()).get_object()
+    if len(selected) == len(reader.pages) or not isinstance(form, DictionaryObject) or not form:
+        writer.append(reader, pages=indices)
+        return
+    if not is_null_or_none(form.get('/XFA')):
+        raise PageSelectionError('XFA 表单的数据由整份文档共享，无法安全地只导出部分页面。请导出全部页面。')
+    order = None if is_null_or_none(form.get('/CO')) else form['/CO']
+    if order is not None:
+        if not isinstance(order, ArrayObject):
+            raise PageSelectionError('表单计算顺序无法按页分离。请导出全部页面。')
+        # append() otherwise follows /CO -> omitted field -> /P while cloning the form.
+        # Removing these references afterwards would leave recoverable objects in the PDF.
+        projected = form.clone(writer, ignore_fields=(1, '/Fields', 1, '/CO'))
+        projected[NameObject('/Fields')] = ArrayObject()
+        writer.root_object[NameObject('/AcroForm')] = writer._add_object(projected)
+    writer.append(reader, pages=indices)
+
+    retained = set()
+    for index in selected:
+        for ref in _widgets(reader.pages[index]):
+            while isinstance(ref, IndirectObject) and ref not in retained:
+                retained.add(ref)
+                ref = ref.get_object().get('/Parent')
+    # A retained field action may itself reference an omitted field or page. Preserve its
+    # behavior on whole documents and decline a partial copy that would retain that data.
+    translated = writer._id_translated[id(reader)]
+    omitted = (p.indirect_reference for i, p in enumerate(reader.pages) if i not in selected)
+    fields = (f.indirect_reference for f in (reader.get_fields() or {}).values())
+    if (any(p.idnum in translated for p in omitted)
+            or any(f not in retained and f.idnum in translated for f in fields)):
+        raise PageSelectionError('所选表单仍引用未选页面或字段，无法安全地分离。请导出全部页面。')
+    if order is not None:
+        projected[NameObject('/CO')] = ArrayObject(ref.clone(writer) for ref in order
+                                                   if isinstance(ref, IndirectObject) and ref in retained
+                                                   and ref.idnum in translated)
+
+
 def copy_pages(reader, indices, *, projected_forms=None):
     total = len(reader.pages)
     if indices == range(total) or (len(indices) == total and all(i == page for i, page in enumerate(indices))):
         return PdfWriter(clone_from=reader)
 
     writer = PdfWriter()
-    writer.append(reader, pages=indices)  # Remap destinations and keep bookmarks for included pages.
+    _append_selection(writer, reader, indices)
     catalog = reader.root_object
     for key in ('/OCProperties', '/Lang', '/MarkInfo', '/Version'):
         if key in catalog:

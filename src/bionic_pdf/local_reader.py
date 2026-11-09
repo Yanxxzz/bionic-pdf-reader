@@ -54,14 +54,18 @@ class ReaderServer(ThreadingHTTPServer):
         self.selections = {}
 
 
-def _bind_reader():
+def reader_directory():
     module = Path(__file__).resolve()
     root = module.with_name('reader')
     if not (root / 'reader.html').is_file():
         root = module.parents[2] / 'extension'  # Source checkout
     if not (root / 'reader.html').is_file():
         raise FileNotFoundError('缺少本地阅读页文件，请重新安装制作工具。')
-    handler = partial(ReaderHandler, directory=str(root))
+    return root
+
+
+def _bind_reader():
+    handler = partial(ReaderHandler, directory=str(reader_directory()))
     try:
         return ReaderServer(('127.0.0.1', DEFAULT_PORT), handler)
     except OSError as error:

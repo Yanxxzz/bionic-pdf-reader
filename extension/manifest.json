@@ -1,12 +1,19 @@
 {
   "manifest_version": 3,
   "name": "仿生 PDF 阅读",
-  "version": "0.5.1",
+  "version": "0.6.0",
+  "icons": {
+    "16": "assets/icon-16.png",
+    "32": "assets/icon-32.png",
+    "48": "assets/icon-48.png",
+    "128": "assets/icon-128.png"
+  },
   "description": "仿生 PDF 阅读：英文与多语言词首加粗，在原始与仿生模式之间切换。文件在本机处理。",
   "minimum_chrome_version": "124",
   "permissions": ["activeTab", "scripting"],
   "host_permissions": ["file:///*"],
   "action": {
+    "default_icon": {"16": "assets/icon-16.png", "32": "assets/icon-32.png"},
     "default_title": "打开仿生 PDF 阅读器"
   },
   "background": {

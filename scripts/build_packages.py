@@ -1,13 +1,27 @@
 """Create reproducible extension/web ZIPs and SHA256 checksums offline."""
+import base64
 import hashlib
 import json
 import re
 from pathlib import Path
+from string import Template
 import zipfile
 import tomllib
 from windows_payload import source_digest, verify_executable
 
 ROOT=Path(__file__).resolve().parents[1]
+
+def offline_guide(source, version):
+    reader = (source/'reader.html').read_text(encoding='utf-8')
+    dialog = re.search(r'<dialog id="help-dialog"[^>]*>(.*?)</dialog>', reader, re.S).group(1)
+    title = re.search(r'<h2 id="help-title">(.*?)</h2>', dialog, re.S).group(1)
+    intro = re.search(r'<p class="guide-intro">(.*?)</p>', dialog, re.S).group(1)
+    sections = '\n'.join(re.findall(r'<details\b.*?</details>', dialog, re.S))
+    cover = base64.b64encode((source/'assets/reading-room.png').read_bytes()).decode('ascii')
+    template = Template((ROOT/'scripts/offline_guide.html').read_text(encoding='utf-8'))
+    return template.substitute(title=title, intro=intro, sections=sections,
+                               cover=cover, version=version).encode('utf-8')
+
 
 def write_web_asset(archive, name, data):
     entry = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0))
@@ -22,9 +36,7 @@ def main():
     source=ROOT/'extension'
     manifest=json.loads((source/'manifest.json').read_text(encoding='utf-8'))
     assert manifest['version']==version
-    content=re.search(r'<dialog id="help-dialog"[^>]*>(.*?)</dialog>',(source/'reader.html').read_text(encoding='utf-8'),re.S).group(1)
-    content=re.sub(r'<form\b.*?</form>','',content,flags=re.S)
-    guide=('<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>仿生 PDF 阅读 · 使用指南</title><style>body{font:16px/1.85 system-ui,sans-serif;max-width:760px;margin:40px auto;padding:0 24px;color:#22363a}details{border-top:1px solid #dce3da;padding:14px 0}summary{font-weight:600;cursor:pointer}a{color:#17655d}</style>'+content+'<p>版本 '+version+' · <a href="https://github.com/Yanxxzz/bionic-pdf-reader">项目主页与更新</a></p></html>').encode('utf-8')
+    guide = offline_guide(source, version)
     packages=[]
     assets = sorted(path.relative_to(source).as_posix() for path in source.rglob('*') if path.is_file())
     for target in ('chrome-edge','firefox-temporary','web-reader'):

@@ -223,6 +223,17 @@ export function textGlyphBounds(item, records, viewport) {
 }
 
 export function repairTextContent(content, repairs, viewport) {
+  // A marked span containing one positioned item gives its exact selectable spelling,
+  // including spaces that glyph geometry alone cannot recover. Multi-item spans may
+  // cross lines or columns and continue through the geometry-based repairs below.
+  const items = [];
+  for (const [i, item] of content.items.entries()) {
+    if (typeof item.str !== 'string') continue;
+    const label = content.items[i - 1]?.actualText;
+    const single = typeof label === 'string' && content.items[i + 1]?.type === 'endMarkedContent';
+    items.push(single ? {...item, str: label} : item);
+  }
+  content = {...content, items};
   if (!repairs.length) return content;
   const replaced = new Set(), insertions = new Map();
   for (const repair of repairs) {
@@ -255,10 +266,10 @@ export function repairTextContent(content, repairs, viewport) {
   if (!insertions.size) return content;
 
   // Place repairs in the original item order, including across columns.
-  const items = [];
+  const repaired = [];
   for (const [index, item] of content.items.entries()) {
-    if (insertions.has(index)) items.push(...insertions.get(index));
-    else if (!replaced.has(index)) items.push(item);
+    if (insertions.has(index)) repaired.push(...insertions.get(index));
+    else if (!replaced.has(index)) repaired.push(item);
   }
-  return {...content, items};
+  return {...content, items: repaired};
 }

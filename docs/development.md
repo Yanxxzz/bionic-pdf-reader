@@ -5,10 +5,11 @@
 浏览器用 PDF.js 在原页上切换显示。桌面工具用 pypdf 写入阅读副本，fontTools 和 FreeType 提供嵌入字体的字形轮廓。
 
 - 浏览器的 `reader.mjs` 负责打开文档、导航和阅读设置。`page-view.mjs` 在一个页面视图内安排绘制、取消过时的请求、复用词首结果并保留可选择的文字层。`layout.mjs` 根据字形位置计算词首，处理复制用的文字。
+- 浏览器界面在 `extension/reader.html` 与 `reader.css` 中维护。Windows 工具和浏览器都从 `extension/assets` 读取本地配图。打包时从阅读页的帮助内容生成可独立打开的指南，图片一并嵌入。
 - `tab-source.mjs` 识别来源 PDF 和链接里的书签。`reading-progress.mjs` 用 PDF 全文 SHA-256 关联持久进度，另存当前标签页的导航状态。远程文件沿用 PDF.js 已下载的字节。`navigation.mjs` 解析目标页、段落坐标、讲义翻页动作及网页链接。
 - `search.mjs` 中的 `BookSearch` 按需索引文档，管理当前命中、前后查找和取消，并把跨行或大小写转换后的命中映射回原文。`find-bar.mjs` 处理输入和状态显示。`page-view.mjs` 使用原文范围绘制高亮，可对齐的水平文字复用 PDF 实际绘制的字形坐标。
 - 桌面端的 `document.py` 识别数字签名、解析页码范围并重建导航。`pdf_text.py` 读取文字和绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 解析嵌入字体的轮廓，`converter.py` 将轮廓写入阅读副本。命令行和图形界面共用 `make_pdf()`。
-- `scan.py` 在开启 OCR 时调用 PDFium、Pillow 和本机 Tesseract，按原字颜色生成词首笔画。选词与文字页共用 `words.py`。`scan_text.py` 将识别出的词与原有隐藏正文对齐，在原阅读顺序中插入缺词。
+- `scan.py` 在开启 OCR 时识别扫描区域，避开原生笔画和批注，按原字颜色生成加粗笔画。选词与文字页共用 `words.py`。`scan_text.py` 保留原先写入的词，在对应的 PDF 文字指令处插入缺词。浏览器对单个文字片段读取 PDF 的 `ActualText`，让显示页的选择和全文查找都能保留字宽差异掩盖的空格。
 - 带标签文档的选页映射集中在 `tagged.py`，负责阅读顺序、标记内容与批注的父级索引。整本导出直接克隆原结构。
 - 修改阅读规则时，浏览器和桌面端分别改 `words.mjs` 和 `words.py`。两端的排版测试共用 `tests/layout-cases.json`，可以在同一个例子里指定字形位置和预期加粗范围。
 - `tests/`：字素／语言规则、PDF 文本与像素、CID 字体和已有图层、真实浏览器与扩展测试。
@@ -32,6 +33,8 @@ npm run test:shaped
 ```
 
 浏览器测试默认使用隔离的 Chromium 和 Firefox。已安装的 Chrome / Edge 可设置 `BROWSERS=chrome,edge,firefox`；扩展可设置 `EXTENSION_CHANNEL=chrome`。扩展测试仅对临时配置使用调试接口，不修改日常浏览器。
+
+安装 Tesseract 英语模型后，运行 `bionic-pdf .tmp/examples/partial-scan.pdf .tmp/examples/ocr-completed.pdf --ocr --language en`。将环境变量 `OCR_READING_PDF` 设为生成的文件路径后运行浏览器测试，会额外检查同一句话在补词后能否被完整选中和搜索。
 
 测试例句为原创，字体可再分发；生成的 PDF 与测试截图放在忽略的 `.tmp/`、`test-results/` 中。README 预览只能使用原创样例截图。
 

@@ -3,61 +3,112 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>仿生 PDF 阅读</title>
+  <meta name="color-scheme" content="light">
+  <meta name="application-version" content="0.6.0">
+  <title>仿生 PDF 阅读 · Bionic PDF Reader</title>
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
   <link rel="stylesheet" href="reader.css">
   <script type="module" src="reader.mjs"></script>
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="reader.html" aria-label="仿生 PDF 阅读首页"><span class="brand-mark"><b>B</b>r</span><span>仿生 PDF 阅读<small>LOCAL READER · 0.5.1</small></span></a>
-    <div class="mode-control" role="group" aria-label="阅读模式">
-      <button id="original-mode" class="selected" aria-pressed="true">原始</button>
-      <button id="bionic-mode" aria-pressed="false">仿生<span class="shortcut">Alt B</span></button>
+    <div class="topbar-inner">
+      <a class="brand" href="reader.html" aria-label="Bionic PDF Reader 首页">
+        <span class="brand-mark" aria-hidden="true"><b>B</b><i>r</i></span>
+        <span class="brand-name" lang="en">Bionic PDF Reader</span>
+      </a>
+      <div class="mode-control" role="group" aria-label="阅读模式" title="切换阅读模式 (Alt+B)">
+        <button id="original-mode" class="selected" aria-pressed="true">原始</button>
+        <button id="bionic-mode" aria-pressed="false">仿生</button>
+      </div>
+      <div class="header-actions">
+        <button id="open-file" class="primary">打开 PDF</button>
+        <button id="help-button" aria-haspopup="dialog">使用指南</button>
+      </div>
+      <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
     </div>
-    <button id="open-file" class="primary">打开 PDF <span>↗</span></button>
-    <button id="help-button" aria-haspopup="dialog">使用指南</button>
-    <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
   </header>
 
-  <div class="app-shell">
-    <button id="sidebar-toggle" aria-expanded="false" aria-controls="reading-sidebar">阅读设置与目录</button>
-    <aside id="reading-sidebar" class="sidebar">
-      <div class="section-label">阅读设置</div>
-      <label class="field-label" for="language">文档语言</label>
-      <select id="language"><option value="auto">自动分词</option><option value="en">English · 英语</option><option value="fr">Français · 法语</option><option value="de">Deutsch · 德语</option><option value="es">Español · 西班牙语</option><option value="pt">Português · 葡萄牙语</option><option value="it">Italiano · 意大利语</option><option value="nl">Nederlands · 荷兰语</option><option value="pl">Polski · 波兰语</option><option value="tr">Türkçe · 土耳其语</option><option value="vi">Tiếng Việt · 越南语</option><option value="ru">Русский · 俄语</option><option value="uk">Українська · 乌克兰语</option><option value="el">Ελληνικά · 希腊语</option></select>
-      <label class="field-label" for="rule">词首加粗规则</label>
-      <select id="rule"><option value="reference">参考项目规则</option><option value="half">词语前半部分</option></select>
-      <p class="field-note" id="rule-note">常用词强调首字母，其他单词按长度强调 1、2 或 4 个字母。</p>
-      <label class="field-label slider-label" for="strength">加粗强度 <output id="strength-value">100%</output></label>
-      <input id="strength" type="range" min="50" max="150" step="10" value="100">
-      <div class="sample"><span id="sample-word"><b>Read</b>er</span><small>强调词首，保持词尾字重</small></div>
-      <div class="divider"></div>
-      <button id="outline-toggle" class="outline-heading" aria-expanded="true">文档目录 <span>⌄</span></button>
-      <div id="outline" class="outline"><p class="field-note">打开 PDF 后显示原书目录。</p></div>
-      <div class="sidebar-footer"><span class="local-dot"></span>文件仅在本机读取</div>
-    </aside>
+  <main class="reader-body">
+    <section id="welcome" class="welcome" aria-labelledby="welcome-title">
+      <div class="welcome-cover">
+        <div class="welcome-copy">
+          <h1 id="welcome-title">仿生 PDF 阅读</h1>
+          <p>在原页切换词首加粗，保留图表、公式和正文的位置。</p>
+          <button id="choose-file" class="choose-file">选择本地 PDF <span aria-hidden="true">→</span></button>
+          <small>也可将 PDF 文件拖到此页</small>
+        </div>
+        <img class="cover-photo" src="assets/reading-room.png" width="1080" height="600" alt="">
+      </div>
+    </section>
 
-    <main class="main">
-      <section id="welcome" class="welcome">
-        <div class="eyebrow">让阅读多一个选择</div>
-        <h1>同一份 PDF，<br><span>两种阅读方式。</span></h1>
-        <p class="intro">保留页面、图表和公式，随时切换词首加粗。<br>打开你在 WPS 中阅读的同一个本地文件即可。</p>
-        <button id="choose-file" class="choose-file">选择 PDF 文件 <span>→</span></button>
-        <div class="drop-hint">也可以将 PDF 拖到这里</div>
-        <div class="welcome-example"><span>原始</span><p>Reading makes ideas come alive.</p><span>仿生</span><p><b>Read</b>ing <b>ma</b>kes <b>id</b>eas <b>co</b>me <b>al</b>ive.</p></div>
-        <div class="welcome-foot">无需转换文件 <i>·</i> 随时开关 <i>·</i> 支持含文字层的多语言 PDF</div>
-      </section>
+    <div class="app-shell">
+      <button id="sidebar-toggle" aria-expanded="false" aria-controls="reading-sidebar">
+        阅读设置与目录 <span class="chevron" aria-hidden="true"></span>
+      </button>
+      <aside id="reading-sidebar" class="sidebar" aria-label="阅读设置与目录">
+        <h2 class="settings-title">阅读设置</h2>
+        <div class="settings-fields">
+          <div class="setting">
+            <label for="language">文档语言</label>
+            <select id="language">
+              <option value="auto">自动分词</option>
+              <option value="en">English · 英语</option>
+              <option value="fr">Français · 法语</option>
+              <option value="de">Deutsch · 德语</option>
+              <option value="es">Español · 西班牙语</option>
+              <option value="pt">Português · 葡萄牙语</option>
+              <option value="it">Italiano · 意大利语</option>
+              <option value="nl">Nederlands · 荷兰语</option>
+              <option value="pl">Polski · 波兰语</option>
+              <option value="tr">Türkçe · 土耳其语</option>
+              <option value="vi">Tiếng Việt · 越南语</option>
+              <option value="ru">Русский · 俄语</option>
+              <option value="uk">Українська · 乌克兰语</option>
+              <option value="el">Ελληνικά · 希腊语</option>
+            </select>
+          </div>
+          <div class="setting">
+            <label for="rule">词首加粗规则</label>
+            <select id="rule" aria-describedby="rule-note">
+              <option value="reference">参考项目规则</option>
+              <option value="half">词语前半部分</option>
+            </select>
+            <p class="field-note" id="rule-note">英文使用参考项目规则，其他语言按词语前半部分加粗。</p>
+          </div>
+          <div class="setting">
+            <label class="slider-label" for="strength">加粗强度 <output id="strength-value" for="strength">100%</output></label>
+            <input id="strength" type="range" min="50" max="150" step="10" value="100">
+          </div>
+          <div class="sample">
+            <small>词首规则示例</small>
+            <span id="sample-word" lang="en"><b>Read</b>er</span>
+          </div>
+        </div>
+        <div class="outline-section">
+          <button id="outline-toggle" aria-controls="outline" aria-expanded="true">
+            文档目录 <span class="chevron" aria-hidden="true"></span>
+          </button>
+          <div id="outline" class="outline"><p class="field-note">打开 PDF 后显示文档目录。</p></div>
+        </div>
+        <p class="sidebar-footer">PDF 在本机处理</p>
+      </aside>
 
-      <section id="document" class="document" hidden>
+      <section id="document" class="document" aria-label="PDF 阅读页" hidden>
         <div class="document-bar">
-          <div class="file-info"><span class="file-badge">PDF</span><span id="file-name"></span></div>
+          <div class="file-info"><span class="file-icon" aria-hidden="true"></span><h1 id="file-name"></h1></div>
           <div class="document-controls">
-            <button id="return-position" class="text-control" disabled title="返回点击引用前的阅读位置">返回原处</button>
-            <button id="find-toggle" class="text-control" aria-expanded="false" aria-controls="find-bar" title="全文查找 (Ctrl / ⌘ + F)">查找</button>
-            <button id="prev-page" title="上一页" aria-label="上一页">‹</button>
-            <label class="page-control"><input id="page-number" type="number" min="1" value="1" aria-label="PDF 页码"><span>/ <span id="page-count">—</span></span></label>
-            <button id="next-page" title="下一页" aria-label="下一页">›</button>
-            <select id="zoom" aria-label="缩放"><option value="fit">适合宽度</option><option value="1">100%</option><option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option></select>
+            <button id="return-position" disabled title="返回点击引用前的阅读位置">返回原处</button>
+            <button id="find-toggle" aria-expanded="false" aria-controls="find-bar" title="全文查找 (Ctrl / ⌘ + F)">查找</button>
+            <div class="page-nav" role="group" aria-label="翻页">
+              <button id="prev-page" title="上一页" aria-label="上一页">‹</button>
+              <label class="page-control"><input id="page-number" type="number" min="1" value="1" aria-label="PDF 页码"><span>/ <span id="page-count">—</span></span></label>
+              <button id="next-page" title="下一页" aria-label="下一页">›</button>
+            </div>
+            <select id="zoom" aria-label="缩放">
+              <option value="fit">适合宽度</option><option value="1">100%</option>
+              <option value="1.25">125%</option><option value="1.5">150%</option><option value="2">200%</option>
+            </select>
           </div>
         </div>
         <div id="find-bar" role="search" hidden>
@@ -68,23 +119,41 @@
         <div id="page-scroller" class="page-scroller">
           <div id="page-frame" class="page-frame"><canvas id="pdf-canvas"></canvas><div id="text-layer" class="textLayer"></div><div id="find-marks" aria-hidden="true"></div><div id="page-links"></div></div>
         </div>
-        <footer class="document-footer"><span id="page-label"></span><span id="reading-status" role="status">准备就绪</span><span>切换模式 <kbd>Alt</kbd> + <kbd>B</kbd></span></footer>
+        <footer class="document-footer">
+          <span id="reading-status" role="status">准备就绪</span>
+          <span class="shortcut">切换模式 <kbd>Alt+B</kbd></span>
+          <span id="page-label"></span>
+        </footer>
       </section>
-      <div id="message" class="message" role="alert" hidden></div>
-    </main>
-  </div>
+    </div>
+  </main>
+
+  <div id="message" class="message" role="alert" hidden></div>
   <div id="drop-overlay" class="drop-overlay" hidden>松开以打开 PDF</div>
-  <dialog id="password-dialog"><form method="dialog"><h2>此 PDF 需要密码</h2><label for="pdf-password">打开密码</label><input id="pdf-password" type="password" autocomplete="off" required><div class="dialog-actions"><button type="button" id="cancel-password">取消</button><button value="open" class="primary">打开</button></div></form></dialog>
+  <dialog id="password-dialog" aria-labelledby="password-title">
+    <form method="dialog">
+      <h2 id="password-title">此 PDF 需要密码</h2>
+      <label for="pdf-password">打开密码</label>
+      <input id="pdf-password" type="password" autocomplete="off" required>
+      <div class="dialog-actions">
+        <button type="button" id="cancel-password">取消</button><button value="open" class="primary">打开</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="help-dialog" aria-labelledby="help-title">
-    <h2 id="help-title">开始使用仿生 PDF 阅读</h2>
-    <p>先选择适合你的阅读方式。PDF 文件在本机处理。</p>
-    <details><summary>第一次安装：下载哪个包？</summary><p>Windows：下载 windows-x64 压缩包，完整解压后运行 BionicPDF.exe，无需安装 Python。Chrome / Edge：下载 chrome-edge 压缩包并解压，在 chrome://extensions 或 edge://extensions 开启开发者模式，选择「加载已解压的扩展程序」，选择含 manifest.json 的文件夹，再点击扩展图标。</p><p>Firefox 推荐通过 Windows 工具打开本地阅读页；另提供临时开发扩展，浏览器重启后会移除。网页包需要本地网页服务，请勿直接双击 reader.html。</p></details>
-<details open><summary>在浏览器里直接切换</summary><ol><li>在 Chrome 或 Edge 已打开的 PDF 标签页点扩展图标，或点「打开 PDF」选择文件。打开本地标签页时，请先在扩展详情中启用「允许访问文件网址」。临时链接可先保存再打开。</li><li>在侧栏选择文档语言。窄窗口中先展开「阅读设置与目录」。英语可使用「参考项目规则」，其他语言推荐「词语前半部分」。</li><li>点击顶部「仿生」，或按 Alt+B 开关。强度可从 100% 开始调整。</li></ol><p>点击引用或目录可前往 PDF 指定的位置。「返回原处」或浏览器后退恢复原来的页码、缩放和滚动位置。论文里的网页和 DOI 在新标签页打开，关闭后即可继续阅读。改变缩放或窗口宽度时会对准原段落。从扩展图标打开的 PDF 可以刷新续读，需要保留原 PDF 标签页。</p><p>点「查找」或按 Ctrl+F（Mac 用 ⌘F）搜索全书。Enter 查找下一处，Shift+Enter 查找上一处，到书末或书首会循环。Esc 关闭查找。</p></details>
-    <details><summary>在 WPS / Acrobat / Foxit / PDF-XChange 原页开关</summary><ol><li>在 Windows 制作工具中选择原始 PDF，选择「可切换版」。</li><li>保存成不同文件名，再用你的 PDF 阅读器打开副本。</li><li>在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。图层默认关闭。</li></ol><p>WPS：左侧「图层」图标 → 眼睛开关。PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。</p><p>Acrobat：菜单 → 视图 → 显示/隐藏 → 侧面板 → 图层。Foxit：在左侧导航栏空白处右键 → 图层，再勾选该图层。不同版本菜单名称可能不同。找不到图层入口时可改用普通仿生版。</p></details>
-    <details><summary>Preview / SumatraPDF / 手机等阅读器</summary><p>在 Windows 工具选择「普通仿生版」，生成后直接打开。该副本的加粗始终显示；切回原始效果请打开原文件。</p></details>
-    <details><summary>支持哪些语言？如何配置？</summary><p>英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。</p><p>浏览器阅读混合语言文档时可选「词语前半部分」。在 Windows 工具制作副本时，自动和英语对纯英文字母词应用参考规则。选择其他语言时，按完整字素加粗前半词。手动选择还会设置副本的文档语言，自动模式沿用原文件的语言标记。重音和连字按完整字素或原始字形处理。</p></details>
-    <details><summary>双页讲义、扫描页或乱码怎么办？</summary><p>双页讲义左右两半合计一页。制作工具的「导出页码」可填 1-3,7,5-4，留空导出整本。完成后可查看未加粗的副本页码。讲义自带的翻页按钮也能在阅读页使用。</p><p>扫描件可在制作工具中勾选「扫描页本地 OCR」，选择识别语言并生成「可切换版」。先装好本机 Tesseract 5 和相应语言包。词首沿用原字颜色，已有部分隐藏正文时会补上能识别和定位的缺词。打开副本后用「原始／仿生」开关笔画，用「查找」搜索文字或数字。特殊字体和竖排文字可能保持原样。若出现乱码，先对照源 PDF。</p></details>
-    <form method="dialog" class="dialog-actions"><button value="close" class="primary">知道了，开始阅读</button></form>
+    <header class="guide-heading">
+      <h2 id="help-title">仿生 PDF 阅读指南</h2>
+      <form method="dialog"><button value="close" aria-label="关闭指南" title="关闭指南">×</button></form>
+    </header>
+    <div class="guide-content">
+      <p class="guide-intro">选择阅读器，查看打开文件、切换模式与处理扫描页的方法。</p>
+      <details><summary>第一次安装：下载哪个包？</summary><p>Windows：下载 windows-x64 压缩包，完整解压后运行 BionicPDF.exe，无需安装 Python。Chrome / Edge：下载 chrome-edge 压缩包并解压，在 chrome://extensions 或 edge://extensions 开启开发者模式，选择「加载已解压的扩展程序」，选择含 manifest.json 的文件夹，再点击扩展图标。</p><p>Firefox 推荐通过 Windows 工具打开本地阅读页；另提供临时开发扩展，浏览器重启后会移除。网页包需要本地网页服务，请勿直接双击 reader.html。</p></details>
+      <details open><summary>在浏览器里直接切换</summary><ol><li>在 Chrome 或 Edge 已打开的 PDF 标签页点扩展图标，或点「打开 PDF」选择文件。打开本地标签页时，请先在扩展详情中启用「允许访问文件网址」。临时链接可先保存再打开。</li><li>在侧栏选择文档语言。窄窗口中先展开「阅读设置与目录」。英语可使用「参考项目规则」，其他语言推荐「词语前半部分」。</li><li>点击顶部「仿生」，或按 Alt+B 开关。强度可从 100% 开始调整。</li></ol><p>点击引用或目录可前往 PDF 指定的位置。「返回原处」或浏览器后退恢复原来的页码、缩放和滚动位置。论文里的网页和 DOI 在新标签页打开，关闭后即可继续阅读。改变缩放或窗口宽度时会对准原段落。从扩展图标打开的 PDF 可以刷新续读，需要保留原 PDF 标签页。</p><p>点「查找」或按 Ctrl+F（Mac 用 ⌘F）搜索全书。Enter 查找下一处，Shift+Enter 查找上一处，到书末或书首会循环。Esc 关闭查找。</p></details>
+      <details><summary>在 WPS / Acrobat / Foxit / PDF-XChange 原页开关</summary><ol><li>在 Windows 制作工具中选择原始 PDF，选择「可切换版」。</li><li>保存成不同文件名，再用你的 PDF 阅读器打开副本。</li><li>在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。图层默认关闭。</li></ol><p>WPS：左侧「图层」图标 → 眼睛开关。PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。</p><p>Acrobat：菜单 → 视图 → 显示/隐藏 → 侧面板 → 图层。Foxit：在左侧导航栏空白处右键 → 图层，再勾选该图层。不同版本菜单名称可能不同。找不到图层入口时可改用普通仿生版。</p></details>
+      <details><summary>Preview / SumatraPDF / 手机等阅读器</summary><p>在 Windows 工具选择「普通仿生版」，生成后直接打开。该副本的加粗始终显示；切回原始效果请打开原文件。</p></details>
+      <details><summary>支持哪些语言？如何配置？</summary><p>英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。</p><p>浏览器阅读混合语言文档时可选「词语前半部分」。在 Windows 工具制作副本时，自动和英语对纯英文字母词应用参考规则。选择其他语言时，按完整字素加粗前半词。手动选择还会设置副本的文档语言，自动模式沿用原文件的语言标记。重音和连字按完整字素或原始字形处理。</p></details>
+      <details><summary>双页讲义、扫描页或乱码怎么办？</summary><p>双页讲义左右两半合计一页。制作工具的「导出页码」可填 1-3,7,5-4，留空导出整本。完成后可查看未加粗的副本页码。讲义自带的翻页按钮也能在阅读页使用。</p><p>若正文无法选中，或只能选中标题、页码和零散的词，在 Windows 制作工具中勾选「扫描页本地 OCR」，选择文档语言并生成「可切换版」。先装好本机 Tesseract 5 和相应语言包。打开副本，点「查找」输入正文中的一句话。用「原始／仿生」切换时，识别出的文字始终可以搜索和复制。特殊字体和竖排文字可能保持原样。若出现乱码，先对照源 PDF。</p></details>
+    </div>
   </dialog>
 </body>
 </html>
