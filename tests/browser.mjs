@@ -377,6 +377,18 @@ try{
           await wait(number, mode);
         }
       }
+      await chooseSample('#open-file', path.join(root,'.tmp/examples/scaled-text.pdf'));
+      await page.locator('#bionic-mode').click();
+      let expectedGlyphs;
+      for (let number = 1; number <= 4; ++number) {
+        await page.locator('#page-number').fill(String(number));
+        await page.locator('#page-number').press('Enter');
+        await wait(number, 'bionic');
+        const count = Number(await page.locator('#pdf-canvas').getAttribute('data-bold-glyphs'));
+        assert.ok(count > 0, `Scaled text on page ${number}`);
+        expectedGlyphs ??= count;
+        assert.equal(count, expectedGlyphs);
+      }
       await chooseSample('#open-file', path.join(root,'.tmp/examples/numbers.pdf'));
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'numbers.pdf');
       for (const mode of ['original', 'bionic']) {

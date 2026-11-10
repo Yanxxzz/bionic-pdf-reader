@@ -6,7 +6,7 @@
 
 - 浏览器的 `reader.mjs` 负责打开文档、导航和阅读设置。`page-view.mjs` 在一个页面视图内安排绘制、取消过时的请求、复用词首结果并保留可选择的文字层。`layout.mjs` 根据字形位置计算词首，处理复制用的文字。
 - 浏览器界面在 `extension/reader.html` 与 `reader.css` 中维护。Windows 工具和浏览器都从 `extension/assets` 读取本地配图。打包时从阅读页的帮助内容生成可独立打开的指南，图片一并嵌入。
-- `tab-source.mjs` 识别来源 PDF 和链接里的书签。`reading-progress.mjs` 用 PDF 全文 SHA-256 关联持久进度，另存当前标签页的导航状态。远程文件沿用 PDF.js 已下载的字节。`navigation.mjs` 解析目标页、段落坐标、讲义翻页动作及网页链接。
+- `tab-source.mjs` 识别来源 PDF 和链接里的书签。`reading-progress.mjs` 用全文 SHA-256 关联持久进度。下载中翻页会把已收到片段的范围、摘要及可用的强 ETag 与位置一同保存在当前标签页。刷新后用同一次下载核对这些信息。`navigation.mjs` 解析目标页、段落坐标、讲义翻页动作及网页链接。
 - `search.mjs` 中的 `BookSearch` 按需索引文档，管理当前命中、前后查找和取消，并把跨行或大小写转换后的命中映射回原文。`find-bar.mjs` 处理输入和状态显示。`page-view.mjs` 使用原文范围绘制高亮，可对齐的水平文字复用 PDF 实际绘制的字形坐标。
 - 桌面端的 `document.py` 识别数字签名、解析页码范围并重建导航。`pdf_text.py` 读取文字和绘图指令，`layout.py` 选出需要强调的字形。`embedded_font.py` 解析嵌入字体的轮廓，`converter.py` 将轮廓写入阅读副本。命令行和图形界面共用 `make_pdf()`。
 - `scan.py` 在开启 OCR 时识别扫描区域，避开原生笔画和批注，按原字颜色生成加粗笔画。选词与文字页共用 `words.py`。`scan_text.py` 保留原先写入的词，在对应的 PDF 文字指令处插入缺词。浏览器对单个文字片段读取 PDF 的 `ActualText`，让显示页的选择和全文查找都能保留字宽差异掩盖的空格。
@@ -58,7 +58,7 @@ python scripts/build_packages.py
 1. 同步 `pyproject.toml`、Python `__version__`、扩展清单、阅读页版本标识、`package.json` 和 `package-lock.json` 的版本。
 2. 阅读器、文档语言或下载方式有变化时，先在 `docs/compatibility.md` 和 `docs/verification.md` 更新适配方式与实测范围，再同步中英文 README 的选用表和 GitHub About 的简介、主题。README 的下载入口指向 `releases/latest`，版本细节记在 CHANGELOG。
 3. 运行测试，构建，检查源码与包中不包含私人 PDF、机器路径或凭据。
-4. 推送发布分支，等待 CI 的 Python、浏览器、macOS 阅读引擎和 Windows 打包测试通过。
+4. 推送发布分支，等待 CI 的 Python、浏览器、macOS 阅读引擎和 Windows 打包测试通过。Windows 任务从最终 ZIP 解出程序，用静态和可切换两种模式导出跨页计算表单，再移除页面树，从交叉引用表逐对象查找未选页的页面、正文、字段值和计算脚本。发现残留即停止发布。可将 `BIONIC_FORM_TEST_EXE` 设为解压后 EXE 的路径，运行 `python -m pytest tests/test_repeated_pages.py -k selected_calculations_cannot_recover` 在本机复验。
 5. 创建 `v版本` tag 和草稿 Release，上传包、许可和 SHA256 清单。
 6. 完成最终验收后发布 Release；不改变仓库可见性。
 

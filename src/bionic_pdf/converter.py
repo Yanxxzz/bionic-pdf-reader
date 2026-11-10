@@ -107,7 +107,9 @@ class OverlayBuilder:
     def build_page(self, page):
         content = page.get_contents()
         if content is not None:
-            result = self._build_stream(content, page.get('/Resources', D()), GraphicsState(), set(), page.indirect_reference)
+            unit = page.user_unit
+            state = GraphicsState(stream_to_page=(unit, 0, 0, unit, 0, 0))
+            result = self._build_stream(content, page.get('/Resources', D()), state, set(), page.indirect_reference)
             if result:
                 stream, resources = result
                 page[N('/Contents')] = self.writer._add_object(stream)

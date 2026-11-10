@@ -30,10 +30,10 @@ export class GlyphCapture {
     const actual = this.scopes.find(scope => scope !== null) ?? null;
     const {font, fontSize, fontSizeScale} = current;
     const advance = fontSize * current.fontMatrix[0];
-    const size = current.textMatrix ? fontSize * Math.hypot(current.textMatrix[2], current.textMatrix[3]) : fontSize;
     // Store coordinates in the scale-1 viewport, independent of zoom and pixel density.
     const a = matrix.a / this.displayScale, b = matrix.b / this.displayScale;
     const d = matrix.d / this.displayScale, e = matrix.e / this.displayScale, f = matrix.f / this.displayScale;
+    const size = Math.abs(d * fontSize / fontSizeScale);
     const eligible = !font.bold && !font.black && !font.italic && !font.vertical && !styledFont.test(font.name || '')
       && current.textRenderingMode === 0 && !current.patternFill && size >= 6.8 && size <= 25
       && Math.abs(matrix.b) < 1e-5 && Math.abs(matrix.c) < 1e-5;
@@ -51,7 +51,7 @@ export class GlyphCapture {
       this.records.push({
         run, index, text: glyph.unicode || '', font: font.loadedName || font.name, actual, eligible,
         x: Math.min(left, right), w: Math.abs(right - left),
-        y: b * x / fontSizeScale + f, h: Math.abs(d * fontSize / fontSizeScale),
+        y: b * x / fontSizeScale + f, h: size,
       });
       x += width;
     }

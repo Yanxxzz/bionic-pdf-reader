@@ -12,6 +12,33 @@ from bionic_pdf import make_pdf
 ROOT=Path(__file__).resolve().parents[1]
 
 
+def test_equivalent_font_scales_produce_identical_emphasis(tmp_path):
+    from scripts.make_examples import create_scaled_text
+
+    source = create_scaled_text(tmp_path/'scaled.pdf')
+    def pixels(path):
+        with pdfium.PdfDocument(path) as pdf:
+            return [page.render(scale=3).to_pil().tobytes() for page in pdf]
+
+    original = pixels(source)
+    assert len(set(original)) == 1
+    rendered = {}
+    for mode in ('static', 'switchable'):
+        output = tmp_path/f'{mode}.pdf'
+        report = make_pdf(source, output, mode=mode)
+        assert report['unemphasized_pages'] == []
+        rendered[mode] = pixels(output)
+        assert len(set(rendered[mode])) == 1
+    assert rendered['static'] != original
+    assert rendered['switchable'] == original
+    writer = PdfWriter(clone_from=tmp_path/'switchable.pdf')
+    groups = writer.root_object['/OCProperties']
+    groups['/D'][N('/ON')] = groups['/OCGs']
+    groups['/D'][N('/OFF')] = A()
+    writer.write(tmp_path/'on.pdf')
+    assert pixels(tmp_path/'on.pdf') == rendered['static']
+
+
 @pytest.mark.parametrize(('label_font', 'size'), [('Helvetica', 18), ('Courier', 20)])
 def test_switching_from_standard_font_preserves_position(tmp_path, label_font, size):
     from reportlab.pdfbase import pdfmetrics
@@ -331,24 +358,27 @@ def test_repeated_nested_forms_use_caller_colour_and_report_physical_output_page
                        N('/Resources'): resources})
         return writer._add_object(stream)
 
-    body = form(f'BT {font} 18 Tf 15 16 Td (Reading together) Tj ET', DictionaryObject({N('/Font'): fonts}))
+    body = form(f'BT {font} 9 Tf 15 16 Td (Reading together) Tj ET', DictionaryObject({N('/Font'): fonts}))
     nested = form('/Text Do', DictionaryObject({N('/XObject'): DictionaryObject({N('/Text'): body})}))
+    nested.get_object()[N('/Matrix')] = A(map(NumberObject, (2, 0, 0, 2, 0, 0)))
     transparent = DictionaryObject({N('/ca'): NumberObject(0), N('/CA'): NumberObject(0)})
     resources = DictionaryObject({N('/XObject'): DictionaryObject({N('/Panel'): nested}),
                                   N('/ExtGState'): DictionaryObject({N('/Hidden'): transparent})})
     drawings = ['q 1 0 0 rg /Panel Do Q q 0 0 1 rg 1 0 0 1 300 0 cm /Pa#6Eel % placed again\n Do Q',
-                '/Hidden gs /Panel Do', 'q Q', 'q 0 1 -1 0 100 35 cm /Panel Do Q']
+                '/Hidden gs /Panel Do', 'q Q', 'q 0 1 -1 0 100 35 cm /Panel Do Q', '/Panel Do']
     for index, drawing in enumerate(drawings):
         page = first if index == 0 else writer.add_blank_page(595, 842)
+        if index == 4:  # 9 pt in the stream × 2 in the Form × 2 in page units = 36 pt.
+            page[N('/UserUnit')] = NumberObject(2)
         page[N('/Resources')] = resources
         stream = DecodedStreamObject()
         stream.set_data(drawing.encode('ascii'))
         page[N('/Contents')] = writer._add_object(stream)
     source, target = tmp_path/'panels.pdf', tmp_path/'selected-panels.pdf'
     writer.write(source)
-    order = [3, 4, 2, 1]
+    order = [3, 4, 2, 1, 5]
     report = make_pdf(source, target, pages=order, mode='static')
-    assert report['unemphasized_pages'] == [1, 3]
+    assert report['unemphasized_pages'] == [1, 3, 5]
     with pdfium.PdfDocument(source) as before, pdfium.PdfDocument(target) as after:
         for i, source_number in enumerate(order):
             old, new = before[source_number - 1], after[i]

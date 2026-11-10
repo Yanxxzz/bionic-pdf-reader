@@ -105,6 +105,13 @@ jobs:
       - run: python -m build
       - run: python scripts/build_packages.py
       - run: python scripts/audit_release.py dist
+      - name: Try to recover excluded form pages from packaged exports
+        shell: pwsh
+        run: |
+          $zip = Get-Item dist/bionic-pdf-windows-x64-*.zip
+          Expand-Archive -LiteralPath $zip.FullName -DestinationPath .tmp/release-windows
+          $env:BIONIC_FORM_TEST_EXE = (Resolve-Path .tmp/release-windows/BionicPDF.exe).Path
+          python -m pytest tests/test_repeated_pages.py -k selected_calculations_cannot_recover -q
       - uses: actions/upload-artifact@v7
         with:
           name: release-packages

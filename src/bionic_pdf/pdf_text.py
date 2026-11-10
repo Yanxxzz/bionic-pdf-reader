@@ -31,6 +31,7 @@ def translated(matrix, x, y):
 @dataclass
 class GraphicsState:
     ctm: tuple = IDENTITY
+    stream_to_page: tuple = IDENTITY
     text_matrix: tuple = IDENTITY
     line_matrix: tuple = IDENTITY
     position_known: bool = True
@@ -98,7 +99,8 @@ class GraphicsState:
                     self.stroke_alpha = float(entry.get('/CA', self.stroke_alpha))
 
     def can_emphasize(self):
-        size = abs(self.font_size) * math.hypot(self.text_matrix[2], self.text_matrix[3])
+        page_matrix = matrix_multiply(self.stream_to_page, matrix_multiply(self.ctm, self.text_matrix))
+        size = abs(self.font_size) * math.hypot(*page_matrix[2:4])
         return (self.position_known and self.render_mode == 0 and 6.8 <= size <= 25
                 and self.fill_alpha == self.stroke_alpha == 1 and self.fill_cs != '/Pattern'
                 and all(abs(skew) < 1e-5 for skew in (*self.text_matrix[1:3], *self.ctm[1:3])))
@@ -266,7 +268,9 @@ class PageTextReader:
                     form = ref.get_object() if ref is not None else None
                     if form is not None and form.get('/Subtype') == '/Form':
                         child = copy(state)
-                        # The original Do and /Matrix place the edited stream. Lay out its text locally.
+                        # Measure physical type in page space, lay out and paint in the Form's own space.
+                        placement = matrix_multiply(state.ctm, form.get('/Matrix', IDENTITY))
+                        child.stream_to_page = matrix_multiply(state.stream_to_page, placement)
                         child.ctm = IDENTITY
                         forms.append((operations.offsets[index], form, child))
                 elif op == b'ET':

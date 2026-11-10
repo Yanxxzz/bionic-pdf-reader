@@ -1,7 +1,4 @@
-"""Apply a version-checked PDF.js 5.6.205 operator metadata patch.
-
-Forward decoded ActualText to the renderer and to opt-in marked-content text items.
-"""
+"""Reapply the Bionic PDF Reader hooks to the pinned PDF.js 5.6.205 worker."""
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -13,11 +10,18 @@ if new not in source:
     assert source.count(old)==1,'Unexpected PDF.js worker; review the upstream operator handling'
     source=source.replace(old,new)
     source='/* Bionic PDF Reader modification: forward decoded ActualText as an additional marked-content operator argument. */\n'+source
-    path.write_text(source,encoding='utf-8',newline='\n')
-print('PDF.js ActualText operator metadata patch present')
 marker = 'type:"beginMarkedContentProps",id:Number.isInteger(e)?'
 with_text = ('type:"beginMarkedContentProps",actualText:j[1]instanceof Dict&&typeof j[1].get("ActualText")'
              '==="string"?stringToPDFString(j[1].get("ActualText")):null,id:Number.isInteger(e)?')
 if with_text not in source:
     assert source.count(marker) == 1, 'Unexpected PDF.js marked-content text handling'
-    path.write_text(source.replace(marker, with_text), encoding='utf-8', newline='\n')
+    source = source.replace(marker, with_text)
+
+hook = 'h.on("BionicResumeProof",()=>bionicStreamProof(n.pdfDocument.stream));'
+if hook not in source:
+    marker = 'h.on("GetData",function(e){return n.requestLoadedStream().then(e=>e.bytes)});'
+    assert source.count(marker) == 1, 'Unexpected PDF.js worker document transport'
+    source = ('/* Bionic PDF Reader modification: verify received byte ranges on a reader-tab reload. */\n'
+              'import {streamByteProof as bionicStreamProof} from "../reading-progress.mjs";\n'
+              + source.replace(marker, marker + hook))
+path.write_text(source, encoding='utf-8', newline='\n')

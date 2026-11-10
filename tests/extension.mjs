@@ -17,12 +17,44 @@ const named = fs.readFileSync(path.join(path.dirname(sample), 'named.pdf'));
 // Valid trailing PDF comments make two distinct editions with the same name,
 // declared ID, file size, and first 1024 bytes.
 const editions = ['A', 'B'].map(tag => Buffer.concat([bytes, Buffer.from('\n% Edition ' + tag + '\n')]));
+// Leave a hole before the xref. The front and tail suffice to display the first pages.
+const xref = Number(/startxref\s+(\d+)\s+%%EOF/.exec(bytes.toString('latin1'))[1]);
+const gap = Buffer.alloc(4 * 1024 * 1024, 32);
+const tail = bytes.subarray(xref).toString('latin1').replace(/(startxref\s+)\d+/, (_, prefix) => prefix + (xref + gap.length));
+const large = Buffer.concat([bytes.subarray(0, xref), gap, Buffer.from(tail + '\n% edition A', 'latin1')]);
+const revised = Buffer.from(large); revised[revised.length - 1] = 66;
+let remote = large, etag, hold = false;
+const held = new Set();
+function releaseDownload() {
+  hold = false;
+  for (const finish of held) finish();
+  held.clear();
+}
+
+function serveRange(req, res) {
+  const data = remote;
+  const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
+  const start = range ? Number(range[1]) : 0, end = range ? Math.min(Number(range[2]) + 1, data.length) : data.length;
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Length', end - start);
+  if (etag) res.setHeader('ETag', etag);
+  if (range) { res.statusCode = 206; res.setHeader('Content-Range', `bytes ${start}-${end - 1}/${data.length}`); }
+  if (!hold || (range && (start < 65536 || end >= data.length - 65536))) return res.end(data.subarray(start, end));
+  if (!range) res.write(data.subarray(0, 65536));
+  else res.flushHeaders();
+  const finish = () => res.end(data.subarray(range ? start : 65536, end));
+  held.add(finish);
+  res.on('close', () => held.delete(finish));
+}
 let edition = 0;
 let expired = false;
 let htmlRequests = 0;
 const server = http.createServer((req, res) => {
   res.setHeader('Cache-Control', 'no-store');
-  if (req.url === '/ordinary.pdf') {
+  if (req.url === '/slow.pdf') {
+    serveRange(req, res);
+  } else if (req.url === '/ordinary.pdf') {
     ++htmlRequests;
     res.writeHead(200, {'Content-Type':'text/html'}).end('<title>HTML article</title>');
   } else if (req.url === '/edition.pdf') {
@@ -169,9 +201,57 @@ try {
   await waitForPage(reader, 2);
   await reader.locator('#file-input').setInputFiles({name:'renamed.pdf', mimeType:'application/pdf', buffer:editions[0]});
   await waitForPage(reader, 4);
+  await reader.close();
+
+  // Seed a conflicting bookmark for each complete edition, then reload mid-download.
+  reader = await context.newPage();
+  await reader.goto(`chrome-extension://${id}/reader.html`);
+  async function turn(number) {
+    await reader.locator('#page-number').fill(String(number));
+    await reader.locator('#page-number').press('Enter');
+    await waitForPage(reader, number);
+  }
+  for (const [data, number] of [[large, 4], [revised, 3]]) {
+    await reader.locator('#file-input').setInputFiles({name:'seed.pdf', mimeType:'application/pdf', buffer:data});
+    await waitForPage(reader, 1);
+    await turn(number);
+  }
+  await reader.close();
+  for (const scenario of ['refresh-twice', 'changed-bytes', 'new-navigation', 'changed-etag', 'untouched']) {
+    remote = large;
+    etag = scenario === 'changed-etag' ? '"first"' : null;
+    await source.goto(base + '/slow.pdf');
+    hold = true;
+    reader = await clickExtension();
+    await waitForPage(reader, 1);
+    if (scenario !== 'untouched') {
+      await turn(2);
+      await reader.waitForFunction(() => JSON.parse(sessionStorage.getItem('bionic-tab-view')).pending);
+    }
+    if (scenario === 'changed-bytes') remote = revised; // Same URL, length, PDF ID and first 1024 bytes.
+    if (scenario === 'changed-etag') {
+      remote = Buffer.from(large);
+      remote[xref + gap.length / 2] = 9; // Only an unread middle byte changes.
+      etag = '"replacement"';
+    }
+    for (let i = 0; i < (scenario === 'refresh-twice' ? 2 : 1); ++i) {
+      await reader.reload();
+      await waitForPage(reader, 1);
+    }
+    if (scenario === 'new-navigation') await turn(5);
+    releaseDownload();
+    const expected = {'refresh-twice':2, 'changed-bytes':3, 'new-navigation':5, 'changed-etag':1, untouched:5}[scenario];
+    await reader.waitForFunction(n => {
+      const saved = JSON.parse(sessionStorage.getItem('bionic-tab-view'));
+      return saved?.contentKey && saved.position.number === n &&
+        document.querySelector('#page-frame').dataset.renderedPage === String(n);
+    }, expected);
+    await reader.close();
+  }
   assert.deepEqual(errors, []);
-  console.log('Extension toolbar, reload, named destination, expired session and file picker passed');
+  console.log('Extension toolbar, file picker, named destination, expired session and partial-download reloads passed');
 } finally {
+  releaseDownload();
   await context?.close();
   await new Promise(resolve => server.close(resolve));
   assert.ok(path.basename(profile).startsWith('bionic-extension-'));

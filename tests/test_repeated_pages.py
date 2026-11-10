@@ -1,4 +1,6 @@
 """A repeated physical page has its own local links and shares logical form values."""
+import os
+import subprocess
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -148,11 +150,16 @@ def test_selected_calculations_cannot_recover_omitted_fields_or_pages(tmp_path, 
     form[NameObject('/CO')] = writer._add_object(ArrayObject(reversed(fields)))
     source = tmp_path/'calculations.pdf'
     writer.write(source)
+    executable = os.environ.get('BIONIC_FORM_TEST_EXE')
 
     for pages in ('1', '2', '1,1', '2,1,2', '2,3', '3,1,2', '1,2,3'):
         selected = list(map(int, pages.split(',')))
         output = tmp_path/f'{pages}.pdf'
-        make_pdf(source, output, pages=pages, mode=mode)
+        if executable:
+            subprocess.run([executable, '--cli', str(source), str(output), '--pages', pages, '--mode', mode],
+                           check=True, capture_output=True, timeout=90)
+        else:
+            make_pdf(source, output, pages=pages, mode=mode)
         saved = PdfReader(output)
         order = saved.root_object['/AcroForm']['/CO']
         assert [ref.get_object()['/T'] for ref in order] == [f'Answer{n}' for n in (3, 2, 1) if n in selected]

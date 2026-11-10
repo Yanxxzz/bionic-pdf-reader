@@ -41,6 +41,20 @@ def create_sample(target, samples=None):
     return target
 
 
+def create_scaled_text(target):
+    """Identical 12-point lines written with different font and graphics scales."""
+    pdfmetrics.registerFont(TTFont('ScaleBody', str(ROOT/'tests/assets/fonts/Latin.ttf')))
+    pdf = canvas.Canvas(str(target), pagesize=(290, 148), invariant=True)
+    for scale in (1, 2, .5, .25):
+        pdf.translate(25, 80)
+        pdf.scale(scale, scale)
+        pdf.setFont('ScaleBody', 12 / scale)
+        pdf.drawString(0, 0, 'Reading improves with practice.')
+        pdf.showPage()
+    pdf.save()
+    return target
+
+
 def create_partial_scan(target, layouts):
     """Scanned sentences with gaps in their authored, selectable text."""
     from PIL import Image, ImageDraw, ImageFont
@@ -93,6 +107,7 @@ if __name__=='__main__':
     from pypdf.generic import Destination, DictionaryObject, Fit, NameObject, RectangleObject, TextStringObject
 
     sample = create_sample(ROOT/'.tmp/examples/multilingual.pdf')
+    create_scaled_text(sample.with_name('scaled-text.pdf'))
     create_partial_scan(sample.with_name('partial-scan.pdf'), ['one-TJ', 'wider-font'])
     print(sample)
     with PdfWriter() as writer:

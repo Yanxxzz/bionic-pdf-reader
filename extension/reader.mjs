@@ -28,7 +28,7 @@ try {
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null, embeddedLayer = null;
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
-let readingProgress, navigationRevision = 0, pendingPosition = null;
+let readingProgress, navigationRevision = 0, pendingPosition = null, openingView;
 let progressTimer;
 const findBar = installFindBar(() => pageNumber, number => {
   ++navigationRevision;
@@ -110,7 +110,15 @@ function saveProgress() {
   clearTimeout(progressTimer);
   if (!pdf || $('page-frame').dataset.renderedPage !== String(pageNumber)) return;
   const position = {number: pageNumber, ...readingPosition($('zoom').value)};
-  readingProgress.save(position);
+  openingView.position ??= position;
+  readingProgress.save(position, movedSinceOpening());
+}
+
+function movedSinceOpening() {
+  const scroller = $('page-scroller');
+  const initial = openingView.position;
+  return navigationRevision !== openingView.revision || $('zoom').value !== openingView.zoom ||
+    Boolean(initial && (scroller.scrollLeft !== initial.left || scroller.scrollTop !== initial.top));
 }
 $('page-scroller').addEventListener('scroll', () => {
   clearTimeout(progressTimer);
@@ -231,15 +239,16 @@ async function openFile(file, resume = null) {
     };
     const loadedPDF = await task.promise;
     if (currentLoad !== loadRevision) return;
-    const [labels, permissions, metadata, target, layer, contentKey] = await Promise.all([
+    const [labels, permissions, metadata, target, layer, contentKey, proof] = await Promise.all([
       loadedPDF.getPageLabels(), loadedPDF.getPermissions(), file.url ? loadedPDF.getMetadata().catch(() => null) : null,
       file.named ? destinationPage(loadedPDF, file.named).catch(() => null) : null,
-      embeddedReadingLayer(loadedPDF), localKey,
+      embeddedReadingLayer(loadedPDF), localKey, file.url ? loadedPDF.getBionicResumeProof().catch(() => null) : null,
     ]);
     if (currentLoad !== loadRevision) return;
     loadingTask = null;
     $('message').hidden = true;
-    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer, contentKey});
+    if (proof && metadata?.bionicETag?.startsWith('"')) proof.etag = metadata.bionicETag;
+    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer, contentKey, proof});
   } catch (error) {
     if (currentLoad === loadRevision) {
       const reason = file.url ? '请在原标签页保存文件，再点「打开 PDF」。' : error.message;
@@ -253,7 +262,7 @@ async function openFile(file, resume = null) {
   }
 }
 
-async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer, contentKey}) {
+async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer, contentKey, proof}) {
   saveProgress();
   const previous = pdf;
   pdf = loadedPDF;
@@ -261,7 +270,7 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target,
   updateModeUI();
   findBar.reset(pdf, settings.locale);
   const candidate = resume ?? (!previous && file instanceof File ? savedTabView() : null);
-  readingProgress = new ReadingProgress(file, candidate, Boolean(resume && file instanceof File));
+  readingProgress = new ReadingProgress(file, candidate, Boolean(resume && file instanceof File), proof);
   const stored = contentKey ? readingProgress.identify(contentKey) : null;
   rememberSelectedFile(file, readingProgress.documentId);
   const revision = ++navigationRevision;
@@ -285,12 +294,13 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target,
   $('outline').replaceChildren();
   document.title = `${name} · 仿生 PDF 阅读`;
   const position = openingPosition(stored);
+  openingView = {revision, zoom:position.zoom, position:null};
   readingProgress.save(position);
   if (file.named && !target) notify('找不到链接指定的书签，已打开 PDF。');
   const reset = resetPageView();
   const rendering = showPosition(position);
   if (file.url) {
-    finishUrlProgress(loadedPDF, readingProgress, revision, position.zoom, rendering, openingPosition);
+    finishUrlProgress(loadedPDF, readingProgress, proof, rendering, openingPosition);
   }
   await reset;
   await previous?.destroy();
@@ -298,20 +308,19 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target,
   if (pdf === loadedPDF) await buildOutline(loadedPDF);
 }
 
-async function finishUrlProgress(doc, progress, revision, initialZoom, rendering, openingPosition) {
+async function finishUrlProgress(doc, progress, proof, rendering, openingPosition) {
   // An HTTP range document can display its first page before the remaining
   // bytes arrive. Hash the original download without issuing another request.
   try {
-    const scroller = $('page-scroller');
-    const firstPaint = rendering.then(() => [scroller.scrollLeft, scroller.scrollTop]);
     await doc.getDownloadInfo();
     if (readingProgress !== progress) return;
-    const key = await digestBytes(await doc.getData());
-    const [left, top] = await firstPaint;
+    const bytes = await doc.getData();
+    const key = proof?.key ?? await digestBytes(bytes);
+    const matches = await progress.matchesPending(bytes, key);
+    await rendering;
     if (readingProgress !== progress) return;
-    const untouched = revision === navigationRevision && $('zoom').value === initialZoom
-      && scroller.scrollTop === top && scroller.scrollLeft === left;
-    const stored = progress.identify(key, untouched);
+    const untouched = !movedSinceOpening();
+    const stored = progress.identify(key, untouched, matches);
     $('return-position').disabled = history.state?.documentId !== progress.documentId || !history.state?.depth;
     if (stored && untouched) {
       await showPosition(openingPosition(stored));

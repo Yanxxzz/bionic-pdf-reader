@@ -12978,6 +12978,7 @@ class PDFFetchStreamReader extends BasePDFStreamReader {
       this._contentLength = contentLength;
       this._isRangeSupported = isRangeSupported;
       this._filename = extractFilenameFromHeader(responseHeaders);
+      this.bionicETag = responseHeaders.get("ETag"); // Bionic PDF Reader modification: HTTP version on reload.
       if (!this._isStreamingSupported && this._isRangeSupported) {
         this.cancel(new AbortException("Streaming is disabled."));
       }
@@ -13412,6 +13413,7 @@ class PDFNetworkStreamReader extends BasePDFStreamReader {
     this._contentLength = contentLength;
     this._isRangeSupported = isRangeSupported;
     this._filename = extractFilenameFromHeader(responseHeaders);
+    this.bionicETag = responseHeaders.get("ETag"); // Bionic PDF Reader modification: XHR transport.
     if (this._isRangeSupported) {
       stream._abortRequest(fullRequestXhr);
     }
@@ -15013,6 +15015,10 @@ class PDFDocumentProxy {
   getDownloadInfo() {
     return this._transport.downloadInfoCapability.promise;
   }
+  // Bionic PDF Reader modification: attest only bytes the worker has already received.
+  getBionicResumeProof() {
+    return this._transport.messageHandler.sendWithPromise("BionicResumeProof", null);
+  }
   getRawData(data) {
     return this._transport.getRawData(data);
   }
@@ -16217,6 +16223,7 @@ class WorkerTransport {
       info: results[0],
       metadata: results[1] ? new Metadata(results[1]) : null,
       contentDispositionFilename: this.#fullReader?.filename ?? null,
+      bionicETag: this.#fullReader?.bionicETag ?? null,
       contentLength: this.#fullReader?.contentLength ?? null,
       hasStructTree: results[2]
     })));
