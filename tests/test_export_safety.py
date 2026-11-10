@@ -1,4 +1,6 @@
 """Regression cases for protected inputs, damaged PDFs and painted-over text."""
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -74,6 +76,16 @@ def test_weight_endpoints_work_in_api_and_cli(source, tmp_path, weight):
     assert run_cli([str(source), str(cli), '--mode=static', f'--weight={weight}']) == 0
     with pdfium.PdfDocument(direct) as a, pdfium.PdfDocument(cli) as b:
         assert a[0].render(scale=2).to_pil().tobytes() == b[0].render(scale=2).to_pil().tobytes()
+
+
+def test_redirected_cli_reports_success_on_a_legacy_code_page(source, tmp_path):
+    target = tmp_path/'选页.pdf'
+    result = subprocess.run([sys.executable, '-m', 'bionic_pdf', str(source), str(target), '--pages', '1'],
+                            env=dict(os.environ, PYTHONIOENCODING='cp1252'), capture_output=True,
+                            encoding='utf-8', check=True, timeout=30)
+    assert '未加粗的页码' in result.stdout and target.name in result.stdout
+    assert json.loads(result.stdout.splitlines()[-1])['glyphs'] > 0
+    assert len(PdfReader(target).pages) == 1
 
 
 def test_damaged_xref_fails_promptly_and_preserves_target(tmp_path):

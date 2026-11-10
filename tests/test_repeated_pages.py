@@ -157,7 +157,7 @@ def test_selected_calculations_cannot_recover_omitted_fields_or_pages(tmp_path, 
         output = tmp_path/f'{pages}.pdf'
         if executable:
             subprocess.run([executable, '--cli', str(source), str(output), '--pages', pages, '--mode', mode],
-                           check=True, capture_output=True, timeout=90)
+                           check=True, timeout=90)
         else:
             make_pdf(source, output, pages=pages, mode=mode)
         saved = PdfReader(output)

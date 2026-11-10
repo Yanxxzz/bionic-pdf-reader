@@ -1,5 +1,7 @@
 import argparse
+import io
 import json
+import sys
 from pathlib import Path
 from pypdf.errors import PyPdfError
 from . import __version__, make_pdf
@@ -8,6 +10,10 @@ from .converter import DEFAULT_WEIGHT, InvalidWeightError, page_summary
 from .words import LANGUAGES
 
 def main(argv=None):
+    # Desktop automation reads the progress, translated summary and JSON from a pipe.
+    for stream in (sys.stdout, sys.stderr):
+        if isinstance(stream, io.TextIOWrapper) and not stream.isatty() and stream.encoding.lower() != 'utf-8':
+            stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description='Create a local bionic reading PDF without replacing its original text.')
     parser.add_argument('--version', action='version', version=__version__)
     parser.add_argument('source', type=Path)
