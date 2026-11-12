@@ -69,6 +69,7 @@ function wrappedMatchEnd(text, start, query) {
 
 export class BookSearch {
   #pages = new Map();
+  #pending = new Map();
   #visible = null;
   #selected = null;
   #query = '';
@@ -138,6 +139,20 @@ export class BookSearch {
     }
   }
 
+  // Queries can change while PDF.js is reading a page. Share that work and
+  // keep only the folded text once it finishes.
+  async #indexPage(page, revision) {
+    const pending = this.#pending.get(page);
+    if (pending) return pending;
+    const proxy = await this.pdf.getPage(page);
+    if (revision !== this.#revision || this.#pages.has(page)) return;
+    const read = readPageText(proxy, undefined, this.originalLayers).then(({items}) => {
+      if (!this.#pages.has(page)) this.#pages.set(page, foldText(pageText(items), null, this.locale));
+    }).finally(() => this.#pending.delete(page));
+    this.#pending.set(page, read);
+    return read;
+  }
+
   async find(value, number, direction = this.direction, progress = () => {}) {
     const query = foldText(value.trim(), null, this.locale).replaceAll('\n', '-');
     const revision = ++this.#revision;
@@ -154,15 +169,12 @@ export class BookSearch {
       if (!this.#pages.has(page)) {
         progress(page);
         try {
-          const proxy = await this.pdf.getPage(page);
-          if (revision !== this.#revision) return;
-          const content = await readPageText(proxy, undefined, this.originalLayers);
-          if (revision !== this.#revision) return;
-          if (!this.#pages.has(page)) this.#pages.set(page, foldText(pageText(content.items), null, this.locale));
+          await this.#indexPage(page, revision);
         } catch (error) {
           if (revision !== this.#revision) return;
           throw error;
         }
+        if (revision !== this.#revision) return;
       }
       const hits = this.#selected?.page === page ? this.#selected.hits : this.#hits(this.#pages.get(page));
       let index = direction === 1 ? 0 : hits.length - 1;

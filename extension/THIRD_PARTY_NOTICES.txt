@@ -34,8 +34,10 @@ Apache License 2.0: see vendor/LICENSE_PDFJS.
 Modifications to vendor/pdf.mjs and vendor/pdf.worker.min.mjs are labeled
 "Bionic PDF Reader modification". They expose positioned glyphs and ActualText
 marked-content metadata, add display-only strokes to selected original glyphs,
-and expose the HTTP ETag and hashes of received bytes for reading progress. Original glyph positions,
-advances, font data, Unicode text, and the user's PDF bytes are unchanged.
+and expose the HTTP ETag and hashes of received bytes for reading progress.
+Background search captures glyph positions without waiting for screen refresh
+or painting ordinary text. Original glyph positions, advances, font data,
+Unicode text, and the user's PDF bytes are unchanged.
 
 The TextLayer geometry styles in reader.css are adapted from PDF.js under
 the same Apache License 2.0. Standard font, CMap, ICC and WASM resources

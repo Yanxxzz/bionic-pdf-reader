@@ -75,20 +75,29 @@ function splitColumns(line) {
 }
 
 function* glyphAtoms(records) {
-  const clusters = new Map();
+  // Only marked glyphs can share a spelling. Ordinary glyphs already carry their positions.
+  const scopes = new Map();
   for (const record of records) {
-    const key = record.actual?.id ?? record;
-    if (!clusters.has(key)) clusters.set(key, []);
-    clusters.get(key).push(record);
+    if (!record.actual) continue;
+    const {id} = record.actual;
+    if (!scopes.has(id)) scopes.set(id, []);
+    scopes.get(id).push(record);
   }
 
-  for (const members of clusters.values()) {
+  for (const record of records) {
+    if (!record.actual) {
+      yield record;
+      continue;
+    }
+    const members = scopes.get(record.actual.id);
+    if (!members) continue;
+    scopes.delete(record.actual.id);
     const base = members.reduce((first, other) => first.w >= other.w ? first : other);
-    const text = base.actual?.text ?? base.text;
-    if (base.actual && (/[\r\n\u0085\u2028\u2029]/u.test(text)
-      || !members.every(r => sameLine(base, r)) || splitColumns(members).length > 1)) {
+    const text = base.actual.text;
+    if (/[\r\n\u0085\u2028\u2029]/u.test(text)
+      || !members.every(r => sameLine(base, r)) || splitColumns(members).length > 1) {
       // Keep the physical positions so each affected line keeps its own source text.
-      for (const r of members) yield {...r, text: '\0', records: [r], actual: false, eligible: false};
+      for (const r of members) yield {...r, text: '\0', actual: null, eligible: false};
       continue;
     }
     let left = base.x, right = base.x + base.w;
@@ -97,27 +106,37 @@ function* glyphAtoms(records) {
       right = Math.max(right, r.x + r.w);
     }
     yield {
-      text, records: members, actual: Boolean(base.actual), font: base.font,
+      text, members, actual: base.actual, font: base.font,
       x: left, w: right - left, y: base.y, h: base.h,
-      eligible: members.every(r => r.eligible) && !/\s/u.test(text.trim()),
+      eligible: members.every(r => r.eligible),
     };
   }
 }
 
-function* visualSegments(records) {
+function* visualSegments(records, taggedOnly) {
   const fonts = new Map();
   for (const atom of glyphAtoms(records)) {
     if (!fonts.has(atom.font)) fonts.set(atom.font, []);
     fonts.get(atom.font).push(atom);
   }
   for (const atoms of fonts.values()) {
+    if (taggedOnly && !atoms.some(atom => atom.actual)) continue;
     const lines = [];
     for (const atom of atoms.sort((a, b) => a.y - b.y || a.x - b.x)) {
-      const line = lines.slice(-3).reverse().find(line => sameLine(line[0], atom));
+      let line;
+      const earliest = Math.max(0, lines.length - 3);
+      for (let i = lines.length - 1; i >= earliest; --i) {
+        if (sameLine(lines[i][0], atom)) {
+          line = lines[i];
+          break;
+        }
+      }
       if (line) line.push(atom);
       else lines.push([atom]);
     }
-    for (const line of lines) yield* splitColumns(line);
+    for (const line of lines) {
+      if (!taggedOnly || line.some(atom => atom.actual)) yield* splitColumns(line);
+    }
   }
 }
 
@@ -164,7 +183,7 @@ function tabFragments(atoms) {
 export function planGlyphs(capture, settings) {
   const masks = settings && capture.runs.map(length => Array(length).fill(false));
   const repairs = [];
-  for (const segment of visualSegments(capture.records)) {
+  for (const segment of visualSegments(capture.records, !settings)) {
     const tagged = segment.some(atom => atom.actual);
     if (!settings && !tagged) continue;
     const ordered = [];
@@ -184,13 +203,17 @@ export function planGlyphs(capture, settings) {
       let start = 0;
       for (const atom of ordered) {
         const end = start + atom.text.length;
-        if (atom.eligible && flags.subarray(start, end).includes(1)) {
-          for (const r of atom.records) masks[r.run][r.index] = true;
+        if (atom.eligible && !/\s/u.test(atom.text.trim()) && flags.subarray(start, end).includes(1)) {
+          if (atom.members) {
+            for (const r of atom.members) masks[r.run][r.index] = true;
+          } else {
+            masks[atom.run][atom.index] = true;
+          }
         }
         start = end;
       }
     }
-    if (tagged && segment.every(a => a.records.every(r => r.h > 0))) {
+    if (tagged && segment.every(a => a.members ? a.members.every(r => r.h > 0) : a.h > 0)) {
       const logical = rtl.test(text) ? logicalText(ordered) : {text, dir: 'ltr'};
       const first = segment[0];
       const parts = text.includes('\t') && !rtl.test(text) ? tabFragments(ordered) : null;

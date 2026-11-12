@@ -110,6 +110,44 @@ test('a repaired visible page supplies the range and count used on revisits', as
   assert.equal(await book.find('STRASSE', 1), null);
 });
 
+test('overlapping queries share page extraction and use the latest search language', async () => {
+  let reads = 0;
+  const started = Promise.withResolvers();
+  const content = Promise.withResolvers();
+  const book = new BookSearch({numPages:1, async getPage() {
+    return {getTextContent() { ++reads; started.resolve(); return content.promise; }};
+  }}, 'en');
+  const stale = book.find('unused', 1);
+  await started.promise;
+  book.setLocale('tr');
+  const latest = book.find('ışık', 1);
+  await new Promise(resolve => setImmediate(resolve));
+  content.resolve({items:[{str:'IŞIK IŞIK'}]});
+  assert.equal(await stale, undefined);
+  assert.equal((await latest).count, 2);
+  assert.equal(reads, 1);
+});
+
+test('a failed page read can be retried and a visible repair wins over pending text', async () => {
+  let reads = 0;
+  const started = Promise.withResolvers();
+  const content = Promise.withResolvers();
+  const book = new BookSearch({numPages:1, async getPage() {
+    return {getTextContent() {
+      if (++reads === 1) throw new Error('read failed');
+      started.resolve();
+      return content.promise;
+    }};
+  }});
+  await assert.rejects(book.find('correct', 1), /read failed/);
+  const retry = book.find('correct', 1);
+  await started.promise;
+  book.remember(1, [{str:'correct'}]);
+  content.resolve({items:[{str:'stale'}]});
+  assert.deepEqual(await retry, {page:1, index:0, count:1, start:0, end:7});
+  assert.equal(reads, 2);
+});
+
 test('destinations respect explicit zoom, omitted coordinates and a rotated FitR rectangle', () => {
   const page = {getViewport: () => ({width:200,height:100,viewBox:[10,20,110,220],
     convertToViewportRectangle: ([x,y,r,t]) => [y-20,x-10,t-20,r-10],

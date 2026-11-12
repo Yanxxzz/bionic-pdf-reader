@@ -11788,6 +11788,9 @@ class CanvasGraphics {
     }
     // Bionic PDF Reader modification: classify original Unicode glyphs.
     const bionicMask = this.bionicReader?.enabled ? this.bionicReader.mask(glyphs, current, ctx.getTransform(), this.contentVisible) : null;
+    // Bionic PDF Reader modification: pure fills on a measurement canvas have no visible output.
+    // Other rendering modes can build a clipping path. Always preserve advances and graphics state.
+    const paintGlyphs = this.contentVisible && !(simpleFillText && this.bionicReader?.positionsOnly);
     let x = 0,
       i;
     for (i = 0; i < glyphsLength; ++i) {
@@ -11827,7 +11830,7 @@ class CanvasGraphics {
           scaledX += (width - measuredWidth) / 2000 * fontSize / fontSizeScale;
         }
       }
-      if (this.contentVisible && (glyph.isInFont || font.missingFile)) {
+      if (paintGlyphs && (glyph.isInFont || font.missingFile)) {
         if (simpleFillText && !accent) {
           ctx.fillText(character, scaledX, scaledY);
           // Display-only stroke. Never change glyphs, font, advances, or PDF data.
@@ -15232,7 +15235,8 @@ class PDFPageProxy {
       pageIndex: this._pageIndex,
       canvasFactory: this._transport.canvasFactory,
       filterFactory: this._transport.filterFactory,
-      useRequestAnimationFrame: !intentPrint,
+      // Bionic PDF Reader modification: offscreen text measurement yields through RenderTask.onContinue.
+      useRequestAnimationFrame: !intentPrint && !canvas?.bionicReader?.positionsOnly,
       pdfBug: this._pdfBug,
       pageColors,
       enableHWA: this._transport.enableHWA,

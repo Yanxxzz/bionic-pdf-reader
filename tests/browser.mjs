@@ -42,6 +42,33 @@ try{
       assert.equal(await page.locator('#file-name').textContent(), '已选 #1.pdf');
       await page.goto('about:blank');
       await page.goto(url);
+      // An unvisited tagged page must be searchable even with no display refresh.
+      const backgroundRead = await page.evaluate(async data => {
+        const {getDocument, PDFWorker} = await import('./vendor/pdf.mjs');
+        const {readPageText} = await import('./page-text.mjs');
+        const workerPort = new Worker('./pdf-worker.mjs', {type:'module'});
+        const worker = new PDFWorker({port:workerPort});
+        const pdf = await getDocument({data:Uint8Array.from(data), worker}).promise;
+        const frame = window.requestAnimationFrame;
+        const context = CanvasRenderingContext2D.prototype, fill = context.fillText;
+        let frames = 0, fills = 0;
+        try {
+          window.requestAnimationFrame = callback => { ++frames; return frame.call(window, callback); };
+          context.fillText = function (...args) {
+            if (this.canvas.bionicReader) ++fills;
+            return fill.apply(this, args);
+          };
+          const {items} = await readPageText(await pdf.getPage(2));
+          return {text:items.map(i => i.str).join('').trim(), frames, fills};
+        } finally {
+          window.requestAnimationFrame = frame;
+          context.fillText = fill;
+          await pdf.destroy();
+          worker.destroy();
+          workerPort.terminate();
+        }
+      }, [...fs.readFileSync(path.join(root, '.tmp/examples/reading-order.pdf'))]);
+      assert.deepEqual(backgroundRead, {text:'Reading together.', frames:0, fills:0});
       await page.locator('#welcome img').evaluate(image => image.decode());
       assert.deepEqual(await page.locator('#language option').evaluateAll(options=>options.map(o=>o.value)),['auto','en','fr','de','es','pt','it','nl','pl','tr','vi','ru','uk','el']);
       await page.locator('#help-button').click();

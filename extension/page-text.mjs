@@ -15,9 +15,14 @@ export async function readPageText(page, repairs, originalLayers) {
     canvas.width = Math.ceil(viewport.width * scale);
     canvas.height = Math.ceil(viewport.height * scale);
     const capture = canvas.bionicReader = new GlyphCapture(scale);
+    capture.positionsOnly = true;
     try {
-      await page.render({canvas, viewport, transform: [scale, 0, 0, scale, 0, 0],
-        optionalContentConfigPromise: originalLayers && Promise.resolve(originalLayers)}).promise;
+      const task = page.render({canvas, viewport, transform: [scale, 0, 0, scale, 0, 0],
+        optionalContentConfigPromise: originalLayers && Promise.resolve(originalLayers)});
+      // Give input and navigation a turn between PDF.js batches, independently of screen refresh.
+      task.onContinue = resume => globalThis.scheduler?.postTask
+        ? globalThis.scheduler.postTask(resume) : setTimeout(resume, 0);
+      await task.promise;
       repairs = planGlyphs(capture).repairs;
     } finally {
       canvas.width = canvas.height = 0;
