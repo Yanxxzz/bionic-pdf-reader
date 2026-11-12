@@ -144,7 +144,7 @@ kbd { border: 1px solid var(--line); border-radius: 3px; padding: 2px 5px; font:
   color: var(--pine);
 }
 .choose-file span { font: 22px/1 Georgia, serif; }
-.choose-file:focus-visible { outline-color: #efb371; }
+.welcome-actions button:focus-visible { outline-color: #efb371; }
 .welcome-copy small { margin-top: 10px; color: #d4e1d4; font-size: 12px; }
 .welcome-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 20px; }
 .sample-link, .sample-link:hover:not(:disabled) {

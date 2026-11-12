@@ -37,6 +37,10 @@ try{
       await guided.goto(url);
       await guided.waitForSelector('html[data-reader-ready]');
       assert.equal(await guided.locator('.mode-control').evaluate(e => getComputedStyle(e, '::before').transitionDuration), '0s');
+      await guided.locator('#choose-file').focus();
+      await guided.keyboard.press('Tab');
+      assert.equal(await guided.evaluate(() => document.activeElement.id), 'try-sample');
+      assert.equal(await guided.locator('#try-sample').evaluate(e => getComputedStyle(e).outlineColor), 'rgb(239, 179, 113)');
       await guided.locator('#try-sample').click();
       await guided.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
       await guided.locator('#bionic-mode').click();
