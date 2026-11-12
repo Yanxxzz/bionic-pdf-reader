@@ -47,7 +47,7 @@ def audit(folder,version):
             assert f'v{version}' in guide and '乌克兰语' in guide and '希腊语' in guide
             assert 'data:image/png;base64,' in guide
             if 'windows-x64' not in name:
-                assert {'reader.mjs','page-view.mjs','layout.mjs','compat.mjs','pdf-worker.mjs',
+                assert {'reader.mjs','page-view.mjs','page-text.mjs','layout.mjs','compat.mjs','pdf-worker.mjs',
                         'navigation.mjs','tab-source.mjs','search.mjs','find-bar.mjs',
                         'assets/reading-room.png','assets/icon-32.png'}<=set(names)
                 assert f'<meta name="application-version" content="{version}">' in archive.read('reader.html').decode('utf-8')

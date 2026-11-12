@@ -55,6 +55,38 @@ def create_scaled_text(target):
     return target
 
 
+def create_rotated_text(target):
+    """Four visually identical pages with different PDF page and text rotations."""
+    width, height = 320, 210
+    pdfmetrics.registerFont(TTFont('RotationBody', str(ROOT/'tests/assets/fonts/Latin.ttf')))
+    pdf = canvas.Canvas(str(target), pagesize=(width, height), invariant=True)
+    for angle, matrix in ((0, (1, 0, 0, 1, 0, 0)), (90, (0, 1, -1, 0, height, 0)),
+                          (180, (-1, 0, 0, -1, width, height)), (270, (0, -1, 1, 0, 0, width))):
+        pdf.setPageRotation(angle)
+        pdf.transform(*matrix)
+        pdf.setFont('RotationBody', 15)
+        pdf.drawString(34, 69, 'Reading together improves recall.')
+        pdf.showPage()
+    pdf.save()
+    return target
+
+
+def create_reading_order(target):
+    """The second page paints the right word before the left one, with exact tagged spellings."""
+    pdf = canvas.Canvas(str(target), pagesize=(320, 210), invariant=True)
+    pdf.drawString(34, 69, 'Opening page.')
+    pdf.showPage()
+    pdf.setPageRotation(90)
+    pdf.transform(0, 1, -1, 0, 210, 0)
+    pdf.setFont('Helvetica', 15)
+    for word, offset in (('together.', pdfmetrics.stringWidth('Reading ', 'Helvetica', 15)), ('Reading', 0)):
+        pdf.addLiteral(f'/Span << /ActualText ({word}) >> BDC')
+        pdf.drawString(34 + offset, 69, word)
+        pdf.addLiteral('EMC')
+    pdf.save()
+    return target
+
+
 def create_partial_scan(target, layouts):
     """Scanned sentences with gaps in their authored, selectable text."""
     from PIL import Image, ImageDraw, ImageFont
@@ -108,6 +140,8 @@ if __name__=='__main__':
 
     sample = create_sample(ROOT/'.tmp/examples/multilingual.pdf')
     create_scaled_text(sample.with_name('scaled-text.pdf'))
+    create_rotated_text(sample.with_name('rotated-text.pdf'))
+    create_reading_order(sample.with_name('reading-order.pdf'))
     create_partial_scan(sample.with_name('partial-scan.pdf'), ['one-TJ', 'wider-font'])
     print(sample)
     with PdfWriter() as writer:

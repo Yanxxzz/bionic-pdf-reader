@@ -77,9 +77,9 @@ export function installFindBar(currentPage, showPage) {
   });
   return {
     clear,
-    reset(pdf, locale) {
+    reset(pdf, locale, originalLayers) {
       clear();
-      book = new BookSearch(pdf, locale);
+      book = new BookSearch(pdf, locale, originalLayers);
       bar.hidden = true;
       toggle.setAttribute('aria-expanded', 'false');
       input.value = '';

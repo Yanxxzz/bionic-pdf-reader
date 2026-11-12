@@ -162,9 +162,11 @@ function tabFragments(atoms) {
 }
 
 export function planGlyphs(capture, settings) {
-  const masks = capture.runs.map(length => Array(length).fill(false));
+  const masks = settings && capture.runs.map(length => Array(length).fill(false));
   const repairs = [];
   for (const segment of visualSegments(capture.records)) {
+    const tagged = segment.some(atom => atom.actual);
+    if (!settings && !tagged) continue;
     const ordered = [];
     let edge = -Infinity;
     for (const atom of segment) {
@@ -177,16 +179,18 @@ export function planGlyphs(capture, settings) {
 
     const text = ordered.map(atom => atom.text).join('');
     if (text.includes('\0')) continue;
-    const flags = segmentFlags(text, settings);
-    let start = 0;
-    for (const atom of ordered) {
-      const end = start + atom.text.length;
-      if (atom.eligible && flags.subarray(start, end).includes(1)) {
-        for (const r of atom.records) masks[r.run][r.index] = true;
+    if (settings) {
+      const flags = segmentFlags(text, settings);
+      let start = 0;
+      for (const atom of ordered) {
+        const end = start + atom.text.length;
+        if (atom.eligible && flags.subarray(start, end).includes(1)) {
+          for (const r of atom.records) masks[r.run][r.index] = true;
+        }
+        start = end;
       }
-      start = end;
     }
-    if (segment.some(a => a.actual) && segment.every(a => a.records.every(r => r.h > 0))) {
+    if (tagged && segment.every(a => a.records.every(r => r.h > 0))) {
       const logical = rtl.test(text) ? logicalText(ordered) : {text, dir: 'ltr'};
       const first = segment[0];
       const parts = text.includes('\t') && !rtl.test(text) ? tabFragments(ordered) : null;
@@ -195,81 +199,4 @@ export function planGlyphs(capture, settings) {
     }
   }
   return {masks, repairs};
-}
-
-// Map a horizontal text-layer item to the glyphs actually painted on the page.
-// PDF.js can insert spaces between glyphs or expand a single ligature to letters.
-export function textGlyphBounds(item, records, viewport) {
-  const [a, b, , , tx, ty] = item.transform;
-  const [left, baseline] = viewport.convertToViewportPoint(tx, ty);
-  const [along, across] = viewport.convertToViewportPoint(tx + a, ty + b);
-  if (item.dir !== 'ltr' || along <= left || Math.abs(across - baseline) > 0.01) return;
-  const glyphs = records.filter(glyph => {
-    const mid = glyph.x + glyph.w / 2;
-    return glyph.font === item.fontName && Math.abs(glyph.y - baseline) < 0.5
-      && mid >= left - 0.1 && mid <= left + item.width + 0.1;
-  }).sort((a, b) => a.x - b.x);
-  const bounds = [];
-  let at = 0;
-  for (const glyph of glyphs) {
-    if (!glyph.text.trim()) continue;
-    while (at < item.str.length && /\s/u.test(item.str[at])) ++at;
-    const text = item.str.startsWith(glyph.text, at) ? glyph.text : glyph.text.normalize('NFKC');
-    if (!item.str.startsWith(text, at)) return;
-    const span = [glyph.x, glyph.x + glyph.w];
-    for (let i = 0; i < text.length; ++i) bounds[at++] = span;
-  }
-  if (!item.str.slice(at).trim()) return bounds;
-}
-
-export function repairTextContent(content, repairs, viewport) {
-  // A marked span containing one positioned item gives its exact selectable spelling,
-  // including spaces that glyph geometry alone cannot recover. Multi-item spans may
-  // cross lines or columns and continue through the geometry-based repairs below.
-  const items = [];
-  for (const [i, item] of content.items.entries()) {
-    if (typeof item.str !== 'string') continue;
-    const label = content.items[i - 1]?.actualText;
-    const single = typeof label === 'string' && content.items[i + 1]?.type === 'endMarkedContent';
-    items.push(single ? {...item, str: label} : item);
-  }
-  content = {...content, items};
-  if (!repairs.length) return content;
-  const replaced = new Set(), insertions = new Map();
-  for (const repair of repairs) {
-    const left = repair.x - repair.height * 0.2;
-    const right = repair.x + repair.width + repair.height * 0.2;
-    const indices = [];
-    let crossesEdge = false;
-    for (const [index, item] of content.items.entries()) {
-      if (typeof item.str !== 'string' || !item.transform) continue;
-      const [x, y] = viewport.convertToViewportPoint(item.transform[4], item.transform[5]);
-      if (Math.abs(y - repair.y) > repair.height * 0.4 || x + item.width < left || x > right) continue;
-      if (x < left || x + item.width > right) {
-        crossesEdge = true;
-        break;
-      }
-      indices.push(index);
-    }
-    if (crossesEdge || !indices.length) continue;
-
-    const first = indices[0];
-    const fontName = content.styles[repair.fontName] ? repair.fontName : content.items[first].fontName;
-    for (const index of indices) replaced.add(index);
-    const parts = repair.parts ?? [repair];
-    insertions.set(first, parts.map((part, index) => {
-      const [x, y] = viewport.convertToPdfPoint(part.x, repair.y);
-      return {str: part.str, dir: repair.dir, width: part.width, height: repair.height, glyphBounds: part.glyphBounds,
-        transform: [repair.height, 0, 0, repair.height, x, y], fontName, hasEOL: index === parts.length - 1};
-    }));
-  }
-  if (!insertions.size) return content;
-
-  // Place repairs in the original item order, including across columns.
-  const repaired = [];
-  for (const [index, item] of content.items.entries()) {
-    if (insertions.has(index)) repaired.push(...insertions.get(index));
-    else if (!replaced.has(index)) repaired.push(item);
-  }
-  return {...content, items: repaired};
 }

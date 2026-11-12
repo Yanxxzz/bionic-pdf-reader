@@ -389,6 +389,36 @@ try{
         expectedGlyphs ??= count;
         assert.equal(count, expectedGlyphs);
       }
+      await chooseSample('#open-file', path.join(root,'.tmp/examples/reading-order.pdf'));
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'reading-order.pdf'
+        && document.querySelector('#page-frame').dataset.renderedPage === '1');
+      await page.keyboard.press('Control+f');
+      await query.fill('Reading together');
+      await query.press('Enter');
+      await page.waitForFunction(() => document.querySelector('#find-status').textContent === '第 2 页 · 本页第 1/1 处');
+      assert.equal((await page.locator('#text-layer').innerText()).trim(), 'Reading together.');
+      const markBox = () => page.locator('#find-marks i').first().evaluate(el => {
+        const r = el.getBoundingClientRect(), f = document.querySelector('#page-frame').getBoundingClientRect();
+        return [(r.left - f.left) / f.width, (r.top - f.top) / f.height, r.width / f.width, r.height / f.height];
+      });
+      const nearLine = ([x,y,w,h]) => x > .09 && x < .12 && y > .56 && y < .67 && w > .25 && h > .04 && h < .14;
+      assert.ok(nearLine(await markBox()), 'The repaired words highlight their upright line on the rotated page');
+      await chooseSample('#open-file', path.join(root,'.tmp/examples/rotated-text.pdf'));
+      await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'rotated-text.pdf'
+        && document.querySelector('#page-frame').dataset.renderedPage === '1');
+      await page.keyboard.press('Control+f');
+      await query.fill('Reading together improves recall.');
+      await query.press('Enter');
+      let upright;
+      for (const [number, step] of [[1,null],[2,'next'],[3,'next'],[4,'next'],[1,'next'],[4,'prev']]) {
+        if (step) await page.locator('#find-' + step).click();
+        await page.waitForFunction(n => document.querySelector('#find-status').textContent ===
+          '第 ' + n + ' 页 · 本页第 1/1 处', number);
+        const box = await markBox();
+        upright ??= box;
+        assert.ok(nearLine(box) && box.every((value,i) => Math.abs(upright[i] - value) < .01),
+          'Highlight stays on the text at ' + 90 * (number - 1) + ' degrees');
+      }
       await chooseSample('#open-file', path.join(root,'.tmp/examples/numbers.pdf'));
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'numbers.pdf');
       for (const mode of ['original', 'bionic']) {

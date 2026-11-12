@@ -108,7 +108,9 @@ class OverlayBuilder:
         content = page.get_contents()
         if content is not None:
             unit = page.user_unit
-            state = GraphicsState(stream_to_page=(unit, 0, 0, unit, 0, 0))
+            # /Rotate is clockwise. Only relative positions matter for word selection.
+            cos, sin = ((1, 0), (0, 1), (-1, 0), (0, -1))[(page.rotation % 360) // 90]
+            state = GraphicsState(stream_to_page=(cos * unit, -sin * unit, sin * unit, cos * unit, 0, 0))
             result = self._build_stream(content, page.get('/Resources', D()), state, set(), page.indirect_reference)
             if result:
                 stream, resources = result

@@ -1,3 +1,5 @@
+import {readPageText} from './page-text.mjs';
+
 // Keep only folded page text in the book index. Character offsets are needed
 // for the single visible match, where ligatures can expand to multiple letters.
 export function foldText(value, offsets, locale = 'auto') {
@@ -72,8 +74,9 @@ export class BookSearch {
   #query = '';
   #revision = 0;
 
-  constructor(pdf, locale = 'auto') {
+  constructor(pdf, locale = 'auto', originalLayers) {
     this.pdf = pdf;
+    this.originalLayers = originalLayers;
     this.locale = locale;
     this.direction = 1;
   }
@@ -153,7 +156,7 @@ export class BookSearch {
         try {
           const proxy = await this.pdf.getPage(page);
           if (revision !== this.#revision) return;
-          const content = await proxy.getTextContent({includeMarkedContent: true});
+          const content = await readPageText(proxy, undefined, this.originalLayers);
           if (revision !== this.#revision) return;
           if (!this.#pages.has(page)) this.#pages.set(page, foldText(pageText(content.items), null, this.locale));
         } catch (error) {

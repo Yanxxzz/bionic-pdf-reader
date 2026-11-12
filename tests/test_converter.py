@@ -12,24 +12,36 @@ from bionic_pdf import make_pdf
 ROOT=Path(__file__).resolve().parents[1]
 
 
-def test_equivalent_font_scales_produce_identical_emphasis(tmp_path):
-    from scripts.make_examples import create_scaled_text
+@pytest.mark.parametrize('fixture', ['scaled', 'rotated'])
+def test_equivalent_pages_produce_identical_emphasis(tmp_path, fixture):
+    from PIL import ImageChops
+    from scripts.make_examples import create_rotated_text, create_scaled_text
 
-    source = create_scaled_text(tmp_path/'scaled.pdf')
+    create = create_scaled_text if fixture == 'scaled' else create_rotated_text
+    source = create(tmp_path/f'{fixture}.pdf')
     def pixels(path):
         with pdfium.PdfDocument(path) as pdf:
-            return [page.render(scale=3).to_pil().tobytes() for page in pdf]
+            return [page.render(scale=3).to_pil().convert('L') for page in pdf]
 
     original = pixels(source)
-    assert len(set(original)) == 1
+    assert all(image == original[0] for image in original)
     rendered = {}
     for mode in ('static', 'switchable'):
         output = tmp_path/f'{mode}.pdf'
         report = make_pdf(source, output, mode=mode)
         assert report['unemphasized_pages'] == []
         rendered[mode] = pixels(output)
-        assert len(set(rendered[mode])) == 1
-    assert rendered['static'] != original
+        if fixture == 'rotated' and mode == 'static':
+            # PDFium can round a rotated outline edge by one grey level at 3×.
+            # Check the exact prefix glyphs and positions as well as the rendered pixels.
+            strokes = [tuple(line for line in page.get_contents().get_data().splitlines() if b'/BRGlyph' in line)
+                       for page in PdfReader(output).pages]
+            assert strokes[0] and len(set(strokes)) == 1
+            first = rendered[mode][0]
+            assert all(ImageChops.difference(first, image).getextrema()[1] <= 1 for image in rendered[mode])
+        else:
+            assert all(image == rendered[mode][0] for image in rendered[mode])
+    assert all(before != after for before, after in zip(original, rendered['static']))
     assert rendered['switchable'] == original
     writer = PdfWriter(clone_from=tmp_path/'switchable.pdf')
     groups = writer.root_object['/OCProperties']

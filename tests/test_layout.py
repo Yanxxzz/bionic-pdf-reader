@@ -9,7 +9,7 @@ CASES=json.loads((Path(__file__).with_name('layout-cases.json')).read_text(encod
 @pytest.mark.parametrize('case',CASES,ids=lambda c:c['name'])
 def test_layout_prefixes(case):
     size = case.get('fontSize', 15)
-    eligible = GraphicsState(font_size=size).can_emphasize()
+    _, eligible = GraphicsState(font_size=size).text_layout()
     records = [{
         'text': text, 'x': case['x'][i] if 'x' in case else i*10,
         'y': case['y'][i] if 'y' in case else 100,

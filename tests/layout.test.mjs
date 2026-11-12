@@ -1,5 +1,6 @@
 import fs from 'node:fs';import test from 'node:test';import assert from 'node:assert/strict';
-import {GlyphCapture,planGlyphs,repairTextContent,textGlyphBounds} from '../extension/layout.mjs';
+import {GlyphCapture,planGlyphs} from '../extension/layout.mjs';
+import {repairTextContent,textGlyphBounds} from '../extension/page-text.mjs';
 
 test('search aligns an inferred space and a ligature with the painted line', () => {
   const viewport = {convertToViewportPoint: (x, y) => [x, 100 - y]};
@@ -80,6 +81,8 @@ test('ActualText repairs retain source order across columns',()=>{
  assert.deepEqual(fixed.items.map(i=>i.str),['left first','left second','office','right second']);
  const crossing={...content,items:[item('spans two columns',0,100,300)]};
  assert.equal(repairTextContent(crossing,[{str:'office',dir:'ltr',x:200,y:100,width:20,height:15,fontName:'regular'}],viewport).items[0].str,'spans two columns');
+ const acrossGutter = {str:'left first right first',dir:'ltr',x:0,y:100,width:220,height:15,fontName:'regular'};
+ assert.deepEqual(repairTextContent(content,[acrossGutter],viewport).items,content.items);
 });
 
 test('a single ActualText tag spanning lines or columns preserves each original copy item', () => {

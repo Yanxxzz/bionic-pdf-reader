@@ -268,7 +268,7 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target,
   pdf = loadedPDF;
   embeddedLayer = layer;
   updateModeUI();
-  findBar.reset(pdf, settings.locale);
+  findBar.reset(pdf, settings.locale, layer?.original);
   const candidate = resume ?? (!previous && file instanceof File ? savedTabView() : null);
   readingProgress = new ReadingProgress(file, candidate, Boolean(resume && file instanceof File), proof);
   const stored = contentKey ? readingProgress.identify(contentKey) : null;

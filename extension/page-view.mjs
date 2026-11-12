@@ -1,5 +1,6 @@
 import {AnnotationMode, TextLayer} from './vendor/pdf.mjs';
-import {GlyphCapture, planGlyphs, repairTextContent, textGlyphBounds} from './layout.mjs';
+import {GlyphCapture, planGlyphs} from './layout.mjs';
+import {readPageText, textGlyphBounds} from './page-text.mjs';
 import {destinationView, externalLink, linkDestination} from './navigation.mjs';
 
 const scroller = document.getElementById('page-scroller');
@@ -178,7 +179,7 @@ async function drawPage(request, pdf, number, settings) {
   }
   canvas.style.width = frame.style.width = `${viewport.width}px`;
   canvas.style.height = frame.style.height = `${viewport.height}px`;
-  frame.style.setProperty('--total-scale-factor', String(scale));
+  frame.style.setProperty('--total-scale-factor', String(scale * viewport.userUnit));
   frame.style.setProperty('--scale-factor', String(scale));
   if (!samePage) {
     displayedText = null;
@@ -209,11 +210,10 @@ async function drawPage(request, pdf, number, settings) {
   if (displayedText) {
     displayedText.layer.update({viewport});
   } else {
-    const [text, annotations] = await Promise.all([
-      page.getTextContent({includeMarkedContent: true}), page.getAnnotations(),
+    const [content, annotations] = await Promise.all([
+      readPageText(page, repairs), page.getAnnotations(),
     ]);
     if (request !== revision) return;
-    const content = repairTextContent(text, repairs, base);
     const layer = new TextLayer({textContentSource: content, container: textContainer, viewport});
     activeTask = layer;
     try { await layer.render(); }

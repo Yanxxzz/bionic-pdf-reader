@@ -312,6 +312,8 @@ dialog h2 { margin: 0 0 12px; color: var(--pine); font: 600 clamp(24px, 3vw, 32p
   line-height: 1;
   transform-origin: 0 0;
   forced-color-adjust: none;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
   --min-font-size: 1;
   --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
   --min-font-size-inv: calc(1 / var(--min-font-size));
@@ -319,6 +321,9 @@ dialog h2 { margin: 0 0 12px; color: var(--pine); font: 600 clamp(24px, 3vw, 32p
   text-size-adjust: none;
   tab-size: 0;
 }
+.textLayer[data-main-rotation="90"] { transform: rotate(90deg) translateY(-100%); }
+.textLayer[data-main-rotation="180"] { transform: rotate(180deg) translate(-100%, -100%); }
+.textLayer[data-main-rotation="270"] { transform: rotate(270deg) translateX(-100%); }
 .textLayer :is(span, br) { position: absolute; color: transparent; white-space: pre; cursor: text; transform-origin: 0 0; }
 .textLayer > :not(.markedContent), .textLayer .markedContent span:not(.markedContent) {
   z-index: 1;

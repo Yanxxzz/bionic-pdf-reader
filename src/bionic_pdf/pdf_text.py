@@ -98,12 +98,22 @@ class GraphicsState:
                     self.fill_alpha = float(entry.get('/ca', self.fill_alpha))
                     self.stroke_alpha = float(entry.get('/CA', self.stroke_alpha))
 
-    def can_emphasize(self):
-        page_matrix = matrix_multiply(self.stream_to_page, matrix_multiply(self.ctm, self.text_matrix))
-        size = abs(self.font_size) * math.hypot(*page_matrix[2:4])
-        return (self.position_known and self.render_mode == 0 and 6.8 <= size <= 25
-                and self.fill_alpha == self.stroke_alpha == 1 and self.fill_cs != '/Pattern'
-                and all(abs(skew) < 1e-5 for skew in (*self.text_matrix[1:3], *self.ctm[1:3])))
+    def text_layout(self):
+        """Group upright runs in the viewed page, or in a rotated Form's own space."""
+        def upright(matrix):
+            a, b, c, d = matrix[:4]
+            return (a * self.font_size * self.horizontal_scale > 0 and d * self.font_size > 0
+                    and abs(b) < 1e-5 and abs(c) < 1e-5)
+
+        placement = matrix_multiply(self.stream_to_page, self.ctm)
+        matrix = matrix_multiply(placement, self.text_matrix)
+        size = abs(self.font_size) * math.hypot(*matrix[2:4])
+        if not upright(matrix):
+            placement = self.ctm
+            matrix = matrix_multiply(placement, self.text_matrix)
+        eligible = (upright(matrix) and self.position_known and self.render_mode == 0 and 6.8 <= size <= 25
+                    and self.fill_alpha == self.stroke_alpha == 1 and self.fill_cs != '/Pattern')
+        return placement, eligible
 
 
 def character_map(font, cid):
@@ -268,7 +278,7 @@ class PageTextReader:
                     form = ref.get_object() if ref is not None else None
                     if form is not None and form.get('/Subtype') == '/Form':
                         child = copy(state)
-                        # Measure physical type in page space, lay out and paint in the Form's own space.
+                        # Carry the caller's placement; strokes still use the original Form coordinates.
                         placement = matrix_multiply(state.ctm, form.get('/Matrix', IDENTITY))
                         child.stream_to_page = matrix_multiply(state.stream_to_page, placement)
                         child.ctm = IDENTITY
@@ -302,7 +312,8 @@ class PageTextReader:
         text_start, initial_ctm, initial_scope, start_index = anchor
         layers = tuple(layer for index, layer, _ in marked if index > start_index and layer is not None)
         # Strokes are painted immediately before BT. An inner mask/clip cannot be lifted outside it.
-        eligible = (not metrics.styled and state.can_emphasize()
+        placement, eligible = state.text_layout()
+        eligible = (eligible and not metrics.styled
                     and state.ctm == initial_ctm and state.paint_scope == initial_scope
                     and all(isinstance(layer, NameObject) for layer in layers))
         actual = next((text for _, _, text in marked if text is not None), None)
@@ -327,7 +338,7 @@ class PageTextReader:
                 word_spacing = state.word_spacing if metrics.code_size == 1 and code == 32 else 0
                 advance = (width * size / 1000 + state.char_spacing + word_spacing) * scale
                 local = translated(state.text_matrix, 0, state.rise)
-                matrix = matrix_multiply(state.ctm, local)
+                matrix = matrix_multiply(placement, local)
                 yield {
                     'font': font, 'code': code, 'text': metrics.text_for(code),
                     'x': min(matrix[4], matrix[4] + matrix[0] * advance),
