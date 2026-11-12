@@ -32,9 +32,9 @@ let readingProgress, navigationRevision = 0, pendingPosition = null, openingView
 let progressTimer;
 const findBar = installFindBar({
   currentPosition, recordJump,
-  showPage(number) {
+  showPage(position) {
     ++navigationRevision;
-    return showPosition({number, zoom: $('zoom').value});
+    return showPosition(position);
   },
 });
 

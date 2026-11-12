@@ -51,10 +51,16 @@ export function installFindBar({currentPosition, showPage, recordJump}) {
         status.textContent = '全书没有找到匹配文字';
       } else {
         // One search can visit many matches. Back returns to where reading was interrupted.
-        searchStart ??= currentPosition();
+        const from = currentPosition();
+        searchStart ??= from;
         reveal = true;
         if (frame.dataset.renderedPage === String(match.page)) paint();
-        else await showPage(match.page);
+        else {
+          const target = {number:match.page, zoom:from.zoom};
+          // A refresh or Escape can interrupt painting before the highlight has coordinates.
+          if (from.number !== target.number) hasReturnEntry = recordJump(searchStart, target, hasReturnEntry);
+          await showPage(target);
+        }
       }
     } catch {
       clear();

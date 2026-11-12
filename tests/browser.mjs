@@ -443,10 +443,21 @@ try{
       await chooseSample('#open-file', path.join(root,'.tmp/examples/reading-order.pdf'));
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'reading-order.pdf'
         && document.querySelector('#page-frame').dataset.renderedPage === '1');
+      await page.evaluate(() => {
+        const frame = document.querySelector('#page-frame');
+        const observer = new MutationObserver(() => {
+          if (frame.dataset.renderState === 'rendering' && document.querySelector('#page-number').value === '2') {
+            window.canReturnFromPendingMatch = !document.querySelector('#return-position').disabled;
+            observer.disconnect();
+          }
+        });
+        observer.observe(frame, {attributes:true, attributeFilter:['data-render-state']});
+      });
       await page.keyboard.press('Control+f');
       await query.fill('Reading together');
       await query.press('Enter');
       await page.waitForFunction(() => document.querySelector('#find-status').textContent === '第 2 页 · 本页第 1/1 处');
+      assert.equal(await page.evaluate(() => window.canReturnFromPendingMatch), true);
       assert.equal((await page.locator('#text-layer').innerText()).trim(), 'Reading together.');
       const markBox = () => page.locator('#find-marks i').first().evaluate(el => {
         const r = el.getBoundingClientRect(), f = document.querySelector('#page-frame').getBoundingClientRect();
