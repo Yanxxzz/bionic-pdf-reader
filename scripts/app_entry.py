@@ -7,7 +7,9 @@ if sys.stderr is None:sys.stderr=io.StringIO()
 
 def smoke_gui():
     import tkinter as tk
-    from bionic_pdf.gui import Maker
+    from pathlib import Path
+    from time import monotonic, sleep
+    from bionic_pdf.gui import Maker, MODES
     root=tk.Tk();root.withdraw();app=Maker(root)
     assert len(app.language_options)==14
     assert app.cover.width() > 0 and app.cover.height() > 0
@@ -16,7 +18,22 @@ def smoke_gui():
     assert len(guides)==1
     guides[0].withdraw();root.update_idletasks()
     assert root.winfo_reqheight()<=650
-    guides[0].destroy();root.destroy()
+    guides[0].destroy()
+    if len(sys.argv) == 4:
+        source, output = map(Path, sys.argv[2:])
+        app.source_entry.insert(0, str(source))
+        app.pages.set('2')
+        for mode, filename in zip(MODES, ('switchable.pdf', 'static.pdf')):
+            target = output / filename
+            app.target.set(str(target))
+            app.mode.set(mode)
+            app.generate.invoke()
+            deadline = monotonic() + 20
+            while app.busy and monotonic() < deadline:
+                root.update()
+                sleep(.02)
+            assert app.result == target and '共 1 页' in app.status.get() and '页码（按副本顺序）：无' in app.status.get()
+    root.destroy()
     from bionic_pdf.local_reader import start_reader
     from urllib.request import urlopen
     url=start_reader()
