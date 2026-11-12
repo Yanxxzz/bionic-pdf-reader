@@ -12663,6 +12663,8 @@ class BasePDFStreamReader {
   _stream = null;
   constructor(stream) {
     this._stream = stream;
+    // Bionic PDF Reader modification: an HTTP error can precede the worker's first read.
+    this._headersCapability.promise.catch(onFn); // headersReady still rejects for every consumer.
   }
   _callOnProgress() {
     this.onProgress?.({

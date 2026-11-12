@@ -67,7 +67,16 @@
      this.dependencyTracker?.endMarkedContent(opIdx);
      this.markedContentStack.pop();
      this.contentVisible = this.isContentVisible();
-@@ -12960,6 +12981,7 @@
+@@ -12642,6 +12663,8 @@
+   _stream = null;
+   constructor(stream) {
+     this._stream = stream;
++    // Bionic PDF Reader modification: an HTTP error can precede the worker's first read.
++    this._headersCapability.promise.catch(onFn); // headersReady still rejects for every consumer.
+   }
+   _callOnProgress() {
+     this.onProgress?.({
+@@ -12960,6 +12983,7 @@
        this._contentLength = contentLength;
        this._isRangeSupported = isRangeSupported;
        this._filename = extractFilenameFromHeader(responseHeaders);
@@ -75,7 +84,7 @@
        if (!this._isStreamingSupported && this._isRangeSupported) {
          this.cancel(new AbortException("Streaming is disabled."));
        }
-@@ -13394,6 +13416,7 @@
+@@ -13394,6 +13418,7 @@
      this._contentLength = contentLength;
      this._isRangeSupported = isRangeSupported;
      this._filename = extractFilenameFromHeader(responseHeaders);
@@ -83,7 +92,7 @@
      if (this._isRangeSupported) {
        stream._abortRequest(fullRequestXhr);
      }
-@@ -14995,6 +15018,10 @@
+@@ -14995,6 +15020,10 @@
    getDownloadInfo() {
      return this._transport.downloadInfoCapability.promise;
    }
@@ -94,7 +103,7 @@
    getRawData(data) {
      return this._transport.getRawData(data);
    }
-@@ -15208,7 +15235,8 @@
+@@ -15208,7 +15237,8 @@
        pageIndex: this._pageIndex,
        canvasFactory: this._transport.canvasFactory,
        filterFactory: this._transport.filterFactory,
@@ -104,7 +113,7 @@
        pdfBug: this._pdfBug,
        pageColors,
        enableHWA: this._transport.enableHWA,
-@@ -16199,6 +16227,7 @@
+@@ -16199,6 +16229,7 @@
        info: results[0],
        metadata: results[1] ? new Metadata(results[1]) : null,
        contentDispositionFilename: this.#fullReader?.filename ?? null,
@@ -112,7 +121,7 @@
        contentLength: this.#fullReader?.contentLength ?? null,
        hasStructTree: results[2]
      })));
-@@ -26776,4 +26805,3 @@
+@@ -26776,4 +26807,3 @@
  
  export { AbortException, AnnotationEditorLayer, AnnotationEditorParamsType, AnnotationEditorType, AnnotationEditorUIManager, AnnotationLayer, AnnotationMode, AnnotationType, CSSConstants, ColorPicker, DOMSVGFactory, DrawLayer, FeatureTest, GlobalWorkerOptions, ImageKind, InvalidPDFException, MathClamp, OPS, OutputScale, PDFDataRangeTransport, PDFDateString, PDFWorker, PasswordResponses, PermissionFlag, PixelsPerInch, RenderingCancelledException, ResponseException, SignatureExtractor, SupportedImageMimeTypes, TextLayer, TextLayerImages, TouchManager, Util, VerbosityLevel, XfaLayer, applyOpacity, build, createValidAbsoluteUrl, fetchData, findContrastColor, getDocument, getFilenameFromUrl, getPdfFilenameFromUrl, getRGB, getUuid, getXfaPageViewport, isDataScheme, isPdfFile, isValidExplicitDest, makeArr, makeMap, makeObj, noContextMenu, normalizeUnicode, renderRichText, setLayerDimensions, shadow, stopEvent, updateUrlHash, version };
  

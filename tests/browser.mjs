@@ -33,6 +33,32 @@ try{
     page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:')&&!/^(blob:|data:)/.test(r.url()))external.push(r.url());});
     try{
       const url = `http://127.0.0.1:${server.address().port}/reader.html`;
+      await page.goto(url);
+      const rejected = await page.evaluate(async () => {
+        const {getDocument, PDFWorker} = await import('./vendor/pdf.mjs');
+        const port = new Worker(new URL('./pdf-worker.mjs', location.href), {type:'module'});
+        // An error response may arrive before the PDF worker asks for headers or pulls bytes.
+        const listen = port.addEventListener.bind(port);
+        port.addEventListener = (type, callback, options) => listen(type, event => {
+          if (event.data?.action === 'ReaderHeadersReady' || event.data?.stream === 6) {
+            setTimeout(() => callback(event), 40);
+          } else callback(event);
+        }, options);
+        const worker = new PDFWorker({port});
+        const task = getDocument({url:new URL('missing-test.pdf', location.href), worker});
+        try {
+          await task.promise;
+          return null;
+        } catch (error) {
+          return [error.name, error.status];
+        } finally {
+          await task.destroy();
+          worker.destroy();
+          port.terminate();
+        }
+      });
+      assert.deepEqual(rejected, ['ResponseException', 404]);
+      assert.deepEqual(errors, [], 'A fast HTTP rejection reaches the caller once');
       const guided = await browser.newPage({reducedMotion:'reduce'});
       await guided.goto(url);
       await guided.waitForSelector('html[data-reader-ready]');
