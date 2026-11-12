@@ -2,7 +2,7 @@ include README.md README.en.md CHANGELOG.md CONTRIBUTING.md THIRD_PARTY_NOTICES.
 include package.json package-lock.json
 recursive-include docs *.md *.png
 recursive-include examples *.json
-recursive-include scripts *.py *.mjs *.swift *.html
+recursive-include scripts *.py *.mjs *.swift *.html *.patch
 recursive-include tests *.py *.mjs *.ttf *.txt *.json
 recursive-include extension *
 recursive-include licenses *

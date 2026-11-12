@@ -3,6 +3,7 @@ import json
 import os
 import subprocess
 import sys
+from concurrent.futures import CancelledError
 from pathlib import Path
 
 import pypdfium2 as pdfium
@@ -67,6 +68,34 @@ def test_invalid_weight_preserves_output(source, tmp_path, weight, capsys):
         assert error.value.code == 2 and '--weight' in capsys.readouterr().err
         assert (target.read_bytes() if target.exists() else None) == previous
     assert source.read_bytes() == original
+
+
+@pytest.mark.parametrize('when', ['after-page', 'while-saving'])
+def test_cancel_before_publication_preserves_previous_copy(source, tmp_path, monkeypatch, when):
+    target = tmp_path / 'reading.pdf'
+    target.write_bytes(b'previous copy')
+    original = source.read_bytes()
+    cancel = False
+
+    def progress(current, total):
+        nonlocal cancel
+        if when == 'after-page':
+            cancel = True
+
+    write = PdfWriter.write
+
+    def save(writer, stream):
+        nonlocal cancel
+        result = write(writer, stream)
+        cancel = True
+        return result
+
+    monkeypatch.setattr(PdfWriter, 'write', save)
+    with pytest.raises(CancelledError):
+        make_pdf(source, target, progress=progress, cancelled=lambda: cancel)
+    assert target.read_bytes() == b'previous copy' and source.read_bytes() == original
+    assert set(tmp_path.iterdir()) == {source, target}
+    assert make_pdf(source, target)['pages'] == 2
 
 
 @pytest.mark.parametrize('weight', [0.005, 0.08])

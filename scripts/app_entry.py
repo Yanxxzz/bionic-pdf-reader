@@ -22,16 +22,27 @@ def smoke_gui():
     if len(sys.argv) == 4:
         source, output = map(Path, sys.argv[2:])
         app.source_entry.insert(0, str(source))
+        def wait_for_export():
+            deadline = monotonic() + 20
+            while app.busy and monotonic() < deadline:
+                root.update()
+                sleep(.02)
+            assert not app.busy
+
+        app.target.set(str(output / 'cancelled.pdf'))
+        app.pages.set('1-2,1-2,1-2,1-2')
+        app.generate.invoke()
+        assert app.generate.cget('text') == '取消导出'
+        app.generate.invoke()
+        wait_for_export()
+        assert '已取消' in app.status.get() and not (output / 'cancelled.pdf').exists()
         app.pages.set('2')
         for mode, filename in zip(MODES, ('switchable.pdf', 'static.pdf')):
             target = output / filename
             app.target.set(str(target))
             app.mode.set(mode)
             app.generate.invoke()
-            deadline = monotonic() + 20
-            while app.busy and monotonic() < deadline:
-                root.update()
-                sleep(.02)
+            wait_for_export()
             assert app.result == target and '共 1 页' in app.status.get() and '页码（按副本顺序）：无' in app.status.get()
     root.destroy()
     from bionic_pdf.local_reader import start_reader

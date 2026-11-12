@@ -36,6 +36,10 @@ jobs:
           cache: npm
       - run: python -m pip install -e ".[dev]"
       - run: npm ci
+      - name: Verify customized PDF.js against the pinned upstream archive
+        run: |
+          curl --fail --silent --show-error --location https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-5.6.205.tgz --output "$RUNNER_TEMP/pdfjs-dist.tgz"
+          python scripts/patch_pdfjs.py "$RUNNER_TEMP/pdfjs-dist.tgz"
       - run: npx playwright install --with-deps chromium firefox
       - run: python scripts/make_examples.py
       - run: npm run fixtures:shaped

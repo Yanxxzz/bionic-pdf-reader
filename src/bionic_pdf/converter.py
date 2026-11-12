@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import CancelledError
 from contextlib import nullcontext
 from numbers import Real
 from pathlib import Path
@@ -201,13 +202,19 @@ def _add_reading_layer(writer):
 
 
 def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='switchable', locale='auto', *,
-             progress: Callable[[int, int], None] | None = None, allow_signature_loss=False, ocr=False):
+             progress: Callable[[int, int], None] | None = None, allow_signature_loss=False, ocr=False,
+             cancelled: Callable[[], bool] | None = None):
     """Create a reading copy with a stroke weight from 0.005 through 0.08.
 
     Pages can be a one-based sequence or a range such as '1-3,7,5-4'.
     Enable ocr to recognize scans and scanned regions alongside selectable text with local Tesseract.
     If supplied, progress receives (current, total) after each processed page.
+    A cancellation request raises CancelledError at a page boundary or before replacing the destination.
     """
+    def check_cancelled():
+        if cancelled is not None and cancelled():
+            raise CancelledError()
+
     started = time.monotonic()
     if not isinstance(weight, Real) or not 0.005 <= weight <= 0.08:
         raise InvalidWeightError('--weight must be between 0.005 and 0.08 (inclusive)')
@@ -258,6 +265,7 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
         scans = open_scans(reader, str(language), rule, weight, form_tags)
     with scans as scan:
         for number, page in enumerate(writer.pages, 1):
+            check_cancelled()
             before = builder.count
             builder.build_page(page)
             if scan is not None:
@@ -269,6 +277,7 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
                 unemphasized.append(number)
             if progress is not None:
                 progress(number, total)
+    check_cancelled()
     form_tags.finish()
     if builder.count == 0 and not ocr_pages:
         if builder.glyphs.skipped_fonts or builder.text_reader.skipped_fonts:
@@ -286,6 +295,7 @@ def make_pdf(source, target, pages=None, weight: float = DEFAULT_WEIGHT, mode='s
     with TemporaryDirectory(dir=target.parent) as staging:
         temporary = Path(staging) / 'reading.pdf'
         writer.write(temporary)
+        check_cancelled()
         temporary.replace(target)
     return {
         'pages': total, 'glyphs': builder.count, 'glyph_forms': len(builder.glyphs.forms),

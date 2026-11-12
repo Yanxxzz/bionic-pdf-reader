@@ -2,6 +2,8 @@
 
 [下载最新版本](https://github.com/Yanxxzz/bionic-pdf-reader/releases/latest) · [安装与使用](docs/usage.md) · [阅读器兼容性](docs/compatibility.md) · [English](README.en.md)
 
+**已经在用 Chrome / Edge 扩展？** 把新版 ZIP 解压覆盖到原文件夹，再到扩展管理页点「重新加载」，即可保留页码、缩放和仿生设置。换文件夹或电脑请先备份进度。[更新与迁移步骤](docs/usage.md#更新已有安装)
+
 仿生阅读（Bionic Reading）把 reading 显示成 **read**ing。读英文教材、论文或长篇报告时，你可以在同一页开关词首加粗，图表、公式和页码都留在原位，正文仍可选择和复制。PDF 在本机处理。
 
 如果你想加快英语阅读速度、寻找更有效的阅读方式，可以先用一段熟悉的文字试读。浏览器里按 `Alt+B`（Mac 上是 `Option+B`）来回对照，再调整加粗强度，看看哪种字重让你更容易跟上下一行。
@@ -20,6 +22,8 @@ Acrobat Reader 的 13 种语言样例在开关前后复制的正文一致。WPS�
 ![浏览器阅读页，顶部「仿生」已开启，英文词首在 PDF 原页加粗](docs/assets/browser-preview.png)
 
 ## 安装并打开第一份 PDF
+
+安装后点首页的「试读两页示例」，即可用同一篇短文练习切换词首、查找与返回引用。示例在本地打开。
 
 - **Chrome / Edge** 下载文件名含 `chrome-edge` 的 ZIP 并解压。在 `chrome://extensions` 或 `edge://extensions` 打开开发者模式，点「加载已解压的扩展程序」，选择含 `manifest.json` 的目录。点扩展图标即可试读。
 - **Windows 制作工具** 下载并完整解压 `windows-x64` ZIP，双击 `BionicPDF.exe`。选原始 PDF 和新的保存位置，再按上表选「可切换版」或「普通仿生版」。也可以点「在浏览器中阅读」直接打开本地阅读页。此包自带运行环境。

@@ -9,6 +9,8 @@ import tomllib
 import zipfile
 from windows_payload import backend_digest, verify_executable
 
+DEMO = 'assets/first-read.pdf'
+DEMO_SHA256 = 'ebdbdc09c95776efd64d614b154f711e776012121deaf4aafcd440a7b171af4b'
 
 def audit(folder,version):
     hashes={name:digest for digest,name in (line.split('  ',1) for line in (folder/'SHA256SUMS.txt').read_text(encoding='utf-8').splitlines())}
@@ -18,24 +20,29 @@ def audit(folder,version):
     for name,digest in hashes.items():
         assert hashlib.sha256((folder/name).read_bytes()).hexdigest()==digest,name
 
-    def check_paths(names):
+    def check_paths(names, demo_path, read):
+        if demo_path:
+            assert demo_path in names and hashlib.sha256(read(demo_path)).hexdigest() == DEMO_SHA256, demo_path
         for name in names:
             path=PurePosixPath(name)
             assert not path.is_absolute() and '..' not in path.parts and '\\' not in name,name
-            assert not name.lower().endswith('.pdf'),name
+            assert not name.lower().endswith('.pdf') or name == demo_path,name
             assert not any(part in ('.git','node_modules','.env') for part in path.parts),name
 
     for name in sorted(expected):
         path=folder/name
         if name.endswith('.tar.gz'):
             with tarfile.open(path) as archive:
-                check_paths(archive.getnames())
+                check_paths(archive.getnames(), f'bionic_pdf_reader-{version}/extension/{DEMO}',
+                            lambda path: archive.extractfile(path).read())
                 assert any(n.endswith('/src/bionic_pdf/layout.py') for n in archive.getnames())
                 assert any(n.endswith('/scripts/offline_guide.html') for n in archive.getnames())
             continue
         with zipfile.ZipFile(path) as archive:
             assert archive.testzip() is None,name
-            names=archive.namelist();check_paths(names)
+            names=archive.namelist()
+            demo_path = f'bionic_pdf/reader/{DEMO}' if name.endswith('.whl') else DEMO
+            check_paths(names, None if 'windows-x64' in name else demo_path, archive.read)
             if name.endswith('.whl'):
                 assert {'bionic_pdf/layout.py','bionic_pdf/embedded_font.py','bionic_pdf/document.py'}<=set(names)
                 assert version in archive.read('bionic_pdf/__init__.py').decode()

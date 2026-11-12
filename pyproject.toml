@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bionic-pdf-reader"
-version = "0.6.2"
+version = "0.6.3"
 description = "Local multilingual bionic PDF reading, with optional-content layers and original glyph preservation"
 readme = "README.en.md"
 requires-python = ">=3.11"
@@ -37,7 +37,7 @@ include-package-data = false
 "bionic_pdf.reader" = "extension"
 
 [tool.setuptools.package-data]
-"bionic_pdf.reader" = ["*.html", "*.css", "*.mjs", "*.txt", "assets/*.png", "vendor/**/*"]
+"bionic_pdf.reader" = ["*.html", "*.css", "*.mjs", "*.txt", "assets/*.png", "assets/first-read.pdf", "vendor/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

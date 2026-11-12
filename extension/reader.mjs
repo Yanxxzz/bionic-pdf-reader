@@ -5,26 +5,27 @@ import {embeddedReadingLayer, fitWidthChanged, readingPosition, renderPage, rese
 import {installFindBar} from './find-bar.mjs';
 import {externalLink, linkDestination, pageInRange, savedPosition} from './navigation.mjs';
 import {initialPdf, prepareFileHandoff, rememberSelectedFile} from './tab-source.mjs';
-import {digestBytes, ReadingProgress, savedTabView} from './reading-progress.mjs';
+import {clearTabView, digestBytes, ReadingProgress, savedTabView} from './reading-progress.mjs';
+import {makeBackup, restoreBackup, settingsKey} from './progress-backup.mjs';
 
 // Create a packaged module worker directly: extension CSP does not allow blob workers.
 const workerURL = new URL('./pdf-worker.mjs', import.meta.url);
 const worker = new pdfjs.PDFWorker({port: new Worker(workerURL, {type: 'module'})});
 const $ = id => document.getElementById(id);
 const settings = {enabled: false, rule: $('rule').value, strength: $('strength').valueAsNumber / 100, locale: $('language').value};
-try {
-  const saved = JSON.parse(localStorage.getItem('bionic-pdf-settings')) ?? {};
+function applySettings(saved, target = settings) {
   for (const [key, control] of [['locale', $('language')], ['rule', $('rule')]]) {
-    if ([...control.options].some(option => option.value === saved[key])) settings[key] = saved[key];
+    if ([...control.options].some(option => option.value === saved[key])) target[key] = saved[key];
   }
-  if (typeof saved.enabled === 'boolean') settings.enabled = saved.enabled;
+  if (typeof saved.enabled === 'boolean') target.enabled = saved.enabled;
   const slider = $('strength');
   const percent = saved.strength * 100;
   if (Number.isFinite(saved.strength) && percent >= Number(slider.min) && percent <= Number(slider.max)) {
-    slider.value = String(percent);
-    settings.strength = slider.valueAsNumber / 100;
+    const step = Number(slider.step);
+    target.strength = Math.round(percent / step) * step / 100;
   }
-} catch {}
+}
+try { applySettings(JSON.parse(localStorage.getItem(settingsKey)) ?? {}); } catch {}
 let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null, embeddedLayer = null;
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
@@ -45,7 +46,7 @@ function notify(text) {
   messageTimer = setTimeout(() => { $('message').hidden = true; }, 9000);
 }
 function persistSettings() {
-  try { localStorage.setItem('bionic-pdf-settings', JSON.stringify(settings)); } catch {}
+  try { localStorage.setItem(settingsKey, JSON.stringify(settings)); } catch {}
 }
 function updateModeUI() {
   $('original-mode').classList.toggle('selected', !settings.enabled);
@@ -397,6 +398,48 @@ function chooseFile() {
   else input.click();
 }
 for (const id of ['open-file', 'choose-file']) $(id).addEventListener('click', chooseFile);
+$('try-sample').addEventListener('click', async () => {
+  const button = $('try-sample'), revision = loadRevision;
+  button.disabled = true;
+  try {
+    const response = await fetch(new URL('assets/first-read.pdf', import.meta.url));
+    if (!response.ok) throw new Error();
+    const sample = new File([await response.blob()], 'A closer reading.pdf', {type:'application/pdf'});
+    if (revision === loadRevision) await openFile(sample);
+  } catch {
+    if (revision === loadRevision) notify('无法打开内置示例，请重新解压完整的阅读器。');
+  } finally { button.disabled = false; }
+});
+$('backup-save').addEventListener('click', () => {
+  try {
+    const data = makeBackup(localStorage, settings);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data)], {type:'application/json'}));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'bionic-reading-progress.json';
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    $('backup-status').textContent = `备份包含 ${Object.keys(data.bookmarks).length} 份文档的进度及阅读设置。`;
+  } catch { $('backup-status').textContent = '无法读取进度，请检查浏览器是否允许本地存储。'; }
+});
+$('backup-open').addEventListener('click', () => $('backup-file').click());
+$('backup-file').addEventListener('change', async event => {
+  const input = event.target, file = input.files[0], revision = loadRevision;
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (revision !== loadRevision) return;
+    const preferences = {...settings};
+    applySettings(data?.settings ?? {}, preferences);
+    const count = restoreBackup(data, localStorage, preferences);
+    Object.assign(settings, preferences);
+    clearTabView();
+    updateModeUI();
+    $('backup-status').textContent = `已恢复 ${count} 份文档的进度，打开原 PDF 即可续读。`;
+  } catch (error) {
+    $('backup-status').textContent = error instanceof SyntaxError ? '请选择有效的 JSON 进度备份。' : `导入失败。${error.message}`;
+  } finally { input.value = ''; }
+});
 $('cancel-password').addEventListener('click', () => $('password-dialog').close('cancel'));
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
 document.addEventListener('copy', event => {

@@ -1,4 +1,5 @@
 const tabViewKey = 'bionic-tab-view';
+export const bookmarkPrefix = 'bionic-page-sha256-';
 
 export async function digestBytes(data) {
   const digest = await crypto.subtle.digest('SHA-256', data);
@@ -82,7 +83,7 @@ export class ReadingProgress {
       return resume.position;
     }
     // A legacy global fingerprint can describe several unrelated PDFs.
-    try { return localStorage.getItem('bionic-page-sha256-' + contentKey); } catch { return null; }
+    try { return localStorage.getItem(bookmarkPrefix + contentKey); } catch { return null; }
   }
 
   save(position, moved = false) {
@@ -99,7 +100,7 @@ export class ReadingProgress {
     try { sessionStorage.setItem(tabViewKey, JSON.stringify({...this.#source, position})); }
     catch { clearTabView(); }
     if (this.#source.contentKey) {
-      try { localStorage.setItem('bionic-page-sha256-' + this.#source.contentKey, value); } catch {}
+      try { localStorage.setItem(bookmarkPrefix + this.#source.contentKey, value); } catch {}
     }
   }
 }

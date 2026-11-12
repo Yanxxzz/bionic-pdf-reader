@@ -10,6 +10,7 @@ build/
 test-results/
 playwright-report/
 *.pdf
+!extension/assets/first-read.pdf
 *.partial.pdf
 *.zip
 *.exe

@@ -10,7 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const tmpBase = path.resolve(process.env.TEST_TMP || os.tmpdir());
 const profile = fs.mkdtempSync(path.join(tmpBase, 'bionic-extension-'));
 const channel = process.env.EXTENSION_CHANNEL || 'chromium';
-const app = path.join(root, 'extension');
+const app = path.resolve(process.env.EXTENSION_DIR || path.join(root, 'extension'));
 const sample = path.join(root, '.tmp/examples/multilingual.pdf');
 const bytes = fs.readFileSync(sample);
 const named = fs.readFileSync(path.join(path.dirname(sample), 'named.pdf'));
@@ -71,7 +71,7 @@ const server = http.createServer((req, res) => {
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 let context;
-try {
+async function launchExtension() {
   const args = ['--enable-unsafe-extension-debugging'];
   if (channel === 'chromium') args.push(`--disable-extensions-except=${app}`, `--load-extension=${app}`);
   context = await chromium.launchPersistentContext(profile, {
@@ -82,6 +82,10 @@ try {
   const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker');
   const id = new URL(worker.url()).hostname;
   assert.ok(await worker.evaluate(() => chrome.action.onClicked.hasListeners()));
+  return {cdp, id};
+}
+try {
+  const {cdp, id} = await launchExtension();
   const source = await context.newPage();
   const sourceSession = await context.newCDPSession(source);
   const errors = [];
@@ -256,6 +260,27 @@ try {
     await reader.close();
   }
   assert.deepEqual(errors, []);
+  // Reload the unpacked extension from its original directory and browser profile.
+  // A fresh reader tab must recover both the persistent settings and the document's place.
+  const home = 'chrome-extension://' + id + '/reader.html';
+  reader = await context.newPage();
+  await reader.goto(home);
+  await reader.locator('#file-input').setInputFiles(sample);
+  await reader.locator('#page-number').waitFor({state:'visible'});
+  await reader.locator('#bionic-mode').click();
+  await reader.locator('#zoom').selectOption('1.25');
+  await reader.locator('#page-number').fill('3');
+  await reader.locator('#page-number').press('Enter');
+  await waitForPage(reader, 3);
+  await reader.close();
+  await context.close();
+  assert.equal((await launchExtension()).id, id);
+  reader = await context.newPage();
+  await reader.goto(home);
+  await reader.locator('#file-input').setInputFiles(sample);
+  await waitForPage(reader, 3);
+  assert.equal(await reader.locator('#zoom').inputValue(), '1.25');
+  assert.equal(await reader.locator('#bionic-mode').getAttribute('aria-pressed'), 'true');
   console.log('Extension toolbar, file picker, named destination, expired session and partial-download reloads passed');
 } finally {
   releaseDownload();

@@ -1,0 +1,120 @@
+--- a/pdf.mjs
++++ b/pdf.mjs
+@@ -10780,6 +10780,8 @@
+     markedContentStack = null
+   }, annotationCanvasMap, pageColors, dependencyTracker, imagesTracker) {
+     this.ctx = canvasCtx;
++    // Bionic PDF Reader modification: retain per-render display settings.
++    this.bionicReader = canvasCtx.canvas.bionicReader || null;
+     this.current = new CanvasExtraState(this.ctx.canvas.width, this.ctx.canvas.height);
+     this.stateStack = [];
+     this.pendingClip = null;
+@@ -11784,6 +11786,11 @@
+       this.compose();
+       return undefined;
+     }
++    // Bionic PDF Reader modification: classify original Unicode glyphs.
++    const bionicMask = this.bionicReader?.enabled ? this.bionicReader.mask(glyphs, current, ctx.getTransform(), this.contentVisible) : null;
++    // Bionic PDF Reader modification: pure fills on a measurement canvas have no visible output.
++    // Other rendering modes can build a clipping path. Always preserve advances and graphics state.
++    const paintGlyphs = this.contentVisible && !(simpleFillText && this.bionicReader?.positionsOnly);
+     let x = 0,
+       i;
+     for (i = 0; i < glyphsLength; ++i) {
+@@ -11823,9 +11830,19 @@
+           scaledX += (width - measuredWidth) / 2000 * fontSize / fontSizeScale;
+         }
+       }
+-      if (this.contentVisible && (glyph.isInFont || font.missingFile)) {
++      if (paintGlyphs && (glyph.isInFont || font.missingFile)) {
+         if (simpleFillText && !accent) {
+           ctx.fillText(character, scaledX, scaledY);
++          // Display-only stroke. Never change glyphs, font, advances, or PDF data.
++          if (bionicMask?.[i]) {
++            ctx.save();
++            ctx.strokeStyle = ctx.fillStyle;
++            ctx.lineWidth = Math.abs(fontSize / fontSizeScale) * 0.026 * this.bionicReader.strength;
++            ctx.lineJoin = "round";
++            ctx.strokeText(character, scaledX, scaledY);
++            ctx.restore();
++            this.bionicReader.stroked++;
++          }
+           this.dependencyTracker?.recordCharacterBBox(opIdx, ctx, measure ? {
+             bbox: null
+           } : font, fontSize / fontSizeScale, scaledX, scaledY, () => measure ?? ctx.measureText(character));
+@@ -12436,12 +12453,15 @@
+   markPoint(opIdx, tag) {}
+   markPointProps(opIdx, tag, properties) {}
+   beginMarkedContent(opIdx, tag) {
++    // Bionic PDF Reader modification: retain shaped ActualText scope boundaries.
++    this.bionicReader?.beginMarkedContent?.(null);
+     this.dependencyTracker?.beginMarkedContent(opIdx);
+     this.markedContentStack.push({
+       visible: true
+     });
+   }
+-  beginMarkedContentProps(opIdx, tag, properties) {
++  beginMarkedContentProps(opIdx, tag, properties, actualText = null) {
++    this.bionicReader?.beginMarkedContent?.(actualText);
+     this.dependencyTracker?.beginMarkedContent(opIdx);
+     if (tag === "OC") {
+       this.markedContentStack.push({
+@@ -12455,6 +12475,7 @@
+     this.contentVisible = this.isContentVisible();
+   }
+   endMarkedContent(opIdx) {
++    this.bionicReader?.endMarkedContent?.();
+     this.dependencyTracker?.endMarkedContent(opIdx);
+     this.markedContentStack.pop();
+     this.contentVisible = this.isContentVisible();
+@@ -12960,6 +12981,7 @@
+       this._contentLength = contentLength;
+       this._isRangeSupported = isRangeSupported;
+       this._filename = extractFilenameFromHeader(responseHeaders);
++      this.bionicETag = responseHeaders.get("ETag"); // Bionic PDF Reader modification: HTTP version on reload.
+       if (!this._isStreamingSupported && this._isRangeSupported) {
+         this.cancel(new AbortException("Streaming is disabled."));
+       }
+@@ -13394,6 +13416,7 @@
+     this._contentLength = contentLength;
+     this._isRangeSupported = isRangeSupported;
+     this._filename = extractFilenameFromHeader(responseHeaders);
++    this.bionicETag = responseHeaders.get("ETag"); // Bionic PDF Reader modification: XHR transport.
+     if (this._isRangeSupported) {
+       stream._abortRequest(fullRequestXhr);
+     }
+@@ -14995,6 +15018,10 @@
+   getDownloadInfo() {
+     return this._transport.downloadInfoCapability.promise;
+   }
++  // Bionic PDF Reader modification: attest only bytes the worker has already received.
++  getBionicResumeProof() {
++    return this._transport.messageHandler.sendWithPromise("BionicResumeProof", null);
++  }
+   getRawData(data) {
+     return this._transport.getRawData(data);
+   }
+@@ -15208,7 +15235,8 @@
+       pageIndex: this._pageIndex,
+       canvasFactory: this._transport.canvasFactory,
+       filterFactory: this._transport.filterFactory,
+-      useRequestAnimationFrame: !intentPrint,
++      // Bionic PDF Reader modification: offscreen text measurement yields through RenderTask.onContinue.
++      useRequestAnimationFrame: !intentPrint && !canvas?.bionicReader?.positionsOnly,
+       pdfBug: this._pdfBug,
+       pageColors,
+       enableHWA: this._transport.enableHWA,
+@@ -16199,6 +16227,7 @@
+       info: results[0],
+       metadata: results[1] ? new Metadata(results[1]) : null,
+       contentDispositionFilename: this.#fullReader?.filename ?? null,
++      bionicETag: this.#fullReader?.bionicETag ?? null,
+       contentLength: this.#fullReader?.contentLength ?? null,
+       hasStructTree: results[2]
+     })));
+@@ -26776,4 +26805,3 @@
+ 
+ export { AbortException, AnnotationEditorLayer, AnnotationEditorParamsType, AnnotationEditorType, AnnotationEditorUIManager, AnnotationLayer, AnnotationMode, AnnotationType, CSSConstants, ColorPicker, DOMSVGFactory, DrawLayer, FeatureTest, GlobalWorkerOptions, ImageKind, InvalidPDFException, MathClamp, OPS, OutputScale, PDFDataRangeTransport, PDFDateString, PDFWorker, PasswordResponses, PermissionFlag, PixelsPerInch, RenderingCancelledException, ResponseException, SignatureExtractor, SupportedImageMimeTypes, TextLayer, TextLayerImages, TouchManager, Util, VerbosityLevel, XfaLayer, applyOpacity, build, createValidAbsoluteUrl, fetchData, findContrastColor, getDocument, getFilenameFromUrl, getPdfFilenameFromUrl, getRGB, getUuid, getXfaPageViewport, isDataScheme, isPdfFile, isValidExplicitDest, makeArr, makeMap, makeObj, noContextMenu, normalizeUnicode, renderRichText, setLayerDimensions, shadow, stopEvent, updateUrlHash, version };
+ 
+-//# sourceMappingURL=pdf.mjs.map
+\ No newline at end of file

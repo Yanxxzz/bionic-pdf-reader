@@ -33,6 +33,19 @@ try{
     page.on('request',r=>{if(!r.url().startsWith('http://127.0.0.1:')&&!/^(blob:|data:)/.test(r.url()))external.push(r.url());});
     try{
       const url = `http://127.0.0.1:${server.address().port}/reader.html`;
+      const guided = await browser.newPage({reducedMotion:'reduce'});
+      await guided.goto(url);
+      await guided.waitForSelector('html[data-reader-ready]');
+      assert.equal(await guided.locator('.mode-control').evaluate(e => getComputedStyle(e, '::before').transitionDuration), '0s');
+      await guided.locator('#try-sample').click();
+      await guided.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
+      await guided.locator('#bionic-mode').click();
+      await guided.waitForFunction(() => Number(document.querySelector('#pdf-canvas').dataset.boldGlyphs) > 0);
+      await guided.locator('#page-links a').first().click();
+      await guided.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '2');
+      await guided.locator('#return-position').click();
+      await guided.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
+      await guided.close();
       await page.goto(url + '#selected=sample');
       await page.waitForFunction(() => document.querySelector('#page-frame').dataset.renderedPage === '1');
       assert.equal(await page.locator('#file-name').textContent(), '已选 #1.pdf');

@@ -2,11 +2,15 @@
 
 [Download the latest release](https://github.com/Yanxxzz/bionic-pdf-reader/releases/latest) · [中文](README.md) · [Setup guide](docs/usage.md) · [Reader compatibility](docs/compatibility.md)
 
+**Already using the Chrome or Edge extension?** Extract the update over the original folder and click **Reload** in the extensions manager to keep your place, zoom and reading preferences. To move to another folder or computer, export your progress from the reader’s home screen first.
+
 With bionic reading, the word *reading* appears as **read**ing. Turn word-prefix emphasis on or off on the original PDF page while figures, formulas and page numbers stay in place. Text stays selectable and files are processed on your computer.
 
 If you want to read English faster or try a different way to read long papers, open a familiar paragraph. Press `Alt+B` (`Option+B` on Mac) to compare the two views, then adjust the strength to find a weight you like.
 
 ## Choose your PDF reader
+
+To try the controls offline, choose **试读两页示例** on the reader’s home screen. The two-page English sample contains a working reference and text you can search. The in-app guide includes an **English quick start**.
 
 | Where you read | What to use | How it works |
 | --- | --- | --- |

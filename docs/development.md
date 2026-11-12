@@ -40,6 +40,8 @@ npm run test:shaped
 
 ## 构建
 
+用 npm 官方归档重建 PDF.js。运行 `npm pack pdfjs-dist@5.6.205`，再运行 `python scripts/patch_pdfjs.py pdfjs-dist-5.6.205.tgz`。脚本核对上游归档的 SHA-256，应用显示和后台解析补丁，再逐字节对照仓库文件。需要重新生成时加 `--write`。浏览器 CI 在验收前执行同一项核对。
+
 ```sh
 python -m build
 python scripts/build_packages.py

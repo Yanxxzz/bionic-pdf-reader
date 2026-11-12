@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="application-version" content="0.6.2">
+  <meta name="application-version" content="0.6.3">
   <title>仿生 PDF 阅读 · Bionic PDF Reader</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
   <link rel="stylesheet" href="reader.css">
@@ -34,12 +34,24 @@
       <div class="welcome-cover">
         <div class="welcome-copy">
           <h1 id="welcome-title">仿生 PDF 阅读</h1>
-          <p>在原页切换词首加粗，保留图表、公式和正文的位置。</p>
-          <button id="choose-file" class="choose-file">选择本地 PDF <span aria-hidden="true">→</span></button>
-          <small>也可将 PDF 文件拖到此页</small>
+          <p>打开一页正文，点「仿生」看词首加粗，再点「原始」读同一行。</p>
+          <div class="welcome-actions">
+            <button id="choose-file" class="choose-file">选择本地 PDF <span aria-hidden="true">→</span></button>
+            <button id="try-sample" class="sample-link">试读两页示例</button>
+          </div>
+          <small>可拖入 PDF · 文件在本机处理</small>
         </div>
         <img class="cover-photo" src="assets/reading-room.png" width="1080" height="600" alt="">
       </div>
+      <details class="progress-transfer">
+        <summary>更新扩展或迁移阅读进度</summary>
+        <p>更新 Chrome / Edge 扩展时，把新版解压覆盖到原安装文件夹，再到扩展管理页点「重新加载」。换文件夹、浏览器或电脑前可在这里导出备份，到新的阅读器首页导入。</p>
+        <p>备份只含阅读位置、文档指纹和设置。导入会替换相同文档的记录，其他文档的进度继续保留。</p>
+        <button id="backup-save">导出进度</button>
+        <button id="backup-open">导入进度</button>
+        <input id="backup-file" type="file" accept="application/json,.json" hidden>
+        <span id="backup-status" role="status"></span>
+      </details>
     </section>
 
     <div class="app-shell">
@@ -146,9 +158,12 @@
       <form method="dialog"><button value="close" aria-label="关闭指南" title="关闭指南">×</button></form>
     </header>
     <div class="guide-content">
-      <p class="guide-intro">选择阅读器，查看打开文件、切换模式与处理扫描页的方法。</p>
+      <p class="guide-intro">第一次使用可在阅读器首页点「试读两页示例」。试着切换词首加粗，点示例里的引用，再用「返回原处」回到起点。</p>
+      <details lang="en"><summary>English quick start</summary><p>Choose <b>试读两页示例</b> for the two-page sample, or <b>打开 PDF</b> for your own file. Select <b>仿生</b> to emphasize word beginnings and <b>原始</b> to see the original. Find text with Ctrl+F or ⌘F. After following a result or a citation, <b>返回原处</b> takes you back.</p><p>In the Windows maker select <b>可切换版</b> for a copy with a Layers switch, or <b>普通仿生版</b> for always-visible emphasis. <b>生成阅读副本</b> starts the export. <b>取消导出</b> stops it after the current step.</p></details>
+      <details><summary>升级后怎样保留进度？</summary><p>Chrome / Edge 请把新版解压覆盖到原文件夹，在扩展管理页点「重新加载」。换目录或电脑前，先在阅读器首页展开「更新扩展或迁移阅读进度」并导出备份，再到新阅读器首页导入。旧版没有导出按钮时，先在原目录升级。</p></details>
       <details><summary>第一次安装：下载哪个包？</summary><p>Windows：下载 windows-x64 压缩包，完整解压后运行 BionicPDF.exe，无需安装 Python。Chrome / Edge：下载 chrome-edge 压缩包并解压，在 chrome://extensions 或 edge://extensions 开启开发者模式，选择「加载已解压的扩展程序」，选择含 manifest.json 的文件夹，再点击扩展图标。</p><p>Firefox 推荐通过 Windows 工具打开本地阅读页；另提供临时开发扩展，浏览器重启后会移除。网页包需要本地网页服务，请勿直接双击 reader.html。</p></details>
       <details open><summary>在浏览器里直接切换</summary><ol><li>在 Chrome 或 Edge 已打开的 PDF 标签页点扩展图标，或点「打开 PDF」选择文件。打开本地标签页时，请先在扩展详情中启用「允许访问文件网址」。临时链接可先保存再打开。</li><li>在侧栏选择文档语言。窄窗口中先展开「阅读设置与目录」。英语可使用「参考项目规则」，其他语言推荐「词语前半部分」。</li><li>点击顶部「仿生」，或按 Alt+B 开关。强度可从 100% 开始调整。</li></ol><p>点击引用或目录可前往 PDF 指定的位置。「返回原处」或浏览器后退恢复原来的页码、缩放和滚动位置。论文里的网页和 DOI 在新标签页打开，关闭后即可继续阅读。改变缩放或窗口宽度时会对准原段落。从扩展图标打开的 PDF 可以刷新续读，需要保留原 PDF 标签页。</p><p>点「查找」或按 Ctrl+F（Mac 用 ⌘F）搜索全书。Enter 查找下一处，Shift+Enter 查找上一处，到书末或书首会循环。Esc 关闭查找并留在当前命中处。要回到查找前的段落，点一次「返回原处」。</p></details>
+      <details><summary>先导出一页，或取消正在制作的副本</summary><p>在 Windows 工具的「导出页码」输入 1，先试做一页。导出中点「取消导出」，当前处理步骤结束后停止。原文件和已有副本会保留，可以调整范围再试。</p></details>
       <details><summary>在 WPS / Acrobat / Foxit / PDF-XChange 原页开关</summary><ol><li>在 Windows 制作工具中选择原始 PDF，选择「可切换版」。</li><li>保存成不同文件名，再用你的 PDF 阅读器打开副本。</li><li>在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。图层默认关闭。</li></ol><p>WPS：左侧「图层」图标 → 眼睛开关。PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。</p><p>Acrobat：菜单 → 视图 → 显示/隐藏 → 侧面板 → 图层。Foxit：在左侧导航栏空白处右键 → 图层，再勾选该图层。不同版本菜单名称可能不同。找不到图层入口时可改用普通仿生版。</p></details>
       <details><summary>Preview / SumatraPDF / 手机等阅读器</summary><p>在 Windows 工具选择「普通仿生版」，生成后直接打开。该副本的加粗始终显示；切回原始效果请打开原文件。</p></details>
       <details><summary>支持哪些语言？如何配置？</summary><p>英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。</p><p>浏览器阅读混合语言文档时可选「词语前半部分」。在 Windows 工具制作副本时，自动和英语对纯英文字母词应用参考规则。选择其他语言时，按完整字素加粗前半词。手动选择还会设置副本的文档语言，自动模式沿用原文件的语言标记。重音和连字按完整字素或原始字形处理。</p></details>

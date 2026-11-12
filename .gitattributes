@@ -1,5 +1,7 @@
 * text=auto eol=lf
 *.png binary
+*.pdf binary
+*.patch whitespace=-blank-at-eol
 *.ttf binary
 *.wasm binary
 *.bcmap binary
