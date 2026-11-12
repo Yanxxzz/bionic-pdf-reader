@@ -30,9 +30,12 @@ let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
 let readingProgress, navigationRevision = 0, pendingPosition = null, openingView;
 let progressTimer;
-const findBar = installFindBar(() => pageNumber, number => {
-  ++navigationRevision;
-  return showPosition({number, zoom: $('zoom').value});
+const findBar = installFindBar({
+  currentPosition, recordJump,
+  showPage(number) {
+    ++navigationRevision;
+    return showPosition({number, zoom: $('zoom').value});
+  },
 });
 
 function notify(text) {
@@ -106,11 +109,18 @@ async function scheduleRender() {
   }
 }
 
+function currentPosition() {
+  return pendingPosition ?? {number: pageNumber, ...readingPosition($('zoom').value)};
+}
+
 function saveProgress() {
   clearTimeout(progressTimer);
-  if (!pdf || $('page-frame').dataset.renderedPage !== String(pageNumber)) return;
-  const position = {number: pageNumber, ...readingPosition($('zoom').value)};
-  openingView.position ??= position;
+  if (!pdf) return;
+  const frame = $('page-frame').dataset;
+  const ready = frame.renderedPage === String(pageNumber);
+  if (!ready && !(frame.renderState === 'rendering' && pendingPosition)) return;
+  const position = currentPosition();
+  if (ready) openingView.position ??= position;
   readingProgress.save(position, movedSinceOpening());
 }
 
@@ -159,21 +169,32 @@ async function destinationPage(activePDF, destination) {
   return {page: await activePDF.getPage(index + 1), dest};
 }
 
+function recordJump(origin, position, replace = false) {
+  if (!replace && position.top !== undefined && origin.number === position.number && origin.zoom === position.zoom
+      && origin.left === position.left && origin.top === position.top) return false;
+  const documentId = readingProgress.documentId;
+  const depth = history.state?.documentId === documentId ? history.state.depth : 0;
+  if (replace && depth) {
+    history.replaceState({documentId, depth, position}, '');
+  } else {
+    history.replaceState({documentId, depth, position: origin}, '');
+    history.pushState({documentId, depth: depth + 1, position}, '');
+  }
+  $('return-position').disabled = false;
+  return true;
+}
+
 async function goToDestination(activePDF, dest) {
   if (!dest || dest === pageNumber || pdf !== activePDF) return;
   findBar.clear();
   const revision = ++navigationRevision;
-  const origin = {number: pageNumber, ...readingPosition($('zoom').value)};
+  const origin = currentPosition();
   try {
     const position = Number.isInteger(dest)
       ? {number: dest, zoom: origin.zoom}
       : resolvePosition(await destinationPage(activePDF, dest), origin);
     if (pdf !== activePDF || revision !== navigationRevision) return;
-    const documentId = readingProgress.documentId;
-    const depth = history.state?.documentId === documentId ? history.state.depth : 0;
-    history.replaceState({documentId, depth, position: origin}, '');
-    history.pushState({documentId, depth: depth + 1, position}, '');
-    $('return-position').disabled = false;
+    recordJump(origin, position);
     await showPosition(position);
   } catch {
     if (pdf === activePDF && revision === navigationRevision) notify('找不到这个链接指向的页面。');
@@ -416,7 +437,9 @@ $('prev-page').addEventListener('click', () => goToPage(pageNumber - 1));
 $('next-page').addEventListener('click', () => goToPage(pageNumber + 1));
 $('page-number').addEventListener('change', e => goToPage(e.target.valueAsNumber));
 $('page-number').addEventListener('keydown', e => { if (e.key === 'Enter') goToPage(e.target.valueAsNumber); });
-$('zoom').addEventListener('change', () => scheduleRender());
+$('zoom').addEventListener('change', () => {
+  if (pdf) showPosition({...currentPosition(), zoom: $('zoom').value});
+});
 const sidebarToggle = $('sidebar-toggle');
 function closeSidebar() {
   if (sidebarToggle.getAttribute('aria-expanded') !== 'true') return;

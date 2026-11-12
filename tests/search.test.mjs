@@ -67,6 +67,23 @@ test('a long pasted passage is matched literally across a line break', async () 
   assert.deepEqual([hit.start, hit.end], [0, passage.length + 18]);
 });
 
+test('keyboard and typographic quotes find the original spelling without matching prime signs', async () => {
+  const line = '“Kane’s research” and "Kane\'s research". L’étude. обʼєкт. 5′ 6″';
+  const book = new BookSearch({numPages:1});
+  book.remember(1, [{str:line}]);
+  async function found(query) {
+    const match = await book.find(query, 1);
+    return match && line.slice(match.start, match.end);
+  }
+  assert.equal(await found('"Kane\'s research"'), '“Kane’s research”');
+  assert.equal(book.match.count, 2);
+  assert.equal(await found('“Kane’s research”'), '"Kane\'s research"');
+  assert.equal(await found("l'étude"), 'L’étude');
+  assert.equal(await found("об'єкт"), 'обʼєкт');
+  assert.equal(await found("5'"), null);
+  assert.equal(await found('6"'), null);
+});
+
 test('book search visits only the necessary pages, wraps in both directions, and cancels', async () => {
   const visited = [];
   const pdf = {numPages:4, async getPage(n) {

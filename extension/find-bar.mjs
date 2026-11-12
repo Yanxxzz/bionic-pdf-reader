@@ -1,18 +1,23 @@
 import {BookSearch} from './search.mjs';
 import {markMatch} from './page-view.mjs';
 
-export function installFindBar(currentPage, showPage) {
+export function installFindBar({currentPosition, showPage, recordJump}) {
   const byId = id => document.getElementById(id);
   const bar = byId('find-bar'), input = byId('find-query'), status = byId('find-status');
   const toggle = byId('find-toggle'), frame = byId('page-frame');
-  let book, timer, reveal = false;
+  let book, timer, searchStart, hasReturnEntry = false, reveal = false;
 
-  function clear() {
+  function clearMatch() {
     clearTimeout(timer);
     book?.clear();
     reveal = false;
     markMatch(null);
     status.textContent = '';
+  }
+  function clear() {
+    clearMatch();
+    searchStart = null;
+    hasReturnEntry = false;
   }
   function open(visible) {
     bar.hidden = !visible;
@@ -29,6 +34,7 @@ export function installFindBar(currentPage, showPage) {
     const match = book.match;
     if (!match || frame.dataset.renderedPage !== String(match.page)) { markMatch(null); return; }
     const visible = markMatch(match, reveal);
+    if (reveal) hasReturnEntry = recordJump(searchStart, currentPosition(), hasReturnEntry);
     reveal = false;
     status.textContent = `第 ${match.page} 页 · 本页第 ${match.index + 1}/${match.count} 处`
       + (visible ? '' : '（无可显示的位置）');
@@ -37,17 +43,18 @@ export function installFindBar(currentPage, showPage) {
     clearTimeout(timer);
     if (!book || !input.value.trim()) { clear(); return; }
     try {
-      const match = await book.find(input.value, currentPage(), step,
+      const match = await book.find(input.value, currentPosition().number, step,
         page => { status.textContent = `正在查找第 ${page} 页…`; });
       if (match === undefined) return;
-      reveal = true;
       if (!match) {
         markMatch(null);
         status.textContent = '全书没有找到匹配文字';
-      } else if (frame.dataset.renderedPage === String(match.page)) {
-        paint();
       } else {
-        await showPage(match.page);
+        // One search can visit many matches. Back returns to where reading was interrupted.
+        searchStart ??= currentPosition();
+        reveal = true;
+        if (frame.dataset.renderedPage === String(match.page)) paint();
+        else await showPage(match.page);
       }
     } catch {
       clear();
@@ -59,7 +66,7 @@ export function installFindBar(currentPage, showPage) {
   byId('find-prev').addEventListener('click', () => find(-1));
   byId('find-next').addEventListener('click', () => find(1));
   input.addEventListener('input', () => {
-    clear();
+    clearMatch();
     if (input.value.trim()) timer = setTimeout(() => find(1), 180);
   });
   document.addEventListener('keydown', event => {

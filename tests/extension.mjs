@@ -224,7 +224,16 @@ try {
     hold = true;
     reader = await clickExtension();
     await waitForPage(reader, 1);
-    if (scenario !== 'untouched') {
+    if (scenario === 'refresh-twice') {
+      // Interrupt the turn before page two can paint, then reload the still-partial file again below.
+      await Promise.all([reader.waitForEvent('domcontentloaded'), reader.evaluate(() => {
+        const input = document.querySelector('#page-number');
+        input.value = '2';
+        input.dispatchEvent(new Event('change', {bubbles:true}));
+        location.reload();
+      })]);
+      await waitForPage(reader, 1);
+    } else if (scenario !== 'untouched') {
       await turn(2);
       await reader.waitForFunction(() => JSON.parse(sessionStorage.getItem('bionic-tab-view')).pending);
     }
@@ -234,10 +243,8 @@ try {
       remote[xref + gap.length / 2] = 9; // Only an unread middle byte changes.
       etag = '"replacement"';
     }
-    for (let i = 0; i < (scenario === 'refresh-twice' ? 2 : 1); ++i) {
-      await reader.reload();
-      await waitForPage(reader, 1);
-    }
+    await reader.reload();
+    await waitForPage(reader, 1);
     if (scenario === 'new-navigation') await turn(5);
     releaseDownload();
     const expected = {'refresh-twice':2, 'changed-bytes':3, 'new-navigation':5, 'changed-etag':1, untouched:5}[scenario];

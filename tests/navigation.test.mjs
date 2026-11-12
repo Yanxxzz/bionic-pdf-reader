@@ -28,6 +28,9 @@ test('reading progress supports older page numbers and recovers usable parts of 
   const read = raw => savedPosition(raw, 12, 'fit');
   const position = {number:8, zoom:'2', left:38, top:441, scale:2, point:[10, 760]};
   assert.deepEqual(read(JSON.stringify(position)), position);
+  const destination = {number:4, zoom:'2', point:[60, 460]};
+  assert.deepEqual(read(destination), destination);
+  assert.deepEqual(read({...destination, point:[60, null]}), {number:4, zoom:'2'});
   assert.deepEqual(read('8'), {number:8, zoom:'fit'});
   assert.deepEqual(read('99'), {number:12, zoom:'fit'});
   for (const raw of [null, '2.5', '{', 'null']) assert.deepEqual(read(raw), {number:1, zoom:'fit'});

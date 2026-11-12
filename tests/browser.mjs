@@ -381,6 +381,30 @@ try{
       await blocked.close();
       await chooseSample('#open-file', path.join(root,'.tmp/examples/named.pdf'));
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'named.pdf');
+      const paragraph = page.locator('#outline').getByRole('button', {name:'Methods paragraph'});
+      await paragraph.click();
+      await wait(4, 'bionic');
+      const paragraphScroll = await scroll();
+      assert.ok(paragraphScroll[1] > 300);
+      await page.locator('#return-position').click();
+      await wait(1, 'bionic');
+      // Refresh after following the link but before its page has scroll coordinates.
+      await page.evaluate(() => {
+        const frame = document.querySelector('#page-frame');
+        const observer = new MutationObserver(() => {
+          if (frame.dataset.renderState === 'rendering' && document.querySelector('#page-number').value === '4') {
+            observer.disconnect();
+            location.reload();
+          }
+        });
+        observer.observe(frame, {attributes:true, attributeFilter:['data-render-state']});
+      });
+      await Promise.all([page.waitForEvent('domcontentloaded'), paragraph.click()]);
+      await wait(4, 'bionic');
+      assert.equal(await page.locator('#zoom').inputValue(), '2');
+      assert.deepEqual(await scroll(), paragraphScroll);
+      await page.locator('#return-position').click();
+      await wait(1, 'bionic');
       for (const mode of ['original', 'bionic']) {
         await page.locator('#' + mode + '-mode').click();
         await wait(1, mode);
@@ -433,6 +457,8 @@ try{
       await chooseSample('#open-file', path.join(root,'.tmp/examples/rotated-text.pdf'));
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'rotated-text.pdf'
         && document.querySelector('#page-frame').dataset.renderedPage === '1');
+      const searchOrigin = await scroll();
+      const originZoom = await page.locator('#zoom').inputValue();
       await page.keyboard.press('Control+f');
       await query.fill('Reading together improves recall.');
       await query.press('Enter');
@@ -446,6 +472,15 @@ try{
         assert.ok(nearLine(box) && box.every((value,i) => Math.abs(upright[i] - value) < .01),
           'Highlight stays on the text at ' + 90 * (number - 1) + ' degrees');
       }
+      await query.press('Escape');
+      assert.ok(await page.locator('#return-position').isEnabled());
+      assert.equal(await page.evaluate(() => history.state?.depth), 1, 'A series of matches adds one return point');
+      await page.locator('#return-position').click();
+      await wait(1, 'bionic');
+      assert.equal(await page.locator('#zoom').inputValue(), originZoom);
+      assert.deepEqual(await scroll(), searchOrigin);
+      await page.goForward();
+      await wait(4, 'bionic');
       await chooseSample('#open-file', path.join(root,'.tmp/examples/numbers.pdf'));
       await page.waitForFunction(() => document.querySelector('#file-name').textContent === 'numbers.pdf');
       for (const mode of ['original', 'bionic']) {

@@ -89,12 +89,15 @@ export function savedPosition(saved, total, defaultZoom) {
     (Number(saved.zoom) >= .1 && Number(saved.zoom) <= 8));
   if (!validZoom) return {...fallback, number};
   const result = {number, zoom: saved.zoom};
+  const hasPoint = Array.isArray(saved.point) && saved.point.length === 2 && saved.point.every(Number.isFinite);
   if ([saved.left, saved.top].every(v => Number.isFinite(v) && v >= 0)) {
     Object.assign(result, {left: saved.left, top: saved.top});
-    if (Number.isFinite(saved.scale) && saved.scale > 0 &&
-        Array.isArray(saved.point) && saved.point.length === 2 && saved.point.every(Number.isFinite)) {
+    if (hasPoint && Number.isFinite(saved.scale) && saved.scale > 0) {
       Object.assign(result, {scale: saved.scale, point: saved.point});
     }
+  } else if (hasPoint) {
+    // A destination can be saved before painting gives it scroll offsets.
+    result.point = saved.point;
   }
   return result;
 }

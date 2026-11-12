@@ -4,6 +4,8 @@ import {readPageText} from './page-text.mjs';
 // for the single visible match, where ligatures can expand to multiple letters.
 export function foldText(value, offsets, locale = 'auto') {
   let text = '';
+  // Keyboard and typographic quotes occupy one UTF-16 unit each, so source offsets stay valid.
+  value = value.replace(/[\u2018-\u201b\u02bc]/gu, "'").replace(/[\u201c-\u201f]/gu, '"');
   // In untagged mixed text, Turkish letters give an otherwise ambiguous I its
   // dotless spelling. This substitution preserves every source offset.
   if (locale === 'auto' && value.includes('I')) {

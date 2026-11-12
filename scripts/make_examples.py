@@ -146,8 +146,9 @@ if __name__=='__main__':
     print(sample)
     with PdfWriter() as writer:
         writer.append(sample, pages=(0, 4))
-        writer.add_named_destination_object(Destination('Methods + data', writer.pages[3].indirect_reference,
-                                                        Fit.xyz(60, 460, 2)))
+        methods = Fit.xyz(60, 460, 2)
+        writer.add_named_destination_object(Destination('Methods + data', writer.pages[3].indirect_reference, methods))
+        writer.add_outline_item('Methods paragraph', 3, fit=methods)
         for page_index, action in enumerate(('NextPage', 'LastPage', 'FirstPage', 'PrevPage')):
             named_action = DictionaryObject({NameObject('/S'): NameObject('/Named'), NameObject('/N'): NameObject('/' + action)})
             writer.add_annotation(page_index, DictionaryObject({
