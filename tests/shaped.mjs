@@ -44,6 +44,20 @@ try{
     }
    }
    const pixels = () => page.locator('#pdf-canvas').evaluate(canvas => canvas.toDataURL());
+   async function repaintedPixels() {
+    // Even an identical PDF can antialias a few edge pixels differently on its first paint.
+    // Give both exports the same zoom round trip before comparing every pixel.
+    const zoom = page.locator('#zoom'), startingZoom = await zoom.inputValue();
+    for (const value of [startingZoom === '1' ? '1.25' : '1', startingZoom]) {
+     const revision = await page.locator('#page-frame').getAttribute('data-render-revision');
+     await zoom.selectOption(value);
+     await page.waitForFunction(previous => {
+      const view = document.querySelector('#page-frame').dataset;
+      return view.renderState === 'ready' && view.renderRevision !== previous;
+     }, revision);
+    }
+    return pixels();
+   }
    async function openFirstPage(variant) {
     const name = 'shaped-' + variant + '.pdf';
     await page.locator('#file-input').setInputFiles(path.join(root, '.tmp/examples', name));
@@ -58,14 +72,14 @@ try{
    assert.equal(await pixels(), originalEnglish);
    await page.locator('#bionic-mode').click();
    await page.waitForFunction(() => document.querySelector('#page-frame').dataset.mode === 'bionic');
-   const prepared = await pixels();
+   const prepared = await repaintedPixels();
    assert.notEqual(prepared, originalEnglish);
    assert.equal(await page.locator('#pdf-canvas').getAttribute('data-bold-glyphs'), '0');
    await page.locator('#original-mode').click();
    await page.waitForFunction(() => document.querySelector('#page-frame').dataset.mode === 'original');
    assert.equal(await pixels(), originalEnglish);
    await openFirstPage('static');
-   const staticPixels = await pixels();
+   const staticPixels = await repaintedPixels();
    if (staticPixels !== prepared) {
     for (const [variant, image] of [['switchable', prepared], ['static', staticPixels]]) {
      fs.writeFileSync(path.join(output, name + '-export-' + variant + '.png'), Buffer.from(image.split(',')[1], 'base64'));
