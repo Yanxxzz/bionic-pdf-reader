@@ -65,7 +65,14 @@ try{
    await page.waitForFunction(() => document.querySelector('#page-frame').dataset.mode === 'original');
    assert.equal(await pixels(), originalEnglish);
    await openFirstPage('static');
-   assert.equal(await pixels(), prepared, 'The switch shows the exported strokes at their original weight');
+   const staticPixels = await pixels();
+   if (staticPixels !== prepared) {
+    for (const [variant, image] of [['switchable', prepared], ['static', staticPixels]]) {
+     fs.writeFileSync(path.join(output, name + '-export-' + variant + '.png'), Buffer.from(image.split(',')[1], 'base64'));
+     fs.copyFileSync(path.join(root, '.tmp/examples/shaped-' + variant + '.pdf'), path.join(output, 'shaped-' + variant + '.pdf'));
+    }
+    assert.fail(name + ': the static and switchable exports rendered differently. Both pages are in test-results.');
+   }
    assert.ok(await page.locator('#strength').isEnabled() && await page.locator('#rule').isEnabled());
    assert.deepEqual(errors,[]);assert.deepEqual(external,[]);console.log(name,'shaped scripts, ActualText, selection and toggles passed');
   }finally{await browser.close();}
