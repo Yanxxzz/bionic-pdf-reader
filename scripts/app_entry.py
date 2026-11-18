@@ -9,15 +9,20 @@ def smoke_gui():
     import tkinter as tk
     from pathlib import Path
     from time import monotonic, sleep
-    from bionic_pdf.gui import Maker, MODES
-    root=tk.Tk();root.withdraw();app=Maker(root)
+    from bionic_pdf.gui import Maker, MODES, create_window
+    root=create_window();root.withdraw();app=Maker(root)
     assert len(app.language_options)==14
     assert app.cover.width() > 0 and app.cover.height() > 0
+    assert app.generate.instate(['disabled']) and not app.options.winfo_manager()
+    app.options_button.invoke()
+    assert app.options.winfo_manager() == 'grid'
+    app.options_button.invoke()
+    assert not app.options.winfo_manager()
     app.show_help()
     guides=[w for w in root.winfo_children() if isinstance(w,tk.Toplevel)]
     assert len(guides)==1
     guides[0].withdraw();root.update_idletasks()
-    assert root.winfo_reqheight()<=650
+    assert root.winfo_reqheight() <= root.winfo_pixels('488p')
     guides[0].destroy()
     if len(sys.argv) == 4:
         source, output = map(Path, sys.argv[2:])
@@ -31,6 +36,7 @@ def smoke_gui():
 
         app.target.set(str(output / 'cancelled.pdf'))
         app.pages.set('1-2,1-2,1-2,1-2')
+        assert app.pages.get() in app.status.get()
         app.generate.invoke()
         assert app.generate.cget('text') == '取消导出'
         app.generate.invoke()
@@ -43,6 +49,7 @@ def smoke_gui():
             app.mode.set(mode)
             app.generate.invoke()
             wait_for_export()
+            assert app.open_button.winfo_manager() == 'pack' and app.open_button.cget('style') == 'Primary.TButton'
             assert app.result == target and '共 1 页' in app.status.get() and '页码（按副本顺序）：无' in app.status.get()
     root.destroy()
     from bionic_pdf.local_reader import start_reader

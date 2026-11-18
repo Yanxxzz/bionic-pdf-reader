@@ -1,6 +1,6 @@
 import './compat.mjs';
 import * as pdfjs from './vendor/pdf.mjs';
-import { prefixLength } from './words.mjs';
+import {segmentFlags} from './words.mjs';
 import {embeddedReadingLayer, fitWidthChanged, readingPosition, renderPage, resetPageView, resolvePosition} from './page-view.mjs';
 import {installFindBar} from './find-bar.mjs';
 import {externalLink, linkDestination, pageInRange, savedPosition} from './navigation.mjs';
@@ -30,7 +30,7 @@ let pdf = null, loadingTask = null, pageNumber = 1, pageLabels = null, embeddedL
 let copyAllowed = true;
 let loadRevision = 0, messageTimer = null;
 let readingProgress, navigationRevision = 0, pendingPosition = null, openingView;
-let progressTimer;
+let progressTimer, sampleReachedSecondPage = false;
 const findBar = installFindBar({
   currentPosition, recordJump,
   showPage(position) {
@@ -48,9 +48,27 @@ function notify(text) {
 function persistSettings() {
   try { localStorage.setItem(settingsKey, JSON.stringify(settings)); } catch {}
 }
+// Render the examples with the same character mask used for the PDF.
+function emphasizeExample(element) {
+  const text = element.textContent;
+  const flags = segmentFlags(text, settings);
+  const parts = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = start + 1;
+    while (end < text.length && flags[end] === flags[start]) ++end;
+    const run = text.slice(start, end);
+    if (flags[start]) {
+      const bold = document.createElement('b');
+      bold.textContent = run;
+      parts.push(bold);
+    } else parts.push(run);
+    start = end;
+  }
+  element.replaceChildren(...parts);
+}
+
 function updateModeUI() {
-  $('original-mode').classList.toggle('selected', !settings.enabled);
-  $('bionic-mode').classList.toggle('selected', settings.enabled);
   $('original-mode').setAttribute('aria-pressed', String(!settings.enabled));
   $('bionic-mode').setAttribute('aria-pressed', String(settings.enabled));
   $('rule').value = settings.rule;
@@ -62,12 +80,30 @@ function updateModeUI() {
   $('rule-note').textContent = embeddedLayer ? '这份副本已设定词首和强度。原始和仿生按钮切换内置图层，文档语言仍用于查找。'
     : settings.rule === 'half' || !['auto', 'en'].includes(settings.locale)
     ? '强调每个单词前半部分的字母，保留原来的字符间距。'
-    : '英文使用参考项目规则，其他语言按词语前半部分加粗。';
-  const sample = $('sample-word').textContent;
-  const count = prefixLength(sample, settings.rule, settings.locale);
-  const bold = document.createElement('b');
-  bold.textContent = sample.slice(0, count);
-  $('sample-word').replaceChildren(bold, document.createTextNode(sample.slice(count)));
+    : '按英文词长选择加粗字母数，其他语言加粗前半词。';
+  // Match PDF.js's stroke width without changing glyph advances or line breaks.
+  document.body.style.setProperty('--example-stroke', `${0.026 * settings.strength}em`);
+  emphasizeExample($('sample-word'));
+  if (!$('welcome').hidden) {
+    emphasizeExample($('preview-line'));
+    $('preview-line').classList.toggle('emphasized', settings.enabled);
+  }
+}
+
+function updateSampleHint(number, enabled) {
+  if ($('sample-hint').hidden) return;
+  let hint;
+  if (number === 2) {
+    sampleReachedSecondPage = true;
+    hint = $('return-position').disabled ? '你已到第 2 页。点「上一页」回到开头。'
+      : '你已到第 2 页。点「返回原处」回到刚才的段落。';
+  } else if (sampleReachedSecondPage) {
+    hint = '已回到第 1 页。点「查找」输入 reading，用「下一处」找下一次出现的位置。';
+  } else {
+    hint = enabled ? '词首已加粗。点页底的 “Read the field note on page two” 跟随引用。'
+      : '看着第一句 “Reading begins…”，点顶部的「仿生」对照词首。';
+  }
+  if ($('sample-instruction').textContent !== hint) $('sample-instruction').textContent = hint;
 }
 function setMode(enabled) {
   if (settings.enabled === enabled) return;
@@ -101,6 +137,7 @@ async function scheduleRender() {
     else if (embeddedLayer) status = snapshot.enabled ? '仿生模式 · 副本内置图层已开启' : '原始模式 · 副本内置图层已关闭';
     else if (snapshot.enabled) status = result.stroked ? '仿生模式 · 词首加粗' : '此页没有可加粗文字，保留原页';
     $('reading-status').textContent = status;
+    updateSampleHint(number, snapshot.enabled);
     saveProgress();
   } catch (error) {
     if (pdf !== activePDF) return;
@@ -212,7 +249,7 @@ addEventListener('popstate', ({state}) => {
   showPosition(state.position);
 });
 
-async function openFile(file, resume = null) {
+async function openFile(file, resume = null, guidedSample = false) {
   if (!file) return;
   if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
     notify('请选择 PDF 文件。');
@@ -270,7 +307,7 @@ async function openFile(file, resume = null) {
     loadingTask = null;
     $('message').hidden = true;
     if (proof && metadata?.bionicETag?.startsWith('"')) proof.etag = metadata.bionicETag;
-    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer, contentKey, proof});
+    await showDocument(loadedPDF, {name: metadata?.contentDispositionFilename || file.name, labels, permissions, file, target, resume, layer, contentKey, proof, guidedSample});
   } catch (error) {
     if (currentLoad === loadRevision) {
       const reason = file.url ? '请在原标签页保存文件，再点「打开 PDF」。' : error.message;
@@ -284,7 +321,7 @@ async function openFile(file, resume = null) {
   }
 }
 
-async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer, contentKey, proof}) {
+async function showDocument(loadedPDF, {name, labels, permissions, file, target, resume, layer, contentKey, proof, guidedSample}) {
   saveProgress();
   const previous = pdf;
   pdf = loadedPDF;
@@ -306,7 +343,14 @@ async function showDocument(loadedPDF, {name, labels, permissions, file, target,
     if (file.initialPage) return {number:pageInRange(file.initialPage, loadedPDF.numPages, 1), zoom:saved.zoom};
     return saved;
   }
+  const focusMode = guidedSample || $('welcome').contains(document.activeElement);
+  $('reading-mode-slot').append($('mode-control'));
   $('welcome').hidden = true;
+  $('app-shell').hidden = false;
+  $('open-file').hidden = false;
+  $('sample-hint').hidden = !guidedSample;
+  sampleReachedSecondPage = false;
+  if (focusMode) $(settings.enabled ? 'bionic-mode' : 'original-mode').focus({preventScroll:true});
   $('document').hidden = false;
   $('file-name').textContent = name;
   $('file-name').title = name;
@@ -405,7 +449,7 @@ $('try-sample').addEventListener('click', async () => {
     const response = await fetch(new URL('assets/first-read.pdf', import.meta.url));
     if (!response.ok) throw new Error();
     const sample = new File([await response.blob()], 'A closer reading.pdf', {type:'application/pdf'});
-    if (revision === loadRevision) await openFile(sample);
+    if (revision === loadRevision) await openFile(sample, null, true);
   } catch {
     if (revision === loadRevision) notify('无法打开内置示例，请重新解压完整的阅读器。');
   } finally { button.disabled = false; }
@@ -442,6 +486,10 @@ $('backup-file').addEventListener('change', async event => {
 });
 $('cancel-password').addEventListener('click', () => $('password-dialog').close('cancel'));
 $('help-button').addEventListener('click', () => $('help-dialog').showModal());
+$('dismiss-hint').addEventListener('click', () => {
+  $('sample-hint').hidden = true;
+  $(settings.enabled ? 'bionic-mode' : 'original-mode').focus({preventScroll:true});
+});
 document.addEventListener('copy', event => {
   if (copyAllowed || event.target.closest?.('input, textarea')) return;
   const selection = getSelection();

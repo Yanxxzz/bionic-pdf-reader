@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="application-version" content="0.6.3">
+  <meta name="application-version" content="0.6.4">
   <title>仿生 PDF 阅读 · Bionic PDF Reader</title>
   <link rel="icon" type="image/png" sizes="32x32" href="assets/icon-32.png">
   <link rel="stylesheet" href="reader.css">
@@ -17,13 +17,10 @@
         <span class="brand-mark" aria-hidden="true"><b>B</b><i>r</i></span>
         <span class="brand-name" lang="en">Bionic PDF Reader</span>
       </a>
-      <div class="mode-control" role="group" aria-label="阅读模式" title="切换阅读模式 (Alt+B)">
-        <button id="original-mode" class="selected" aria-pressed="true">原始</button>
-        <button id="bionic-mode" aria-pressed="false">仿生</button>
-      </div>
+      <div id="reading-mode-slot"></div>
       <div class="header-actions">
-        <button id="open-file" class="primary">打开 PDF</button>
-        <button id="help-button" aria-haspopup="dialog">使用指南</button>
+        <button id="open-file" hidden>打开 PDF</button>
+        <button id="help-button" class="quiet-button" aria-haspopup="dialog">使用指南</button>
       </div>
       <input id="file-input" type="file" accept="application/pdf,.pdf" hidden>
     </div>
@@ -33,16 +30,27 @@
     <section id="welcome" class="welcome" aria-labelledby="welcome-title">
       <div class="welcome-cover">
         <div class="welcome-copy">
-          <h1 id="welcome-title">仿生 PDF 阅读</h1>
-          <p>打开一页正文，点「仿生」看词首加粗，再点「原始」读同一行。</p>
+          <h1 id="welcome-title">打开一份 PDF</h1>
+          <p>在原页上切换词首加粗，<br>找到适合自己的阅读节奏。</p>
           <div class="welcome-actions">
-            <button id="choose-file" class="choose-file">选择本地 PDF <span aria-hidden="true">→</span></button>
-            <button id="try-sample" class="sample-link">试读两页示例</button>
+            <button id="choose-file" class="primary" title="选择本机上的 PDF">打开 PDF</button>
+            <button id="try-sample" class="sample-link">试读两页示例 <span aria-hidden="true">→</span></button>
           </div>
-          <small>可拖入 PDF · 文件在本机处理</small>
+          <small>也可以将 PDF 拖到这里。文件在本机处理。</small>
         </div>
-        <img class="cover-photo" src="assets/reading-room.png" width="1080" height="600" alt="">
+        <img class="cover-photo" src="assets/reading-room.png" width="1080" height="720" alt="">
       </div>
+      <section class="reading-preview" aria-labelledby="preview-title">
+        <div class="preview-heading">
+          <h2 id="preview-title">词首加粗预览</h2>
+          <div id="mode-control" class="mode-control" role="group" aria-label="阅读模式" title="切换阅读模式 (Alt+B)">
+            <button id="original-mode" aria-pressed="true">原始</button>
+            <button id="bionic-mode" aria-pressed="false">仿生</button>
+          </div>
+        </div>
+        <p id="preview-line" class="preview-line" lang="en">Reading begins with a single clear line.</p>
+        <p class="preview-caption">切换上方模式，对照同一句话。打开 PDF 后也可以随时切换。</p>
+      </section>
       <details class="progress-transfer">
         <summary>更新扩展或迁移阅读进度</summary>
         <p>更新 Chrome / Edge 扩展时，把新版解压覆盖到原安装文件夹，再到扩展管理页点「重新加载」。换文件夹、浏览器或电脑前可在这里导出备份，到新的阅读器首页导入。</p>
@@ -54,7 +62,7 @@
       </details>
     </section>
 
-    <div class="app-shell">
+    <div id="app-shell" class="app-shell" hidden>
       <button id="sidebar-toggle" aria-expanded="false" aria-controls="reading-sidebar">
         阅读设置与目录 <span class="chevron" aria-hidden="true"></span>
       </button>
@@ -83,7 +91,7 @@
           <div class="setting">
             <label for="rule">词首加粗规则</label>
             <select id="rule" aria-describedby="rule-note">
-              <option value="reference">参考项目规则</option>
+              <option value="reference">英文词首规则</option>
               <option value="half">词语前半部分</option>
             </select>
             <p class="field-note" id="rule-note">英文使用参考项目规则，其他语言按词语前半部分加粗。</p>
@@ -93,8 +101,8 @@
             <input id="strength" type="range" min="50" max="150" step="10" value="100">
           </div>
           <div class="sample">
-            <small>词首规则示例</small>
-            <span id="sample-word" lang="en"><b>Read</b>er</span>
+            <small>当前规则示例</small>
+            <span id="sample-word" lang="en">Reader</span>
           </div>
         </div>
         <div class="outline-section">
@@ -123,6 +131,11 @@
             </select>
           </div>
         </div>
+        <aside id="sample-hint" class="sample-hint" aria-label="示例练习" hidden>
+          <span class="tip-label">试读提示</span>
+          <span id="sample-instruction" role="status"></span>
+          <button id="dismiss-hint" class="quiet-button" title="收起试读提示" aria-label="收起试读提示">×</button>
+        </aside>
         <div id="find-bar" role="search" hidden>
           <input id="find-query" type="search" aria-label="全文查找" placeholder="在这份 PDF 中查找">
           <button id="find-prev">上一处</button><button id="find-next">下一处</button>
@@ -158,16 +171,20 @@
       <form method="dialog"><button value="close" aria-label="关闭指南" title="关闭指南">×</button></form>
     </header>
     <div class="guide-content">
-      <p class="guide-intro">第一次使用可在阅读器首页点「试读两页示例」。试着切换词首加粗，点示例里的引用，再用「返回原处」回到起点。</p>
-      <details lang="en"><summary>English quick start</summary><p>Choose <b>试读两页示例</b> for the two-page sample, or <b>打开 PDF</b> for your own file. Select <b>仿生</b> to emphasize word beginnings and <b>原始</b> to see the original. Find text with Ctrl+F or ⌘F. After following a result or a citation, <b>返回原处</b> takes you back.</p><p>In the Windows maker select <b>可切换版</b> for a copy with a Layers switch, or <b>普通仿生版</b> for always-visible emphasis. <b>生成阅读副本</b> starts the export. <b>取消导出</b> stops it after the current step.</p></details>
-      <details><summary>升级后怎样保留进度？</summary><p>Chrome / Edge 请把新版解压覆盖到原文件夹，在扩展管理页点「重新加载」。换目录或电脑前，先在阅读器首页展开「更新扩展或迁移阅读进度」并导出备份，再到新阅读器首页导入。旧版没有导出按钮时，先在原目录升级。</p></details>
-      <details><summary>第一次安装：下载哪个包？</summary><p>Windows：下载 windows-x64 压缩包，完整解压后运行 BionicPDF.exe，无需安装 Python。Chrome / Edge：下载 chrome-edge 压缩包并解压，在 chrome://extensions 或 edge://extensions 开启开发者模式，选择「加载已解压的扩展程序」，选择含 manifest.json 的文件夹，再点击扩展图标。</p><p>Firefox 推荐通过 Windows 工具打开本地阅读页；另提供临时开发扩展，浏览器重启后会移除。网页包需要本地网页服务，请勿直接双击 reader.html。</p></details>
-      <details open><summary>在浏览器里直接切换</summary><ol><li>在 Chrome 或 Edge 已打开的 PDF 标签页点扩展图标，或点「打开 PDF」选择文件。打开本地标签页时，请先在扩展详情中启用「允许访问文件网址」。临时链接可先保存再打开。</li><li>在侧栏选择文档语言。窄窗口中先展开「阅读设置与目录」。英语可使用「参考项目规则」，其他语言推荐「词语前半部分」。</li><li>点击顶部「仿生」，或按 Alt+B 开关。强度可从 100% 开始调整。</li></ol><p>点击引用或目录可前往 PDF 指定的位置。「返回原处」或浏览器后退恢复原来的页码、缩放和滚动位置。论文里的网页和 DOI 在新标签页打开，关闭后即可继续阅读。改变缩放或窗口宽度时会对准原段落。从扩展图标打开的 PDF 可以刷新续读，需要保留原 PDF 标签页。</p><p>点「查找」或按 Ctrl+F（Mac 用 ⌘F）搜索全书。Enter 查找下一处，Shift+Enter 查找上一处，到书末或书首会循环。Esc 关闭查找并留在当前命中处。要回到查找前的段落，点一次「返回原处」。</p></details>
-      <details><summary>先导出一页，或取消正在制作的副本</summary><p>在 Windows 工具的「导出页码」输入 1，先试做一页。导出中点「取消导出」，当前处理步骤结束后停止。原文件和已有副本会保留，可以调整范围再试。</p></details>
+      <p class="guide-intro">读自己的 PDF、试读示例，或为常用阅读器制作副本。按你现在想做的事查看步骤。</p>
+      <details open><summary>打开 PDF，切换词首加粗</summary>
+        <ol><li>在首页点「打开 PDF」，也可以直接拖入文件。</li><li>点「仿生」看词首，再点「原始」对照同一行。阅读时按 Alt+B 也能切换。</li><li>想微调时，在「阅读设置」中调整强度。窄窗口可先展开「阅读设置与目录」。英语可以从「英文词首规则」和 100% 强度开始。</li></ol>
+        <p>第一次使用可以先点首页的「试读两页示例」。每页上方的小提示会带你练习切换、跟随引用和返回。</p>
+      </details>
+      <details><summary>查找一句话，或从引用回到原段落</summary><p>点「查找」，或按 Ctrl+F（Mac 用 ⌘F）。Enter 查找下一处，Shift+Enter 查找上一处。Esc 收起查找。跟随书内引用、目录或搜索结果后，点一次「返回原处」即可恢复之前的段落和缩放。网页引用在新标签页打开。</p></details>
+      <details><summary>保留进度，或迁移到另一台电脑</summary><p>更新 Chrome / Edge 时，把新版解压覆盖到原安装目录，再到扩展管理页点「重新加载」。换目录或电脑前，在首页展开「更新扩展或迁移阅读进度」导出备份，到新阅读器首页导入。旧版可以先在原目录升级。</p></details>
+      <details><summary>安装阅读器，或从浏览器里的 PDF 打开</summary><p>Chrome / Edge 使用 chrome-edge 压缩包。解压后在扩展管理页开启开发者模式，选择「加载已解压的扩展程序」，选含 manifest.json 的文件夹。在已打开的 PDF 标签页点扩展图标即可阅读。读取本地标签页需要在扩展详情中启用「允许访问文件网址」。临时链接可先保存再打开。</p><p>Windows 使用 windows-x64 压缩包，完整解压后运行 BionicPDF.exe。Firefox 可通过制作工具打开本地阅读页，也可加载临时扩展，重启后需重新加载。网页包需要通过本地网页服务打开。</p></details>
+      <details><summary>只导出一页，或取消正在制作的副本</summary><p>在 Windows 制作工具展开「页码、语言与扫描件」，在「导出页码」输入 1 即可先试做一页。导出中点「取消导出」，当前步骤结束后停止。可以调整范围后再试。</p></details>
       <details><summary>在 WPS / Acrobat / Foxit / PDF-XChange 原页开关</summary><ol><li>在 Windows 制作工具中选择原始 PDF，选择「可切换版」。</li><li>保存成不同文件名，再用你的 PDF 阅读器打开副本。</li><li>在「图层 / Layers」面板开关「仿生阅读 · Bionic Reading」。图层默认关闭。</li></ol><p>WPS：左侧「图层」图标 → 眼睛开关。PDF-XChange：Ctrl+L 打开图层 → 点击灯泡。</p><p>Acrobat：菜单 → 视图 → 显示/隐藏 → 侧面板 → 图层。Foxit：在左侧导航栏空白处右键 → 图层，再勾选该图层。不同版本菜单名称可能不同。找不到图层入口时可改用普通仿生版。</p></details>
       <details><summary>Preview / SumatraPDF / 手机等阅读器</summary><p>在 Windows 工具选择「普通仿生版」，生成后直接打开。该副本的加粗始终显示；切回原始效果请打开原文件。</p></details>
       <details><summary>支持哪些语言？如何配置？</summary><p>英语、法语、德语、西班牙语、葡萄牙语、意大利语、荷兰语、波兰语、土耳其语、越南语、俄语、乌克兰语、希腊语。</p><p>浏览器阅读混合语言文档时可选「词语前半部分」。在 Windows 工具制作副本时，自动和英语对纯英文字母词应用参考规则。选择其他语言时，按完整字素加粗前半词。手动选择还会设置副本的文档语言，自动模式沿用原文件的语言标记。重音和连字按完整字素或原始字形处理。</p></details>
-      <details><summary>双页讲义、扫描页或乱码怎么办？</summary><p>双页讲义左右两半合计一页。制作工具的「导出页码」可填 1-3,7,5-4，留空导出整本。完成后可查看未加粗的副本页码。讲义自带的翻页按钮也能在阅读页使用。</p><p>若正文无法选中，或只能选中标题、页码和零散的词，在 Windows 制作工具中勾选「扫描页本地 OCR」，选择文档语言并生成「可切换版」。先装好本机 Tesseract 5 和相应语言包。打开副本，点「查找」输入正文中的一句话。用「原始／仿生」切换时，识别出的文字始终可以搜索和复制。特殊字体和竖排文字可能保持原样。若出现乱码，先对照源 PDF。</p></details>
+      <details><summary>双页讲义、扫描页或乱码怎么办？</summary><p>双页讲义左右两半合计一页。制作工具的「导出页码」可填 1-3,7,5-4，留空导出整本。完成后可查看未加粗的副本页码。讲义自带的翻页按钮也能在阅读页使用。</p><p>若正文无法选中，或只能选中标题、页码和零散的词，在 Windows 制作工具展开「页码、语言与扫描件」，勾选「扫描页本地 OCR」，选择文档语言并生成「可切换版」。先装好本机 Tesseract 5 和相应语言包。打开副本，点「查找」输入正文中的一句话。用「原始／仿生」切换时，识别出的文字始终可以搜索和复制。特殊字体和竖排文字可能保持原样。若出现乱码，先对照源 PDF。</p></details>
+      <details lang="en"><summary>English quick start</summary><p>Choose <b>打开 PDF</b> to open a file, or <b>试读两页示例</b> to try the two-page sample. Compare the same line using <b>原始</b> (original) and <b>仿生</b> (emphasis). Use Ctrl+F or ⌘F to search. After following a result or a citation, choose <b>返回原处</b> to return.</p><p>In the Windows maker, choose <b>可切换版</b> for switchable Layers or <b>普通仿生版</b> for always-visible emphasis. Open <b>页码、语言与扫描件</b> for page ranges, language and OCR. Choose <b>生成阅读副本</b> to export.</p></details>
     </div>
   </dialog>
 </body>

@@ -10,7 +10,7 @@ If you want to read English faster or try a different way to read long papers, o
 
 ## Choose your PDF reader
 
-To try the controls offline, choose **试读两页示例** on the reader’s home screen. The two-page English sample contains a working reference and text you can search. The in-app guide includes an **English quick start**.
+Select **原始** (Original) and **仿生** (Bionic) on the welcome screen to compare the same sentence. The bundled two-page sample guides you through following a reference, returning to the paragraph and searching. Opening your own PDF takes you straight to the document. The in-app guide includes an **English quick start**.
 
 | Where you read | What to use | How it works |
 | --- | --- | --- |
